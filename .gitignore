@@ -1,0 +1,12 @@
+archives/
+results/
+*TODO*
+*.hdf5
+*.mkv
+*log*
+*bench*
+*profile.prof
+*libc*
+*.ipynb
+*.c
+NOTES.md

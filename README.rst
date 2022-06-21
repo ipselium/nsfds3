@@ -1,0 +1,66 @@
+Introducing nsfds2
+==================
+
+|Pypi| |Licence| |DOI|
+
+
+.. image:: https://github.com/ipselium/nsfds2/blob/master/docs/source/images/nsfds2.png
+
+
+**nsfds3** is 3D Navier-Stokes Solver that uses finite difference method.
+**nsfds3** is specialized in acoustic simulations.
+
+**nsfds3** is still in developpement. It is still full of bugs and comes with
+**ABSOLUTELY NO WARRANTY**.
+
+
+Dependencies
+------------
+
+:python: >= 3.6
+:numpy: >= 1.1
+:matplotlib: >= 3.0
+:h5py: >= 2.8
+:progressbar33: >= 2.4
+:ofdlib2: >= 0.11.0
+:fdgrid: >= 0.11.0
+:mplutils: >= 0.4.2
+
+**Important:** To create animations using **nsfds2 make movie**, you also need to
+have **ffmpeg** installed on your system.
+
+
+Installation
+------------
+
+To install **nsfds3**:
+
+.. code:: console
+
+   $ pip install nsfds3
+
+
+**Note:** To compile *ofdlib2*, OS X users may recquire:
+
+.. code:: console
+
+   $ xcode-select --install
+
+
+Links
+-----
+
+- **Documentation:** http://perso.univ-lemans.fr/~cdesjouy/nsfds2/
+- **Source code:** https://github.com/ipselium/nsfds2
+- **Bug reports:** https://github.com/ipselium/nsfds2/issues
+
+
+.. |Pypi| image:: https://badge.fury.io/py/nsfds2.svg
+    :target: https://pypi.org/project/nsfds2
+    :alt: Pypi Package
+
+.. |Licence| image:: https://img.shields.io/github/license/ipselium/nsfds2.svg
+
+.. |DOI| image:: https://zenodo.org/badge/178000566.svg
+    :target: https://zenodo.org/badge/latestdoi/178000566
+
