@@ -59,6 +59,10 @@ class ComputationDomains:
     ----
         - overlapped => check if overlap with more that `stencil` points
         - with this new formulation, obstacles could be nested
+        - optimizations :
+            - cdomains.argwhere((0, 0, 0))
+            - _np.unique(cdomains._mask, axis=3)
+            - locations_to_cuboids
     """
 
     def __init__(self, shape, obstacles=None, bc='WWWWWW', stencil=3, Npml=15, flat=None):
@@ -294,4 +298,14 @@ class ComputationDomains:
 
 
 if __name__ == "__main__":
-    pass
+
+    from .templates import TestCases
+
+    # Geometry
+    nx, ny, nz = 512, 512, 512
+    shape, stencil = (nx, ny, nz), 3
+
+    test_cases = TestCases(shape, stencil)
+    cdomains = ComputationDomains(shape, test_cases.case9, stencil=stencil)
+    cdomains.show(axis=0, obstacles=True, mask=False, domains=True, bounds=False)
+    cdomains.zoom(ix=slice(None, None), iy=17, iz=slice(None, None))

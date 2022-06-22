@@ -299,3 +299,17 @@ class RegularMesh:
 
     def __repr__(self):
         return self.__str__()
+
+
+if __name__ == "__main__":
+
+    from .templates import TestCases
+
+    shape = 64, 96, 48
+    steps = 1e-4, 1e-4, 1e-4
+    origin = 32, 32, 32
+    stencil = 3
+
+    test_cases = TestCases(shape, stencil)
+    mesh = RegularMesh(shape, steps, origin, obstacles=test_cases.case9, bc='WWWWWW', stencil=3)
+    mesh.show_grid(dpi=900)
