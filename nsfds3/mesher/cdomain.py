@@ -3,43 +3,62 @@
 #
 # Copyright © 2016-2020 Cyril Desjouy <cyril.desjouy@univ-lemans.fr>
 #
-# This file is part of {name}
+# This file is part of nsfds3
 #
-# {name} is free software: you can redistribute it and/or modify
+# nsfds3 is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
-# {name} is distributed in the hope that it will be useful,
+# nsfds3 is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with {name}. If not, see <http://www.gnu.org/licenses/>.
+# along with nsfds3. If not, see <http://www.gnu.org/licenses/>.
 #
 # Creation Date : 2022-06-09 - 23:00:01
 """
 -----------
-DOCSTRING
+
+Module `cdomain` provides `ComputationDomains` class aiming at dividing the
+grid into subdomains corresponding to different geometric configurations.
 
 -----------
 """
 
 import itertools as _it
 import numpy as _np
+import rich.progress as _rp
 from .geometry import ObstacleSet, Domain
 from .utils import locations_to_cuboids, unique, Schemes, scheme_to_str
 from .graphics import CDViewer
-import rich.progress as _rp
 
 
 class ComputationDomains:
-    """ Computation Domains.
+    """ Divide computation domain in several Subdomains based on obstacles in presence.
 
-    TODO :
-        - overlapped => check si overlap, c'est de plus de `stencil` points
-        - Avec cette formulation les obstacles devraient pouvoir être imbriqués...
+    Parameters
+    ----------
+    shape : tuple
+        Size of the domain. Must be a tuple with three int objects.
+    obstacles : list, :py:class:`nsfds3.mesher.geometry.ObstacleSet`, optional
+        Obstacles in the computation domain.
+    bc : {'[ARZPW][ARZPW][ARZPW][ARZPW]'}, optional
+        Boundary conditions. Must be a 6 characters string corresponding to
+        left, right, front, back, bottom, and top boundaries respectively
+    stencil : int, optional
+        Size of the finite difference stencil.
+    Npml : int, optional
+        Number of points of the absorbing area (used if 'A' in `bc`).
+    flat : tuple, list
+        Consider a 2d computation domain. flat must be of the form (axis, index).
+
+    TODO
+    ----
+        - overlapped => check if overlap with more that `stencil` points
+        - with this new formulation, obstacles could be nested
     """
 
     def __init__(self, shape, obstacles=None, bc='WWWWWW', stencil=3, Npml=15, flat=None):
@@ -272,3 +291,7 @@ class ComputationDomains:
         viewer = CDViewer(self)
         return viewer.get_traces(axis=axis, obstacles=obstacles,
                                  mask=mask, domains=domains, bounds=bounds)
+
+
+if __name__ == "__main__":
+    pass
