@@ -10,7 +10,7 @@ Introducing nsfds2
 **nsfds3** is 3D Navier-Stokes Solver that uses finite difference method.
 **nsfds3** is specialized in acoustic simulations.
 
-**nsfds3** is still in developpement. It is still full of bugs and comes with
+**nsfds3** is still in development. It is still full of bugs and comes with
 **ABSOLUTELY NO WARRANTY**.
 
 
@@ -40,7 +40,7 @@ To install **nsfds3**:
    $ pip install nsfds3
 
 
-**Note:** To compile *ofdlib2*, OS X users may recquire:
+**Note:** To compile *ofdlib2*, OS X users may require:
 
 .. code:: console
 

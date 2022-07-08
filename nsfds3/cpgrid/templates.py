@@ -66,7 +66,7 @@ class TestCases:
                             [0, 15, 0], [0, 0, 15], [15, 0, 0], [0, 15, 15], [15, 0, 15], [15, 15, 0],
                             [self.shape[0]-7, 15, 0], [0, 15, self.shape[2]-7], [15, self.shape[1]-7, 0],
                             [self.shape[0]-7, 0, 15], [15, 0, self.shape[2]-7], [0, self.shape[1]-7, 15],
-                            [self.shape[0]-7, self.shape[1]-7, 15], [15, shape[1]-7, self.shape[2]-7], [self.shape[0]-7, 15, self.shape[2]-7],
+                            [self.shape[0]-7, self.shape[1]-7, 15], [15, self.shape[1]-7, self.shape[2]-7], [self.shape[0]-7, 15, self.shape[2]-7],
                             [self.shape[0]-7, 15, 15], [15, self.shape[1]-7, 15], [15, 15, self.shape[2]-7]
                            ],
                 'sizes': 27 * [[7, 7, 7], ]}

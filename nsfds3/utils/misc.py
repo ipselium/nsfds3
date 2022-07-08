@@ -30,8 +30,8 @@ Some tools used by the mesher.
 
 import sys as _sys
 import itertools as _it
-import more_itertools as _mit
 import numpy as _np
+from libfds.cutils import yconsecutives, zconsecutives
 
 
 class GeoMeta:
@@ -63,26 +63,42 @@ class GeoMeta:
 class Schemes:
     """ Listing of schemes. """
 
-    def __init__(self, stencil=3):
+    def __init__(self, stencil=3, ndim=3):
 
-        # 8 corners
-        self.corners = [(stencil, stencil, stencil), (-stencil, stencil, stencil),
-                        (-stencil, -stencil, stencil), (-stencil, -stencil, -stencil),
-                        (stencil, -stencil, -stencil), (stencil, stencil, -stencil),
-                        (stencil, -stencil, stencil), (-stencil, stencil, -stencil)]
-        # 12 edges
-        self.edges = [(stencil, stencil, 0), (0, stencil, stencil),
-                      (stencil, 0, stencil), (-stencil, stencil, 0),
-                      (stencil, -stencil, 0), (-stencil, -stencil, 0),
-                      (0, -stencil, stencil), (0, stencil, -stencil),
-                      (0, -stencil, -stencil), (-stencil, 0, stencil),
-                      (stencil, 0, -stencil), (-stencil, 0, -stencil)]
-        # 6 faces
-        self.faces = [(stencil, 0, 0), (0, stencil, 0), (0, 0, stencil),
-                      (-stencil, 0, 0), (0, -stencil, 0), (0, 0, -stencil)]
+        if ndim not in [2, 3]:
+            raise ValueError('dim must be 2 or 3')
+
+        # 8 corners in 3d / 4 corners in 2d
+        if ndim == 3:
+            self.corners = [(stencil, stencil, stencil), (-stencil, stencil, stencil),
+                            (-stencil, -stencil, stencil), (-stencil, -stencil, -stencil),
+                            (stencil, -stencil, -stencil), (stencil, stencil, -stencil),
+                            (stencil, -stencil, stencil), (-stencil, stencil, -stencil)]
+        else:
+            self.corners = [(stencil, stencil), (-stencil, stencil),
+                            (-stencil, -stencil), (stencil, -stencil)]
+
+        # 12 edges in 3d / 4 edges in 2d
+        if ndim == 3:
+            self.edges = [(stencil, stencil, 0), (0, stencil, stencil),
+                          (stencil, 0, stencil), (-stencil, stencil, 0),
+                          (stencil, -stencil, 0), (-stencil, -stencil, 0),
+                          (0, -stencil, stencil), (0, stencil, -stencil),
+                          (0, -stencil, -stencil), (-stencil, 0, stencil),
+                          (stencil, 0, -stencil), (-stencil, 0, -stencil)]
+        else:
+            self.edges = [(stencil, 0), (-stencil, 0),
+                          (0, stencil), (0, -stencil)]
+
+        # 6 faces in 3d / 0 faces in 2d
+        if ndim == 3:
+            self.faces = [(stencil, 0, 0), (0, stencil, 0), (0, 0, stencil),
+                          (-stencil, 0, 0), (0, -stencil, 0), (0, 0, -stencil)]
+        else:
+            self.faces = []
 
         # centered
-        self.centered = [(0, 0, 0), ]
+        self.centered = [(0,) * ndim, ]
 
     @property
     def all(self):
@@ -100,15 +116,9 @@ def scheme_to_str(value):
     return ''.join('c' if not v else 'm' if v < 0 else 'p' for v in value)
 
 
-def bc3d_tobc2d(bc, axis):
+def bc3d_tobc2d(bc, ax):
     """ Convert 3d bc to 2d. """
-    if axis == 0:
-        idx = (0, 1)
-    elif axis == 1:
-        idx = (2, 3)
-    elif axis == 2:
-        idx = (3, 4)
-    return ''.join(b for i, b in enumerate(bc) if i not in idx)
+    return ''.join(b for i, b in enumerate(bc) if i not in [2 * ax, 2 * ax + 1])
 
 
 def consecutives(data, stepsize=1, coords=True):
@@ -140,7 +150,7 @@ def unique(data, keys=None):
     return sorted_data[row_mask]
 
 
-def locations_to_cuboids(coordinates):
+def locations_to_cuboids_legacy(coordinates):
     """ Return cuboids filling coordinates. """
 
 #    coordinates = (coordinates[:, 0].astype(_np.int16),
@@ -172,6 +182,73 @@ def locations_to_cuboids(coordinates):
                              'size': (i[1] - i[0] + 1, j[1] - j[0] + 1, k[1] - k[0] + 1)}
                             for i, j, k in [(x, yconf, zconf) for x in xconfs]])
 
+    return cuboids
+
+
+def groups(coordinates, only_conf=False):
+    """ Return configuration and groups for cuboids searching... """
+
+    if coordinates.ndim == 1:
+        data = coordinates
+    else:
+        data = coordinates[:, -1]
+
+    idx = _np.r_[0, _np.where(_np.diff(data) != 1)[0] + 1, len(data)]
+    splits = _np.asarray([(data[i], data[j - 1]) for i, j in zip(idx, idx[1:])], dtype=_np.int16)
+    confs = sorted(list(set((s[0], s[-1]) for s in splits)))
+    if not only_conf:
+        if coordinates.shape[1] == 3:
+            consec = zconsecutives(splits, coordinates)
+        elif coordinates.shape[1] == 2:
+            consec = yconsecutives(splits, _np.ascontiguousarray(coordinates))
+        coords = unique(consec)
+        idx = [0, *_np.cumsum([len(list(value)) for key, value
+                                     in _it.groupby(zip(*coords[:, :2].T))])]
+
+        if coordinates.shape[1] == 3:
+            groups = [coords[i:j, 2:] for i, j in zip(idx, idx[1:])]
+        elif coordinates.shape[1] == 2:
+            groups = [coords[i:j, 2] for i, j in zip(idx, idx[1:])]
+
+        return confs, groups
+
+    return confs
+
+
+def locations_to_cuboids(coordinates):
+    """ Search location of cuboid in a set of coordinates. """
+    if coordinates.shape[1] == 3:
+        return _locations_to_3d_cuboids(coordinates)
+
+    if coordinates.shape[1] == 2:
+        return _locations_to_2d_cuboids(coordinates)
+
+    raise ValueError('Coordinates must have (x, 2) or (x, 3) shape')
+
+
+def _locations_to_3d_cuboids(coordinates):
+    cuboids = []
+    zconfs, zgroups = groups(coordinates)
+
+    for zconf, zgroup in zip(zconfs, zgroups):
+        yconfs, ygroups = groups(zgroup)
+        for yconf, ygroup in zip(yconfs, ygroups):
+            xconfs = groups(ygroup, only_conf=True)
+            cuboids.extend([{'origin': (i[0], j[0], k[0]),
+                             'size': (i[1] - i[0] + 1, j[1] - j[0] + 1, k[1] - k[0] + 1)}
+                            for i, j, k in [(x, yconf, zconf) for x in xconfs]])
+    return cuboids
+
+
+def _locations_to_2d_cuboids(coordinates):
+    cuboids = []
+    yconfs, ygroups = groups(coordinates)
+
+    for yconf, ygroup in zip(yconfs, ygroups):
+        xconfs = groups(ygroup, only_conf=True)
+        cuboids.extend([{'origin': (i[0], j[0]),
+                         'size': (i[1] - i[0] + 1, j[1] - j[0] + 1)}
+                          for i, j in [(x, yconf) for x in xconfs]])
     return cuboids
 
 

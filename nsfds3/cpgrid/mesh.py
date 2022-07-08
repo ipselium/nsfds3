@@ -36,7 +36,7 @@ import re as _re
 import numpy as _np
 from .cdomain import ComputationDomains
 from .geometry import ObstacleSet
-from .graphics import fig_scale
+from nsfds3.graphics import fig_scale
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
@@ -84,11 +84,16 @@ class RegularMesh:
         self.obstacles = obstacles
         self.bc = bc
         self.flat = flat
-        self._check_arguments()
 
-        self.nx, self.ny, self.nz = shape
-        self.dx, self.dy, self.dz = steps
-        self.ix0, self.iy0, self.iz0 = origin
+        self._check_arguments_dims()
+        self._check_volume()
+
+        self._set_attributes(('nx', 'ny', 'nz'), self.shape)
+        self._set_attributes(('dx', 'dy', 'dz'), self.steps)
+        self._set_attributes(('odx', 'ody', 'odz'), 1 / _np.array(self.steps))
+        self._set_attributes(('ix0', 'iy0', 'iz0'), self.origin)
+        self._update_arguments()
+
         self.obstacles = ObstacleSet(self.shape, self.obstacles, stencil=self.stencil)
 
         self._check_bc()
@@ -96,40 +101,68 @@ class RegularMesh:
 
         self._make_grid()
         self._find_subdomains()
-        self._update_obstacles()
 
-    def _check_arguments(self):
-        """ Check input arguments of Mesh. """
-        if isinstance(self.flat, (tuple, list)):
-            self.flat_ax, self.flat_idx = self.flat
-            if self.flat_ax not in range(3):
-                raise ValueError('flat[0] (axis) must be 0, 1, or 2')
-            if self.flat_idx not in range(self.shape[self.flat_ax]):
-                raise ValueError('flat[0] (index) must be in the domain')
+    def _axes(self, values=range(3)):
+        return [n for i, n in enumerate(values) if i != self.flat_ax]
 
-        if not self.bc:
-            self.bc = 'W' * len(self.shape) * 2
-        else:
-            self.bc = self.bc.upper()
+    def _set_attributes(self, names, values):
+        values = self._axes(values)
+        _ = [setattr(self, attr, val) for attr, val in zip(names, values)]
 
-        if len(self.bc) != len(self.shape) * 2:
-            raise ValueError('bc must define a boundary for each face of the domain.')
-
-        if not self.obstacles:
-            self.obstacles = []
-
-        if self.obstacles and self.flat:
-            self.obstacles = [obs for obs in self.obstacles
-                              if self.flat_idx in obs.ranges[self.flat_ax]]
-
-        if not self.origin:
-            self.origin = (0, ) * len(self.shape)
+    def _check_arguments_dims(self):
+        """ Check input arguments of the mesh. """
 
         if len(self.shape) not in [2, 3]:
             raise ValueError('Shape must be or dim 2 or 3')
 
+        if not self.origin:
+            self.origin = (0, ) * len(self.shape)
+
         if len(self.shape) != len(self.steps) or len(self.shape) != len(self.origin):
-            raise ValueError('shape, steps, and origin must have same dim.')
+            raise ValueError('shape, steps, origin must have coherent dim.')
+
+        if not self.bc:
+            self.bc = 'W' * len(self.shape) * 2
+        elif len(self.bc) not in [4, 6]:
+            raise ValueError('bc must be of dim 4 or 6')
+        else:
+            self.bc = self.bc.upper()
+
+        if not self.obstacles:
+            self.obstacles = []
+
+    def _update_arguments(self):
+
+        self.shape = tuple(getattr(self, attr, None) for attr
+                           in ('nx', 'ny', 'nz') if getattr(self, attr, None))
+        self.origin = tuple(getattr(self, attr, None) for attr
+                            in ('ix0', 'iy0', 'iz0') if getattr(self, attr, None))
+        self.steps = tuple(getattr(self, attr, None) for attr
+                           in ('dx', 'dy', 'dz') if getattr(self, attr, None))
+        if self.flat and len(self.bc) == 6:
+            self.bc = ''.join(bc for i, bc in enumerate(self.bc)
+                              if i not in [self.flat_ax, self.flat_ax + 1])
+
+    def _check_volume(self):
+        """ Check volume of the mesh. """
+        if self.flat:
+            self.flat_ax, self.flat_idx = self.flat
+            self.flat_plane = self._axes()
+            if self.flat_ax not in range(3):
+                raise ValueError('flat[0] (axis) must be 0, 1, or 2')
+            if self.flat_idx not in range(self.shape[self.flat_ax]):
+                raise ValueError('flat[0] (index) must be in the domain')
+        else:
+            self.flat_ax, self.flat_idx = None, None
+
+        if self.obstacles and self.flat:
+            self.obstacles = [obs.flatten(self.flat_ax) for obs in self.obstacles
+                              if self.flat_idx in obs.ranges[self.flat_ax]]
+
+    @property
+    def volumic(self):
+        """ Return whether mesh is 2d or 3d. """
+        return not self.flat and len(self.shape) == 3
 
     def _check_bc(self):
 
@@ -159,30 +192,23 @@ class RegularMesh:
         """ Make grid. """
         self.x = (_np.arange(self.nx) - self.ix0) * self.dx
         self.y = (_np.arange(self.ny) - self.iy0) * self.dy
-        self.z = (_np.arange(self.nz) - self.iz0) * self.dz
-        self.axis = (self.x, self.y, self.z)
+        if self.volumic:
+            self.z = (_np.arange(self.nz) - self.iz0) * self.dz
+            self.axis = (self.x, self.y, self.z)
+        else:
+            self.axis = (self.x, self.y)
 
     def _find_subdomains(self):
         """ Divide the computation domain into subdomains. """
 
-        self.domain = ComputationDomains(self.shape, self.obstacles,
-                                         self.bc, self.stencil, self.Npml,
-                                         self.flat)
+        self.compdom = ComputationDomains(self.shape, self.obstacles,
+                                          self.bc, self.stencil, self.Npml)
 
-        self.udomains = self.domain.udomains
-        self.cdomains = self.domain.cdomains
+        self.domains = self.compdom.domains
+        self.udomains = [sub for sub in self.domains if sub.tag in [(0, 0), (0, 0, 0)]]
 
-    def _update_obstacles(self):
-        """ Update obstacles if mesh if flat. """
-        if self.flat:
-            obstacles = []
-            for obs in self.obstacles:
-                obstacles.append(obs.to_2d(axis=self.flat_ax))
-            self.obstacles = obstacles
-
-    def _make_view(self, ax1, ax2, side=None, reverse=None):
-        """ Make grid and plot obstacles. """
-
+    def _grid_traces(self, ax1, ax2):
+        """ Make grid traces. """
         traces = []
         kwargs = dict(mode='lines', line={'color': 'rgba(0,0,0,0.1)'})
 
@@ -194,18 +220,31 @@ class RegularMesh:
         for iy in ax2:
             traces.append(go.Scatter(x=ax1, y=iy * y, **kwargs))
 
-        kwargs = {'fill': "toself", 'fillcolor': 'rgba(0,0,0,0.1)',
-                'line': {'color': 'rgba(0,0,0,0.1)'}}
+        return traces
 
-        if self.flat:
-            for obs in self.obstacles:
+    def _object_traces(self, ax1, ax2, side=None, reverse=None, kind='obstacle'):
+        """ Make obstacles traces. """
+        traces = []
+
+        if kind == 'domains':
+            obj = self.udomains
+            kwargs = {'fill': "toself", 'fillcolor': 'rgba(0.39, 0.98, 0.75, 0.1)',
+                      'line': {'color': 'rgba(0.39, 0,98, 0.75)'}}
+        else:
+            obj = self.obstacles
+            kwargs = {'fill': "toself", 'fillcolor': 'rgba(0, 0, 0, 0.1)',
+                      'fillpattern': {'shape': 'x'},
+                      'line': {'color': 'rgba(0, 0, 0)'}}
+
+        if not self.volumic:
+            for obs in obj:
                 ix, iy = obs.vertices
                 traces.append(go.Scatter(x=ax1[ix, ], y=ax2[iy, ],
                                          name=f'obs{obs.sid}',
                                          **kwargs
                                          ))
-        else:
-            for face in getattr(self.obstacles.faces, side):
+        elif side:
+            for face in getattr(obj.faces, side):
                 ix, iy = face.vertices[face.not_axis, :]
                 if reverse == 'reversed':
                     ix, iy = iy, ix
@@ -213,7 +252,7 @@ class RegularMesh:
 
         return traces
 
-    def show_grid(self, dpi=800):
+    def show_grid(self, dpi=800, domains=False):
         """ Plot grid.
 
         todo :
@@ -221,32 +260,37 @@ class RegularMesh:
             - Take one division over N(=4)
             - evolution of the (dx, dy, dz) steps
         """
-        if self.flat:
-            fig = self._show_grid2d()
+        if self.volumic:
+            fig = self._show_grid3d(domains=domains)
+            width, height = fig_scale((self.x, self.z), (self.y, self.z), ref=dpi)
         else:
-            fig = self._show_grid3d()
+            fig = self._show_grid2d(domains=domains)
+            width, height = fig_scale(self.x, self.y, ref=dpi)
 
-        width, height = fig_scale((self.x, self.z), (self.y, self.z), ref=dpi)
         fig.update_layout(showlegend=False, height=height, width=width,
                           plot_bgcolor='rgba(0,0,0,0)')
         fig.show()
 
-    def _show_grid2d(self):
+    def _show_grid2d(self, domains=False):
         """ Show 2d grid. """
-        ax1, ax2 = [ax for i, ax in enumerate(self.axis) if i != self.flat_ax]
-        fig = go.Figure(data=self._make_view(ax1, ax2))
+        fig = go.Figure()
+        fig.add_traces(self._grid_traces(self.x, self.y))
+        if self.obstacles:
+            fig.add_traces(self._object_traces(self.x, self.y, kind='obstacles'))
+        if domains:
+            fig.add_traces(self._object_traces(self.x, self.y, kind='domains'))
         fig.update_xaxes(title=r'$x \, [m]$',
                          autorange=False, automargin=True,
-                         range=[ax1.min(), ax1.max()],
+                         range=[self.x.min(), self.x.max()],
                          )
         fig.update_yaxes(title=r'$y \, [m]$',
                          scaleanchor="x",
                          autorange=False, automargin=True,
-                         range=[ax2.min(), ax2.max()],
+                         range=[self.y.min(), self.y.max()],
                          )
         return fig
 
-    def _show_grid3d(self):
+    def _show_grid3d(self, domains=False):
         """ Show 3d grid. """
         # Figure
         fig = make_subplots(rows=2, cols=2,
@@ -267,7 +311,15 @@ class RegularMesh:
 
         for row, col, side, rev, anchor, (ax1l, ax1), (ax2l, ax2) in axis:
 
-            fig.add_traces(self._make_view(ax1, ax2, side, rev), rows=row, cols=col)
+            fig.add_traces(self._grid_traces(ax1, ax2), rows=row, cols=col)
+            if self.obstacles:
+                fig.add_traces(self._object_traces(ax1, ax2, side, rev,
+                               kind='obstacles'),
+                               rows=row, cols=col)
+            if domains:
+                fig.add_traces(self._object_traces(ax1, ax2, side, rev,
+                               kind='domains'),
+                               rows=row, cols=col)
 
             fig.update_xaxes(row=row, col=col,
                              title=ax1l,
@@ -281,16 +333,16 @@ class RegularMesh:
                              #range=[ax2.min(), ax2.max()],
                              )
 
-        fig.add_traces(self.domain.get_traces(axis=0, obstacles=True,
-                                              mask=False, domains=False,
-                                              bounds=True), rows=2, cols=2)
+        fig.add_traces(self.compdom.get_traces(axis=0, obstacles=True,
+                                                mask=False, domains=False,
+                                                bounds=True), rows=2, cols=2)
         return fig
 
     def __str__(self):
-        s = f'Cartesian {self.nx}x{self.ny} points grid '
-        s = f'with {self.bc} boundary conditions:\n\n'
-        s += f'\t* Spatial step : {(self.dx, self.dz)}\n'
-        s += f'\t* Origin       : {(self.ix0, self.iz0)}\n'
+        s = f"Cartesian {'x'.join(str(n) for n in self.shape)} points grid "
+        s += f'with {self.bc} boundary conditions:\n\n'
+        s += f"\t* Spatial step : ({', '.join(str(n) for n in self.steps)})\n"
+        s += f"\t* Origin       : ({', '.join(str(n) for n in self.origin)})\n"
         if 'A' in self.bc:
             s += f'\t* Points in PML: {self.Npml}\n'
         s += f'\t* Max stencil  : {self.stencil}\n'

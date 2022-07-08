@@ -52,7 +52,7 @@ def fig_scale(ax1, ax2, ref=None):
         if s1 < s2:
             b2, b1 = ref, ref * b1 / b2
         else:
-            b1, b2 = ref, ref * b1 / b2
+            b1, b2 = ref, ref * b2 / b1
 
     return b2 if s1 < s2 else b1, b2 if s2 < s1 else b1
 
@@ -65,7 +65,7 @@ class CDViewer:
         self.stencil = cdomain.stencil
         self.obstacles = cdomain.obstacles
         self.mask = cdomain._mask
-        self.udomains = cdomain.udomains
+        self.domains = cdomain.domains
         self.data = []
 
     def show(self, axis=0, obstacles=True, mask=False, domains=False, bounds=True):
@@ -113,11 +113,11 @@ class CDViewer:
         nx, ny, nz = self.shape
 
         if not bounds:
-            domains = [sub for sub in self.udomains
+            domains = [sub for sub in self.domains
                        if sub.ix[0] != 0 and sub.iy[0] != 0 and sub.iz[0] != 0
                        and sub.ix[1] != nx - 1 and sub.iy[1] != ny - 1 and sub.iz[1] != nz - 1]
         else:
-            domains = self.udomains
+            domains = self.domains
 
         for sub in domains:
             data.append(_go.Mesh3d(x=sub.vertices[0],
