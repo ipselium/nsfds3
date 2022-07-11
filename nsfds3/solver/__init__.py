@@ -27,5 +27,6 @@ DOCSTRING
 """
 
 from .config import CfgSetup
+from .fdtd import FDTD
 
-__all__ = []
+__all__ = ['CfgSetup', 'FDTD']

@@ -18,7 +18,7 @@
 # You should have received a copy of the GNU General Public License
 # along with nsfds3. If not, see <http://www.gnu.org/licenses/>.
 #
-# Creation Date : 2022-07-08 - 13:26:57
+# Creation Date : 2022-07-11 - 22:25:34
 """
 -----------
 DOCSTRING
@@ -26,9 +26,31 @@ DOCSTRING
 -----------
 """
 
-from ._mesh import RegularMesh
-from ._cdomain import ComputationDomains
-from ._geometry import Obstacle, ObstacleSet, Domain, DomainSet
 
-__all__ = ['templates', 'RegularMesh', 'ComputationDomains',
-           'ObstacleSet', 'Obstacle', 'DomainSet', 'Domain']
+import itertools as _it
+from time import perf_counter as _pc
+import numpy as np
+import matplotlib.pyplot as plt
+
+from libfds.fields import Fields2d
+from libfds.fluxes import EulerianFluxes2d
+from libfds.filters import SelectiveFilter, ShockCapture
+from mplutils.custom_cmap import modified_jet, MidPointNorm
+
+from rich import print
+from rich.panel import Panel
+from rich.progress import track
+
+from nsfds3.cpgrid import RegularMesh
+from nsfds3.solver import CfgSetup, FDTD
+
+
+if __name__ == '__main__':
+    config = CfgSetup()
+    args, kwargs = config.get_config()
+    mesh = RegularMesh(*args, **kwargs)
+    fdtd = FDTD(config, mesh)
+    print(mesh)
+    print(mesh.domains)
+    fdtd.run()
+    fdtd.show()

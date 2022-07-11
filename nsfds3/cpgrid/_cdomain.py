@@ -31,7 +31,7 @@ grid into subdomains corresponding to different geometric configurations.
 import itertools as _it
 import numpy as _np
 import rich.progress as _rp
-from .geometry import ObstacleSet, DomainSet, Domain
+from ._geometry import ObstacleSet, DomainSet, Domain
 from nsfds3.utils.misc import locations_to_cuboids, unique, Schemes, scheme_to_str
 from nsfds3.graphics import CDViewer
 from libfds.cutils import nonzeros, where

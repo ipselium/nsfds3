@@ -30,7 +30,7 @@ The `templates` module provides a collection of examples to :
 -----------
 """
 
-from .geometry import Obstacle
+from nsfds3.cpgrid import Obstacle
 
 
 class TestCases:

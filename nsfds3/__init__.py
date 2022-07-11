@@ -26,6 +26,10 @@ Init package
 ------------
 """
 import sys
+import nsfds3.solver
+import nsfds3.cpgrid
+import nsfds3.utils
+import nsfds3.graphics
 
 if sys.platform == 'darwin':
     import matplotlib

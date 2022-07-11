@@ -34,11 +34,11 @@ Module `mesh` provides three classes to build meshes:
 
 import re as _re
 import numpy as _np
-from .cdomain import ComputationDomains
-from .geometry import ObstacleSet
-from nsfds3.graphics import fig_scale
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+from ._cdomain import ComputationDomains
+from ._geometry import ObstacleSet
+from nsfds3.graphics import fig_scale
 
 
 class GridError(Exception):
