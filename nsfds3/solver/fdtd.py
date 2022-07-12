@@ -29,11 +29,13 @@ DOCSTRING
 -----------
 """
 
-
+import sys as _sys
 import itertools as _it
+import pickle as _pkl
 from time import perf_counter as _pc
-import numpy as np
-import matplotlib.pyplot as plt
+import numpy as _np
+import matplotlib.pyplot as _plt
+import h5py as _h5py
 
 from libfds.fields import Fields2d
 from libfds.fluxes import EulerianFluxes2d
@@ -41,9 +43,10 @@ from libfds.filters import SelectiveFilter, ShockCapture
 from mplutils.custom_cmap import modified_jet, MidPointNorm
 
 from rich import print
+from rich.prompt import Prompt
 from rich.panel import Panel
 from rich.progress import track
-
+from rich.color import ANSI_COLOR_NAMES
 
 from nsfds3.cpgrid import RegularMesh
 from nsfds3.solver import CfgSetup
@@ -80,13 +83,22 @@ class FDTD:
         if self.cfg.cpt:
             self.scapture = ShockCapture(self.fld)
         if self.cfg.probes:
-            self.probes = np.zeros((len(cfg.probes), cfg.ns))
+            self.probes = _np.zeros((len(cfg.probes), cfg.ns))
         if self.cfg.save_vortis:
             pass
 
+        # Curvilinear stuff
+        self._physical = False
+
+        # Initialize save
+        self._init_save()
+
         # Initialize timer
         self._timings = {}
-        self.colors = [f'yellow{i}' for i in range(1, 5)]
+        self.colors = [c for n, c in enumerate(ANSI_COLOR_NAMES) if 40 < n < 51]
+
+        [f'yellow{i}' for i in range(1, 5)] + \
+                      ['green1', 'green3', 'green4']
 
     @staticmethod
     def timer(func):
@@ -108,8 +120,10 @@ class FDTD:
         desc = ""
         ttime = sum(list(_it.chain(*self._timings.values()))) / self.cfg.ns
         for color, key in zip(self.colors, self._timings):
-            desc += f'\t-[italic {color}]{key:20}: '
-            desc += f'{np.array(self._timings[key]).mean():.4f}\n'
+            time = _np.array(self._timings[key]).mean()
+            if time > 2e-4:
+                desc += f'\t-[italic {color}]{key:20}: '
+                desc += f'{time:.4f}\n'
             self._timings[key] = []
 
         if self.timings and not self.quiet:
@@ -126,9 +140,11 @@ class FDTD:
         for self.cfg.it in track(range(self.cfg.it, self.cfg.nt + 1),
                                  disable=self.quiet):
             self.eulerian_fluxes()
+            self.viscous_fluxes()
             self.selective_filter()
             self.shock_capture()
             if not self.cfg.it % self.cfg.ns:
+                self.save()
                 self.unload_timings()
 
         if not self.quiet:
@@ -144,7 +160,7 @@ class FDTD:
 
     @timer
     def viscous_fluxes(self):
-        """ Compute viscous fluxes """
+        """ Compute viscous fluxes. """
         if self.cfg.vsc:
             pass
 
@@ -161,12 +177,29 @@ class FDTD:
             self.scapture.apply()
 
     @timer
-    def update_pressure(self):
-        """ Compute viscous fluxes """
+    def toggle_system(self):
+        """ Convert curvilinear coordinates : from physical to numeric or reverse. """
+        if self.cfg.mesh == 'curvilinear':
+            if self._physical:
+                self.fld.r = self.fld.r / self.msh.J
+                self.fld.ru = self.fld.ru / self.msh.J
+                self.fld.rv = self.fld.rv / self.msh.J
+                self.fld.re = self.fld.re / self.msh.J
+                if self.msh.volumic:
+                    self.fld.rw = self.fld.rw / self.msh.J
+                self._physical = not self._physical
+            else:
+                self.fld.r = self.fld.r * self.msh.J
+                self.fld.ru = self.fld.ru * self.msh.J
+                self.fld.rv = self.fld.rv * self.msh.J
+                self.fld.re = self.fld.re * self.msh.J
+                if self.msh.volumic:
+                    self.fld.rw = self.fld.rw * self.msh.J
+                self._physical = not self._physical
 
     @timer
     def update_vorticity(self):
-        """ Compute viscous fluxes """
+        """ Compute vorticity """
         if self.cfg.save_vortis:
             pass
 
@@ -175,23 +208,101 @@ class FDTD:
         """ Update probes. """
         if self.cfg.probes:
             for n, c in enumerate(self.cfg.probes):
-                self.probes[n, self.cfg.it % self.cfg.ns] = \
-                        self.fld.p[c[0], c[1]]
+                self.probes[n, self.cfg.it % self.cfg.ns] = self.fld.p[tuple(c)]
 
     @timer
     def save(self):
-        """ Compute viscous fluxes """
+        """ Save data. """
+
+        self.sfile.attrs['itmax'] = self.cfg.it
+
+        if self.cfg.save_fields:
+            self.sfile.create_dataset('r_it' + str(self.cfg.it),
+                                      data=self.fld.r,
+                                      compression=self.cfg.comp)
+            self.sfile.create_dataset('ru_it' + str(self.cfg.it),
+                                      data=self.fld.ru,
+                                      compression=self.cfg.comp)
+            self.sfile.create_dataset('rv_it' + str(self.cfg.it),
+                                      data=self.fld.rv,
+                                      compression=self.cfg.comp)
+            self.sfile.create_dataset('re_it' + str(self.cfg.it),
+                                      data=self.fld.re,
+                                      compression=self.cfg.comp)
+            if self.msh.volumic:
+                self.sfile.create_dataset('rw_it' + str(self.cfg.it),
+                                          data=self.fld.re,
+                                          compression=self.cfg.comp)
+
+        if self.cfg.save_vortis:
+            self.sfile.create_dataset('w_it' + str(self.cfg.it),
+                                      data=self.fld.w,
+                                      compression=self.cfg.comp)
+
+        if self.cfg.probes:
+            self.sfile['probe_values'][:, self.cfg.it - self.cfg.ns:self.cfg.it] = self.probes
+
+    def _init_save(self):
+        """ Init save. """
+
+        if self.cfg.datafile.is_file():
+            msg = f'[bold red]{self.cfg.datafile}[/] already exists. \n[blink]Overwrite ?'
+            overwrite = Prompt.ask(msg, choices=['yes', 'no'], default='no')
+            if overwrite.lower() == 'no':
+                _sys.exit(1)
+
+        with open(self.cfg.datafile.with_suffix('.cfg'), 'wb') as pkl:
+            _pkl.dump(self.cfg, pkl)
+
+        self.sfile = _h5py.File(self.cfg.datafile, 'w')
+#        self.sfile.attrs['obstacles'] = self.msh.get_obstacles()
+#        self.sfile.attrs['domains'] = self.msh.get_domains(only_xz=True)
+        self.sfile.create_dataset('x', data=self.msh.x, compression=self.cfg.comp)
+        self.sfile.create_dataset('y', data=self.msh.y, compression=self.cfg.comp)
+        self.sfile.attrs['dx'] = self.msh.dx
+        self.sfile.attrs['dy'] = self.msh.dy
+        self.sfile.attrs['dt'] = self.cfg.dt
+        self.sfile.attrs['nx'] = self.msh.nx
+        self.sfile.attrs['ny'] = self.msh.ny
+        self.sfile.attrs['nt'] = self.cfg.nt
+        self.sfile.attrs['ns'] = self.cfg.ns
+        self.sfile.attrs['p0'] = self.cfg.p0
+        self.sfile.attrs['rho0'] = self.cfg.rho0
+        self.sfile.attrs['gamma'] = self.cfg.gamma
+        self.sfile.attrs['Npml'] = self.cfg.Npml
+        self.sfile.attrs['mesh'] = self.cfg.mesh
+        self.sfile.attrs['bc'] = self.cfg.bc
+        self.sfile.attrs['itmax'] = self.cfg.it
+        if self.msh.volumic:
+            self.sfile.attrs['dz'] = self.msh.dz
+            self.sfile.attrs['nz'] = self.msh.nz
+            self.sfile.create_dataset('z', data=self.msh.z, compression=self.cfg.comp)
+
+        probes = _np.zeros((len(self.cfg.probes), self.cfg.nt))
+        self.sfile.create_dataset('probe_locations', data=self.cfg.probes)
+        self.sfile.create_dataset('probe_values', data=probes,
+                                  compression=self.cfg.comp)
+
+        if self.cfg.mesh == 'curvilinear':
+            self.sfile.create_dataset('J', data=self.msh.J, compression=self.cfg.comp)
+            self.sfile.create_dataset('xn', data=self.msh.xn, compression=self.cfg.comp)
+            self.sfile.create_dataset('yn', data=self.msh.yn, compression=self.cfg.comp)
+            self.sfile.create_dataset('xp', data=self.msh.xp, compression=self.cfg.comp)
+            self.sfile.create_dataset('yp', data=self.msh.yp, compression=self.cfg.comp)
+            if self.msh.volumic:
+                self.sfile.create_dataset('zn', data=self.msh.yn, compression=self.cfg.comp)
+                self.sfile.create_dataset('zp', data=self.msh.yp, compression=self.cfg.comp)
 
     def show(self):
         """ Show results. """
-        _, axes = plt.subplots(1, 1, figsize=(9, 4))
-        p = np.array(self.fld.p) - self.cfg.p0
+        _, axes = _plt.subplots(1, 1, figsize=(9, 4))
+        p = _np.array(self.fld.p) - self.cfg.p0
 
         cmap = modified_jet()
         norm = MidPointNorm(vmin=p.min(), vmax=p.max(), midpoint=0)
 
         axes.imshow(p, origin='lower', cmap=cmap, norm=norm)
-        plt.show()
+        _plt.show()
 
 
 if __name__ == '__main__':

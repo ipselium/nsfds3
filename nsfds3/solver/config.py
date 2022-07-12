@@ -50,7 +50,6 @@ import datetime as _datetime
 import pathlib as _pathlib
 import configparser as _configparser
 from pkg_resources import parse_version as _parse_version
-from rich.console import Console as _Console
 from nsfds3.utils import files
 
 
@@ -177,9 +176,6 @@ class CfgSetup:
 
         # Minimal version of the config file
         self.base_version = '0.1.0'
-
-        # Init console
-        self.console = _Console()
 
         # Command line arguments + home
         self.args = args

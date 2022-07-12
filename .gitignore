@@ -2,6 +2,7 @@ archives/
 results/
 *TODO*
 *.hdf5
+*.cfg
 *.mkv
 *log*
 *bench*
