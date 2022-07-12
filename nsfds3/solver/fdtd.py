@@ -141,8 +141,12 @@ class FDTD:
                                  disable=self.quiet):
             self.eulerian_fluxes()
             self.viscous_fluxes()
+            self.toggle_system()
             self.selective_filter()
             self.shock_capture()
+            self.toggle_system()
+            self.update_vorticity()
+            self.update_probes()
             if not self.cfg.it % self.cfg.ns:
                 self.save()
                 self.unload_timings()
@@ -181,20 +185,10 @@ class FDTD:
         """ Convert curvilinear coordinates : from physical to numeric or reverse. """
         if self.cfg.mesh == 'curvilinear':
             if self._physical:
-                self.fld.r = self.fld.r / self.msh.J
-                self.fld.ru = self.fld.ru / self.msh.J
-                self.fld.rv = self.fld.rv / self.msh.J
-                self.fld.re = self.fld.re / self.msh.J
-                if self.msh.volumic:
-                    self.fld.rw = self.fld.rw / self.msh.J
+                self.fld.phys2num()
                 self._physical = not self._physical
             else:
-                self.fld.r = self.fld.r * self.msh.J
-                self.fld.ru = self.fld.ru * self.msh.J
-                self.fld.rv = self.fld.rv * self.msh.J
-                self.fld.re = self.fld.re * self.msh.J
-                if self.msh.volumic:
-                    self.fld.rw = self.fld.rw * self.msh.J
+                self.fld.num2phys()
                 self._physical = not self._physical
 
     @timer
