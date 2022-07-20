@@ -66,6 +66,7 @@ class CDViewer:
         self.obstacles = cdomain.obstacles
         self.mask = cdomain._mask
         self.domains = cdomain.domains
+        self.udomains = [s for s in self.domains if s.tag != (0, ) * len(self.shape)]
         self.data = []
 
     def show(self, axis=0, obstacles=True, mask=False, domains=False, bounds=True):
@@ -74,7 +75,8 @@ class CDViewer:
         data = self.get_traces(axis=axis, obstacles=obstacles,
                                mask=mask, domains=domains, bounds=bounds)
         fig = _go.Figure(data=data)
-        fig.update_layout(autosize=False,
+        fig.update_layout(showlegend=False,
+                          autosize=False,
                           width=1000,
                           height=800,)
         fig.show()
@@ -87,33 +89,75 @@ class CDViewer:
             data.extend(self._show_obstacles())
         if domains:
             data.extend(self._show_domains(bounds))
-        if mask:
+        if mask and len(self.shape) == 3:
             data.extend(self._show_mask(axis))
 
         return data
 
     def _show_obstacles(self):
         data = []
-        for sub in self.obstacles:
-            data.append(_go.Mesh3d(x=sub.vertices[0],
-                                   y=sub.vertices[1],
-                                   z=sub.vertices[2],
-                                   intensity=_np.linspace(0, 1, 8, endpoint=True),
-                                   name='y',
-                                   opacity=1,
-                                   alphahull=0,
-                                   showscale=False,
-                                   flatshading=True   # to hide the triangles
-                                   ))
+        if len(self.shape) == 2:
+            x = _np.arange(self.shape[0])
+            y = _np.arange(self.shape[1])
+            kwargs = {'fill': "toself", 'fillcolor': 'rgba(0, 0, 0, 0.1)',
+                      'fillpattern': {'shape': 'x'},
+                      'line': {'color': 'rgba(0, 0, 0)'}}
+            for obs in self.obstacles:
+                ix, iy = obs.vertices
+                data.append(_go.Scatter(x=x[ix, ], y=y[iy, ],
+                                        name=f'obs{obs.sid}',
+                                        **kwargs
+                                        ))
+        else:
+            for sub in self.obstacles:
+                data.append(_go.Mesh3d(x=sub.vertices[0],
+                                       y=sub.vertices[1],
+                                       z=sub.vertices[2],
+                                       intensity=_np.linspace(0, 1, 8, endpoint=True),
+                                       name='y',
+                                       opacity=1,
+                                       alphahull=0,
+                                       showscale=False,
+                                       flatshading=True   # to hide the triangles
+                                       ))
         return data
 
     def _show_domains(self, bounds=True):
+        if len(self.shape) == 2:
+            return self._show_domains2d(bounds=bounds)
+        return self._show_domains3d(bounds=bounds)
+
+    def _show_domains2d(self, bounds=True):
+
+        data = []
+        nx, ny = self.shape
+
+        if not bounds:
+            domains = [sub for sub in self.udomains
+                       if sub.ix[0] != 0 and sub.iy[0] != 0
+                       and sub.ix[1] != nx - 1 and sub.iy[1] != ny - 1]
+        else:
+            domains = self.domains
+
+        kwargs = {'fill': "toself", 'fillcolor': 'rgba(0.39, 0.98, 0.75, 0.1)',
+                  'line': {'color': 'rgba(0.39, 0,98, 0.75)'}}
+        x = _np.arange(self.shape[0])
+        y = _np.arange(self.shape[1])
+        for obs in domains:
+            ix, iy = obs.vertices
+            data.append(_go.Scatter(x=x[ix, ], y=y[iy, ],
+                                    name=f'obs{obs.sid}',
+                                    **kwargs
+                                    ))
+        return data
+
+    def _show_domains3d(self, bounds=True):
 
         data = []
         nx, ny, nz = self.shape
 
         if not bounds:
-            domains = [sub for sub in self.domains
+            domains = [sub for sub in self.udomains
                        if sub.ix[0] != 0 and sub.iy[0] != 0 and sub.iz[0] != 0
                        and sub.ix[1] != nx - 1 and sub.iy[1] != ny - 1 and sub.iz[1] != nz - 1]
         else:

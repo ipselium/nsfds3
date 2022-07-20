@@ -35,6 +35,7 @@ import pickle as _pkl
 from time import perf_counter as _pc
 import numpy as _np
 import matplotlib.pyplot as _plt
+from matplotlib import patches as _patches, path as _path
 import h5py as _h5py
 
 from libfds.fields import Fields2d
@@ -156,6 +157,8 @@ class FDTD:
             msg += 'End at physical time [red]t = {:.4f} sec.'
             print(Panel(msg.format(misc.secs_to_dhms(_pc() - ti),
                                    self.cfg.dt * self.cfg.it)))
+
+        self.sfile.close()
 
     @timer
     def eulerian_fluxes(self):
@@ -287,15 +290,37 @@ class FDTD:
                 self.sfile.create_dataset('zn', data=self.msh.yn, compression=self.cfg.comp)
                 self.sfile.create_dataset('zp', data=self.msh.yp, compression=self.cfg.comp)
 
-    def show(self):
+    def show(self, variable='p', vmin=None, vmax=None, nans=False):
         """ Show results. """
         _, axes = _plt.subplots(1, 1, figsize=(9, 4))
-        p = _np.array(self.fld.p) - self.cfg.p0
+
+        if variable in ['p', 'ru', 'rv', 're', 'r']:
+            var = _np.array(getattr(self.fld, variable))
+        else:
+            raise Exception('var must be p, ru, rv, re, or r')
+
+        if variable == 'p':
+            var -= self.cfg.p0
+
+        if not vmin:
+            vmin = _np.nanmin(var)
+        if not vmax:
+            vmax = _np.nanmax(var)
 
         cmap = modified_jet()
-        norm = MidPointNorm(vmin=p.min(), vmax=p.max(), midpoint=0)
+        norm = MidPointNorm(vmin=vmin, vmax=vmax, midpoint=0)
 
-        axes.imshow(p, origin='lower', cmap=cmap, norm=norm)
+        axes.imshow(var, origin='lower', cmap=cmap, norm=norm)
+
+        if nans:
+            nans = _np.where(_np.isnan(var))[::-1]
+            axes.plot(*nans, 'r.')
+
+        for obs in self.msh.obstacles:
+            edges = _patches.Rectangle(obs.origin[::-1],
+                                       *(_np.array(obs.size[::-1]) - 1),
+                                       linewidth=3, fill=None)
+            axes.add_patch(edges)
         _plt.show()
 
 

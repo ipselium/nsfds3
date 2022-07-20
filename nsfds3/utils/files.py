@@ -29,26 +29,27 @@ Utils : Files
 
 import os
 import sys
-from fdgrid import templates as _tplt
+from nsfds3.cpgrid import templates as _tplt
 
 
 def get_obstacle(cfg):
     """ Get obstacle from custom file or fdgrid templates. """
 
-    if cfg.geofile != 'None':
+    if cfg.geofile not in cfg.none:
         try:
             sys.path.append(os.path.dirname(cfg.geofile))
             custom = __import__(os.path.basename(cfg.geofile).split('.')[0])
             obstacle = getattr(custom, cfg.geoname)(cfg.nx, cfg.nz)
             cfg.geoflag = True
-        except (AttributeError, ImportError) as e:
+        except (AttributeError, ImportError):
             cfg.geoflag = False
             obstacle = []
     else:
         try:
-            obstacle = getattr(_tplt, cfg.geoname)(cfg.nx, cfg.nz)
+            template = _tplt.TestCases(cfg.shape, cfg.stencil)
+            obstacle = getattr(template, cfg.geoname)
             cfg.geoflag = True
-        except AttributeError as e:
+        except AttributeError:
             cfg.geoflag = False
             obstacle = []
     return obstacle
@@ -63,14 +64,14 @@ def get_curvilinear(cfg):
             custom = __import__(os.path.basename(cfg.geofile).split('.')[0])
             fcurv = getattr(custom, cfg.curvname)
             cfg.curvflag = True
-        except (AttributeError, ImportError) as e:
+        except (AttributeError, ImportError):
             cfg.curvflag = False
             fcurv = None
     else:
         try:
             fcurv = getattr(_tplt, cfg.curvname)
             cfg.curvflag = True
-        except AttributeError as e:
+        except AttributeError:
             cfg.curvflag = False
             fcurv = None
     return fcurv

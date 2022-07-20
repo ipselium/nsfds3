@@ -372,17 +372,20 @@ class Face(BasicGeo):
         # Check if this face is a subset of a boundary of the domain
         self.clamped = self.loc in [0, domain.shape[self.axis] - 1]
 
+        # Check if another face overlaps this face
+        self.overlapped = [face for face in domain.faces
+                           if face.side == self.opposite and self.intersects(face)]
+
         # Check if this face is bounded by at least one other face in the
         # orthogonal direction
         self.bounded = [(face.axis, face.normal) for face in domain.faces
                         if face.axis != self.axis and face.sid != self.sid
                         and self.intersects(face)
-                        and [len(i) > 1 for i in self.intersection(face)].count(True) == 1
-                        and (self.loc in face.ranges[self.axis][1:-1])]
+                        #                        and [len(i) > 1 for i in self.intersection(face)].count(True) == 1
+                        #                        and (self.loc in face.ranges[self.axis][1:-1])]
+                        and (self.loc in face.ranges[self.axis])
+                        and not self.overlapped]
 
-        # Check if another face overlaps this face
-        self.overlapped = [face for face in domain.faces
-                           if face.side == self.opposite and self.intersects(face)]
 
         # Check if another face covers entirely this face
         covered = [face for face in domain.faces

@@ -228,7 +228,8 @@ class ComputationDomains:
         # Fix faces that overlap
         for face1, face2 in self.obstacles.faces.overlapped:
             inter = face1.intersection(face2)
-            inter = [slice(min(i) + 1, max(i)) for i in inter]
+            #inter = [slice(min(i) + 1, max(i)) for i in inter]
+            inter = [slice(min(i) + 1 if min(i) != max(i) else min(i), max(i)) for i in inter]
             inter[face1.axis] = slice(inter[face1.axis].start - self._midstencil,
                                       inter[face1.axis].start + self._midstencil - 1)
             inter = tuple(inter)

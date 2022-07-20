@@ -39,12 +39,13 @@ class TestCases:
     def __init__(self, shape, stencil=3):
         self.shape = shape
         self.stencil = stencil
+        self.thresh = self.stencil * 2 + 1
 
     def create_geometry(self, origins, sizes, bc=None):
         """ Obstacles separated"""
         obstacles = []
         if not bc:
-            bc = ['WWWWWW', ] * len(origins)
+            bc = ['W' * 2 * len(self.shape), ] * len(origins)
 
         for origin, size, _bc in zip(origins, sizes, bc):
             obstacles.append(Obstacle(origin=origin, size=size, bc=_bc))
@@ -52,78 +53,224 @@ class TestCases:
         return obstacles
 
     @property
-    def case0(self):
+    def all(self):
+        """ Return a list of all test cases. """
+        return [self.empty, self.single, self.edges,
+                self.superimposed1, self.superimposed2,
+                self.overlapped1, self.overlapped2,
+                self.Lcell, self.Tcell, self.Ocell]
+
+    @property
+    def empty(self):
         """ Empty domain. """
         conf = {'origins': [], 'sizes': []}
         return self.create_geometry(**conf)
 
     @property
-    def case1(self):
-        """ All possible singles... """
-        conf = {'origins': [[0, 0, 0], [self.shape[0]-7, self.shape[1]-7, self.shape[2]-7], [15, 15, 15],
-                            [self.shape[0]-7, 0, 0], [0, self.shape[1]-7, 0], [0, 0, self.shape[2]-7],
-                            [0, self.shape[1]-7, self.shape[2]-7], [self.shape[0]-7, 0, self.shape[2]-7], [self.shape[0]-7, self.shape[1]-7, 0],
-                            [0, 15, 0], [0, 0, 15], [15, 0, 0], [0, 15, 15], [15, 0, 15], [15, 15, 0],
-                            [self.shape[0]-7, 15, 0], [0, 15, self.shape[2]-7], [15, self.shape[1]-7, 0],
-                            [self.shape[0]-7, 0, 15], [15, 0, self.shape[2]-7], [0, self.shape[1]-7, 15],
-                            [self.shape[0]-7, self.shape[1]-7, 15], [15, self.shape[1]-7, self.shape[2]-7], [self.shape[0]-7, 15, self.shape[2]-7],
-                            [self.shape[0]-7, 15, 15], [15, self.shape[1]-7, 15], [15, 15, self.shape[2]-7]
-                           ],
-                'sizes': 27 * [[7, 7, 7], ]}
-        return self.create_geometry(**conf)
-
-    @property
-    def case2(self):
+    def single(self):
         """ Two obstacles overlapped (two sides). """
-        conf = {'origins': [(28, 7, 0), (8, 7, 7), (13, 10, 21)],
-                'sizes': [(7, 10, 10), (15, 15, 15), (15, 15, 15)]}
+
+        if len(self.shape) == 2:
+            conf = {'origins': [(self.thresh, ) * 2, ],
+                    'sizes': [(40, ) * 2, ]}
+        else:
+            conf = {'origins': [(self.thresh, ) * 3, ],
+                    'sizes': [(40, ) * 3, ]}
         return self.create_geometry(**conf)
 
     @property
-    def case3(self):
-        """ Two obstacles overlapped (one sides). """
-        conf = {'origins': [(28, 7, 0), (8, 10, 7), (13, 10, 21)],
-                'sizes': [(7, 10, 10), (15, 15, 15), (15, 15, 15)]}
+    def edges(self):
+        """ All possible singles... """
+        height = 2 * self.thresh
+        if any(s < (3 * height) + 3 * self.thresh for s in self.shape):
+            raise Exception('domain too small for this test case')
+
+        mid = [int(self.shape[i] / 2) - int(height / 2)
+               for i in range(len(self.shape))]
+        if len(self.shape) == 2:
+            conf = {'origins': [[0, 0],
+                                [mid[0], 0],
+                                [0, mid[1]],
+                                [mid[0], mid[1]],
+                                [self.shape[0] - height, 0],
+                                [0, self.shape[1] - height],
+                                [mid[0], self.shape[1] - height],
+                                [self.shape[0] - height, mid[1]],
+                                [self.shape[0] - height, self.shape[1] - height],
+                               ],
+                    'sizes': 9 * [[height, height], ]}
+        else:
+            conf = {'origins': [[0, 0, 0],
+                                [mid[0], 0, 0],
+                                [0, mid[1], 0],
+                                [0, 0, mid[2]],
+                                [mid[0], mid[1], 0],
+                                [mid[0], 0, mid[2]],
+                                [0, mid[1], mid[2]],
+                                [mid[0], mid[1], mid[2]],
+                                [self.shape[0] - height, 0, 0],
+                                [0, self.shape[1] - height, 0],
+                                [0, 0, self.shape[2] - height],
+                                [0, self.shape[1] - height, self.shape[2] - height],
+                                [self.shape[0] - height, 0, self.shape[2] - height],
+                                [self.shape[0] - height, self.shape[1] - height, 0],
+                                [self.shape[0] - height, self.shape[1] - height, self.shape[2] - height],
+                                [mid[0], self.shape[1] - height, 0],
+                                [mid[0], 0, self.shape[2] - height],
+                                [0, mid[1], self.shape[2] - height],
+                                [self.shape[0] - height, mid[1], 0],
+                                [0, self.shape[1] - height, mid[2]],
+                                [self.shape[0] - height, 0, mid[2]],
+                                [self.shape[0] - height, mid[1], mid[2]],
+                                [mid[0], self.shape[1] - height, mid[2]],
+                                [mid[0], mid[1], self.shape[2] - height],
+                                [mid[0], self.shape[1] - height, self.shape[2] - height],
+                                [self.shape[0] - height, mid[1], self.shape[2] - height],
+                                [self.shape[0] - height, self.shape[1] - height, mid[2]]],
+                    'sizes': 27 * [[height, height, height], ]}
         return self.create_geometry(**conf)
 
     @property
-    def case4(self):
+    def superimposed1(self):
         """ Two obstacles superimposed. """
-        conf = {'origins': [(13, 10, 8), (13, 10, 22)],
-                'sizes': [(10, 15, 15), (10, 15, 15)]}
+        height = 2 * self.thresh
+        if len(self.shape) == 2:
+            conf = {'origins': [(self.thresh, self.thresh),
+                                (self.thresh, self.thresh + height - 1)],
+                    'sizes': [(height, height), (height, height)]}
+        else:
+            conf = {'origins': [(self.thresh, self.thresh, self.thresh),
+                                (self.thresh, self.thresh, self.thresh + height - 1)],
+                    'sizes': [(height, height, height),
+                              (height, height, height)]}
         return self.create_geometry(**conf)
 
     @property
-    def case5(self):
+    def superimposed2(self):
         """ Two obstacles superimposed. """
-        conf = {'origins': [(13, 10, 8), (16, 13, 22)],
-                'sizes': [(10, 15, 15), (7, 7, 15)]}
+        height = 2 * self.thresh
+        if len(self.shape) == 2:
+            conf = {'origins': [(self.thresh, self.thresh),
+                                (2 * self.thresh, self.thresh + height - 1)],
+                    'sizes': [(2 * height, height),
+                              (height + self.thresh, height)]}
+        else:
+            conf = {'origins': [(self.thresh, self.thresh, self.thresh),
+                                (2 * self.thresh, self.thresh, self.thresh + height - 1)],
+                    'sizes': [(2 * height, 2 * height, height),
+                              (height + self.thresh, height, height)]}
         return self.create_geometry(**conf)
 
     @property
-    def case6(self):
+    def Lcell(self):
         """ L arrangement. """
-        conf = {'origins': [(13, 7, 8), (13, 7, 22)],
-                'sizes': [(10, 10, 15), (10, 15, 15)]}
+        height1 = 3 * self.thresh
+        height2 = 2 * self.thresh
+        if len(self.shape) == 2:
+            conf = {'origins': [(self.thresh, self.thresh),
+                                (self.thresh, self.thresh + height1 - 1)],
+                    'sizes': [(height1, height1),
+                              (height2, height1)]}
+        else:
+            conf = {'origins': [(self.thresh, self.thresh, self.thresh),
+                                (self.thresh, self.thresh, self.thresh + height1 - 1)],
+                    'sizes': [(height2, height2, height1),
+                              (height2, height1, height1)]}
         return self.create_geometry(**conf)
 
     @property
-    def case7(self):
+    def Tcell(self):
         """ T arrangement/ """
-        conf = {'origins': [(13, 13, 8), (13, 7, 22)],
-                'sizes': [(10, 10, 15), (10, 21, 15)]}
+        height1 = 3 * self.thresh
+        height2 = 1 * self.thresh
+        if len(self.shape) == 2:
+            conf = {'origins': [(2 * self.thresh, self.thresh),
+                                (self.thresh, self.thresh + height1 - 1)],
+                    'sizes': [(height2, height1),
+                              (height1, height1)]}
+        else:
+            conf = {'origins': [(2 * self.thresh, self.thresh, self.thresh),
+                                (self.thresh, self.thresh, self.thresh + height1 - 1)],
+                    'sizes': [(height2, height1, height1),
+                              (height1, height1, height1)]}
         return self.create_geometry(**conf)
 
     @property
-    def case8(self):
+    def Ucell(self):
         """ Bridge arrangement. """
-        conf = {'origins': [(13, 7, 8), (13, 7, 22), (13, 23, 8)],
-                'sizes': [(10, 5, 15), (10, 21, 15), (10, 5, 15)]}
+        height1 = (3 * self.thresh)
+        height2 = (1 * self.thresh)
+        if len(self.shape) == 2:
+            conf = {'origins': [(self.thresh, self.thresh),
+                                (self.thresh, self.thresh + height2 - 1),
+                                (self.thresh + 2 * height2, self.thresh + height2 - 1)],
+                    'sizes': [(height1, height2),
+                              (height2, height2),
+                              (height2, height2)]}
+        else:
+            conf = {'origins': [(self.thresh, self.thresh, self.thresh),
+                                (self.thresh, self.thresh, self.thresh + height2 - 1),
+                                (self.thresh + 2 * height2,
+                                    self.thresh, self.thresh + height2 - 1)],
+                    'sizes': [(height1, height2, height2),
+                              (height2, height2, height2),
+                              (height2, height2, height2)]}
         return self.create_geometry(**conf)
 
     @property
-    def case9(self):
+    def Ocell(self):
         """ Window arrangement. """
-        conf = {'origins': [(13, 7, 9), (13, 7, 22), (13, 23, 9), (13, 7, 0)],
-                'sizes': [(10, 5, 14), (10, 21, 10), (10, 5, 14), (10, 21, 10)]}
+        height1 = (3 * self.thresh)
+        height2 = (1 * self.thresh)
+        if len(self.shape) == 2:
+            conf = {'origins': [(self.thresh, self.thresh),
+                                (self.thresh, self.thresh + height2 - 1),
+                                (self.thresh + 2 * height2, self.thresh + height2 - 1),
+                                (self.thresh, self.thresh + 2 * height2 - 2)],
+                    'sizes': [(height1, height2),
+                              (height2, height2),
+                              (height2, height2),
+                              (height1, height2)]}
+        else:
+            conf = {'origins': [(self.thresh, self.thresh, self.thresh),
+                                (self.thresh, self.thresh, self.thresh + height2 - 1),
+                                (self.thresh + 2 * height2, self.thresh, self.thresh + height2 - 1),
+                                (self.thresh, self.thresh, self.thresh + 2 * height2 - 2)],
+                    'sizes': [(height1, height2, height2),
+                              (height2, height2, height2),
+                              (height2, height2, height2),
+                              (height1, height2, height2)]}
+        return self.create_geometry(**conf)
+
+    @property
+    def overlapped1(self):
+        """ Two obstacles overlapped (one sides). """
+        width = 5 * self.thresh
+        if len(self.shape) == 2:
+            conf = {'origins': [(self.thresh, 0),
+                                (self.thresh + int(width / 5), width - 1)],
+                    'sizes': [(width, width),
+                              (width, width)]}
+        else:
+            conf = {'origins': [(self.thresh, self.thresh, 0),
+                                (self.thresh + int(width / 5), self.thresh, width - 1)],
+                    'sizes': [(width, width, width),
+                              (width, width, width)]}
+        return self.create_geometry(**conf)
+
+    @property
+    def overlapped2(self):
+        """ Two obstacles overlapped (two sides). """
+        width = 5 * self.thresh
+        if len(self.shape) == 2:
+            conf = {'origins': [(self.thresh, 0),
+                                (self.thresh + int(width / 5), width - 1)],
+                    'sizes': [(width, width),
+                              (width, width)]}
+        else:
+            conf = {'origins': [(self.thresh, self.thresh, 0),
+                                (self.thresh + int(width / 5),
+                                    self.thresh + int(width / 5), width - 1)],
+                    'sizes': [(width, width, width),
+                              (width, width, width)]}
         return self.create_geometry(**conf)

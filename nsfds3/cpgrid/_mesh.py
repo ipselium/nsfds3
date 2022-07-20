@@ -73,7 +73,7 @@ class RegularMesh:
 
     """
 
-    def __init__(self, shape, steps, origin=None, bc=None, obstacles=None,
+    def __init__(self, shape, steps=None, origin=None, bc=None, obstacles=None,
                  Npml=15, stencil=11, flat=None):
 
         self.shape = shape
@@ -117,6 +117,9 @@ class RegularMesh:
 
         if not self.origin:
             self.origin = (0, ) * len(self.shape)
+
+        if not self.steps:
+            self.steps = (1, ) * len(self.shape)
 
         if len(self.shape) != len(self.steps) or len(self.shape) != len(self.origin):
             raise ValueError('shape, steps, origin must have coherent dim.')
@@ -227,7 +230,7 @@ class RegularMesh:
         traces = []
 
         if kind == 'domains':
-            obj = self.udomains
+            obj = self.domains
             kwargs = {'fill': "toself", 'fillcolor': 'rgba(0.39, 0.98, 0.75, 0.1)',
                       'line': {'color': 'rgba(0.39, 0,98, 0.75)'}}
         else:

@@ -262,16 +262,16 @@ class CfgSetup:
 
         try:
             self._cfg()
+            self._eul()
+            self._flt()
+            self._vsc()
+            self._cpt()
             self._sim()
             self._thp()
             self._geo()
             self._pml()
             self._src()
             self._flw()
-            self._eul()
-            self._flt()
-            self._vsc()
-            self._cpt()
             self._save()
             self._figs()
         except _configparser.Error as err:
@@ -333,17 +333,59 @@ class CfgSetup:
         """ Get geometry parameters. """
         GEO = self.cfg['geometry']
 
+        # Grid
+        self.bc = GEO.get('bc', 'WWWWWW').upper()
+        self.nx = GEO.getint('nx', 256)
+        self.ny = GEO.getint('ny', 256)
+        self.nz = GEO.getint('nz', 256)
+        self.ix0 = GEO.getint('ix0', 0)
+        self.iy0 = GEO.getint('iy0', 0)
+        self.iz0 = GEO.getint('iz0', 0)
+        self.dx = GEO.getfloat('dx', 1)
+        self.dy = GEO.getfloat('dy', 1)
+        self.dz = GEO.getfloat('dz', 1)
+        self.volumic = GEO.getboolean('volumic', True)
+        self.flat = _json.loads(GEO.get('flat', '[]'))
+        if self.flat and self.volumic:
+            self.volumic = False
+            self.flat_ax, self.flat_idx = self.flat
+            self.shape = tuple(s for i, s in
+                               enumerate((self.nx, self.ny, self.nz))
+                               if i != self.flat_ax)
+            self.origin = tuple(s for i, s in
+                                enumerate((self.ix0, self.iy0, self.iz0))
+                                if i != self.flat_ax)
+            self.steps = tuple(s for i, s in
+                               enumerate((self.dx, self.dy, self.dz))
+                               if i != self.flat_ax)
+            if len(self.bc) == 6:
+                self.bc = ''.join(bc for i, bc in enumerate(self.bc) if i
+                                  not in [2*self.flat_ax, 2*self.flat_ax + 1])
+        elif not self.volumic:
+            self.flat = None
+            self.shape = (self.nx, self.ny)
+            self.origin = (self.ix0, self.iy0)
+            self.steps = (self.dx, self.dy)
+            if len(self.bc) == 6:
+                self.bc = self.bc[:4]
+        elif not self.flat and self.volumic:
+            self.shape = (self.nx, self.ny, self.nz)
+            self.origin = (self.ix0, self.iy0, self.iz0)
+            self.steps = (self.dx, self.dy, self.dz)
+
         # Mesh type and geometry
         self.mesh = GEO.get('mesh', 'regular').lower()
         self.geofile = GEO.get('file', None)
         self.geoname = GEO.get('geoname', 'square')
+
+        if self.geofile not in self.none:
+            self.geofile = self.path / self.geofile
+
         self.obstacles = files.get_obstacle(self)
 
         if self.mesh not in ['regular', 'adaptative', 'curvilinear']:
             raise ValueError('mesh must be regular, adaptative, or curvilinear')
 
-        if self.geofile != "None":
-            self.geofile = self.path / self.geofile
 
         # Curvilinear mesh
         if self.mesh == 'curvilinear':
@@ -358,19 +400,6 @@ class CfgSetup:
             self.only_pml = GEO.getboolean('only_pml', False)   # adapt only in PML
         else:
             self.Nd, self.Rx, self.only_pml = None, None, None
-
-        # Grid
-        self.bc = GEO.get('bc', 'WWWWWW').upper()
-        self.nx = GEO.getint('nx', 256)
-        self.ny = GEO.getint('ny', 256)
-        self.nz = GEO.getint('nz', 256)
-        self.ix0 = GEO.getint('ix0', 0)
-        self.iy0 = GEO.getint('iy0', 0)
-        self.iz0 = GEO.getint('iz0', 0)
-        self.dx = GEO.getfloat('dx', 1)
-        self.dy = GEO.getfloat('dy', 1)
-        self.dz = GEO.getfloat('dz', 1)
-        self.flat = _json.loads(GEO.get('flat', '[]'))
 
     def _pml(self):
         """ Get PML parameters. """
@@ -512,12 +541,8 @@ class CfgSetup:
 
     def get_config(self):
         """ Get configuration. """
-#        flat_ax, _ = self.flat
-#        shape = tuple(s for i, s in enumerate((self.nx, self.ny, self.nz)) if i != flat_ax)
-#        du = tuple(s for i, s in enumerate((self.dx, self.dy, self.dz)) if i != flat_ax)
-#        in0 = tuple(s for i, s in enumerate((self.ix0, self.iy0, self.iz0)) if i != flat_ax)
-        return ((self.nx, self.ny, self.nz), (self.dx, self.dy, self.dz)), \
-                {'origin': (self.ix0, self.iy0, self.iz0),
+        return (self.shape, self.steps), \
+                {'origin': self.origin,
                  'bc': self.bc,
                  'obstacles': self.obstacles,
                  'Npml': self.Npml,
