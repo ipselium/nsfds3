@@ -129,12 +129,12 @@ class ComputationDomains:
                         details=f'Total : {pbar.tasks[0].finished_time:.2f} s')
             pbar.refresh()
 
+        self.domains = DomainSet(shape=self.shape, subs=self.domains, stencil=self.stencil)
+
     def _update_domains(self, config):
         cuboids = locations_to_cuboids(self.argwhere(config))
         for cub in cuboids:
             self.domains.append(Domain(cub['origin'], cub['size'], tag=config))
-
-        self.cdomains = DomainSet(shape=self.shape, subs=self.domains, stencil=self.stencil)
 
     def _inner_slices(self, f):
         """ Return inner slices of a face. """
@@ -286,21 +286,11 @@ class ComputationDomains:
         #return unique(_np.array(pattern_idx, dtype=_np.int16).T)
         return unique(_np.array(pattern_idx).T)
 
-    def show(self, axis=0, obstacles=True, mask=False, domains=False, bounds=True):
+    def show(self, obstacles=True, domains=False, bounds=True, only_mesh=True):
         """ Plot 3d representation of computation domain. """
         viewer = CDViewer(self)
-        viewer.show(axis=axis, obstacles=obstacles, mask=mask, domains=domains, bounds=bounds)
-
-    def zoom(self, ix=None, iy=None, iz=None):
-        """ Plot a zoom at (ix, iy, iz) of the mask. """
-        zoomer = CDViewer(self)
-        zoomer.zoom(ix, iy, iz)
-
-    def get_traces(self, axis=0, obstacles=True, mask=False, domains=False, bounds=True):
-        """ Get only traces. """
-        viewer = CDViewer(self)
-        return viewer.get_traces(axis=axis, obstacles=obstacles,
-                                 mask=mask, domains=domains, bounds=bounds)
+        viewer.show(obstacles=obstacles, domains=domains, bounds=bounds,
+                    only_mesh=only_mesh)
 
 
 if __name__ == "__main__":
@@ -313,5 +303,4 @@ if __name__ == "__main__":
 
     test_cases = TestCases(shape, stencil)
     cdomains = ComputationDomains(shape, test_cases.case9, stencil=stencil)
-    cdomains.show(axis=0, obstacles=True, mask=False, domains=True, bounds=False)
-    cdomains.zoom(ix=slice(None, None), iy=17, iz=slice(None, None))
+    cdomains.show(obstacles=True, domains=True, bounds=False)

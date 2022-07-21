@@ -310,13 +310,29 @@ class Obstacle(BasicGeo):
         return f"origin={self.origin}, size={self.size}, sid={self.sid}, bc={self.bc}"
 
 
-class Basicset(GeoMeta):
+class BasicSet(GeoMeta):
     """ Base class to describe sets of objects. """
 
     def __init__(self, shape, subs=None, stencil=3):
         self.subs = [] if not subs else subs
         self.shape = shape
         self.stencil = stencil
+
+    @property
+    def inner_objects(self):
+        """ Return an new instance without objects located at the limits of the domain. """
+        if len(self.shape) == 3:
+            subs = [sub for sub in self
+                    if sub.ix[0] != 0 and sub.iy[0] != 0 and sub.iz[0] != 0
+                    and sub.ix[1] != self.shape[0] - 1
+                    and sub.iy[1] != self.shape[1] - 1
+                    and sub.iz[1] != self.shape[2] - 1]
+        else:
+            subs = [sub for sub in self
+                    if sub.ix[0] != 0 and sub.iy[0] != 0
+                    and sub.ix[1] != self.shape[0] - 1
+                    and sub.iy[1] != self.shape[1] - 1]
+        return DomainSet(self.shape, subs=subs, stencil=self.stencil)
 
     def __getitem__(self, n):
         return self.subs[n]
@@ -559,7 +575,7 @@ class Domain(BasicGeo):
         return iter(self.faces)
 
 
-class DomainSet(Basicset):
+class DomainSet(BasicSet):
     """ Collection of Domain objects. """
 
     def __init__(self, shape, subs=None, stencil=3):
@@ -567,7 +583,7 @@ class DomainSet(Basicset):
         self.faces = FaceSet(self)
 
 
-class ObstacleSet(Basicset):
+class ObstacleSet(BasicSet):
     """ Collection of Obstacle objects. """
 
     def __init__(self, shape, subs=None, stencil=3):
