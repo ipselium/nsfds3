@@ -4,6 +4,7 @@ results/
 *.hdf5
 *.cfg
 *.mkv
+*.html
 *log*
 *bench*
 *profile.prof

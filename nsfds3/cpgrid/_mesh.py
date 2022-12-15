@@ -210,6 +210,10 @@ class RegularMesh:
         self.domains = self.compdom.domains
         self.udomains = [sub for sub in self.domains if sub.tag in [(0, 0), (0, 0, 0)]]
 
+    def get_obstacles(self):
+        """ Get obstacles coordinates. """
+        return [o.coords for o in self.obstacles]
+
     def show(self, dpi=800, obstacles=True, domains=False, bounds=True, only_mesh=False):
         """ Plot grid.
 

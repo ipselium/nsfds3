@@ -252,7 +252,7 @@ class FDTD:
             _pkl.dump(self.cfg, pkl)
 
         self.sfile = _h5py.File(self.cfg.datafile, 'w')
-#        self.sfile.attrs['obstacles'] = self.msh.get_obstacles()
+        self.sfile.attrs['obstacles'] = self.msh.get_obstacles()
 #        self.sfile.attrs['domains'] = self.msh.get_domains(only_xz=True)
         self.sfile.create_dataset('x', data=self.msh.x, compression=self.cfg.comp)
         self.sfile.create_dataset('y', data=self.msh.y, compression=self.cfg.comp)
