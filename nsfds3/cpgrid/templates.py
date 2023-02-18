@@ -68,7 +68,7 @@ class TestCases:
 
     @property
     def single(self):
-        """ Two obstacles overlapped (two sides). """
+        """ Single obstacle. """
 
         if len(self.shape) == 2:
             conf = {'origins': [(self.thresh, ) * 2, ],
@@ -132,7 +132,12 @@ class TestCases:
 
     @property
     def superimposed1(self):
-        """ Two obstacles superimposed. """
+        """ Two obstacles side to side. 
+        __________
+        |   ||   |
+        |___||___|
+
+        """
         height = 2 * self.thresh
         if len(self.shape) == 2:
             conf = {'origins': [(self.thresh, self.thresh),
@@ -147,7 +152,12 @@ class TestCases:
 
     @property
     def superimposed2(self):
-        """ Two obstacles superimposed. """
+        """ Two obstacles of different height side to side.
+        __________
+        |   ||   |
+        |   ||___|
+        |___|
+         """
         height = 2 * self.thresh
         if len(self.shape) == 2:
             conf = {'origins': [(self.thresh, self.thresh),
@@ -180,7 +190,7 @@ class TestCases:
 
     @property
     def Tcell(self):
-        """ T arrangement/ """
+        """ T arrangement. """
         height1 = 3 * self.thresh
         height2 = 1 * self.thresh
         if len(self.shape) == 2:

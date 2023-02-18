@@ -38,8 +38,8 @@ import matplotlib.pyplot as _plt
 from matplotlib import patches as _patches, path as _path
 import h5py as _h5py
 
-from libfds.fields import Fields2d
-from libfds.fluxes import EulerianFluxes2d
+from libfds.fields import Fields
+from libfds.fluxes import EulerianFluxes, ViscousFluxes
 from libfds.filters import SelectiveFilter, ShockCapture
 from mplutils.custom_cmap import modified_jet, MidPointNorm
 
@@ -75,10 +75,10 @@ class FDTD:
             self.timings = self.cfg.timings
 
         # Initialize solver
-        self.fld = Fields2d(self.cfg, self.msh)
-        self.efluxes = EulerianFluxes2d(self.fld)
+        self.fld = Fields(self.cfg, self.msh)
+        self.efluxes = EulerianFluxes(self.fld)
         if self.cfg.vsc:
-            pass
+            self.vfluxes = ViscousFluxes(self.fld) 
         if self.cfg.flt:
             self.sfilter = SelectiveFilter(self.fld)
         if self.cfg.cpt:
@@ -154,8 +154,10 @@ class FDTD:
 
         if not self.quiet:
             msg = 'Simulation completed in [red]{}[/].\n'
+            msg += 'Final residuals of [red]{:>.4f}[/].\n'
             msg += 'End at physical time [red]t = {:.4f} sec.'
             print(Panel(msg.format(misc.secs_to_dhms(_pc() - ti),
+                                   self.fld.residual(),
                                    self.cfg.dt * self.cfg.it)))
 
         self.sfile.close()
@@ -169,7 +171,7 @@ class FDTD:
     def viscous_fluxes(self):
         """ Compute viscous fluxes. """
         if self.cfg.vsc:
-            pass
+            self.vfluxes.integrate()
 
     @timer
     def selective_filter(self):
@@ -290,9 +292,8 @@ class FDTD:
                 self.sfile.create_dataset('zn', data=self.msh.yn, compression=self.cfg.comp)
                 self.sfile.create_dataset('zp', data=self.msh.yp, compression=self.cfg.comp)
 
-    def show(self, variable='p', vmin=None, vmax=None, nans=False):
+    def show(self, variable='p', vmin=None, vmax=None, show_nans=False, slices=None):
         """ Show results. """
-        _, axes = _plt.subplots(1, 1, figsize=(9, 4))
 
         if variable in ['p', 'ru', 'rv', 're', 'r']:
             var = _np.array(getattr(self.fld, variable))
@@ -310,9 +311,18 @@ class FDTD:
         cmap = modified_jet()
         norm = MidPointNorm(vmin=vmin, vmax=vmax, midpoint=0)
 
+        if self.cfg.volumic:
+            self._show3d(var, cmap, norm, show_nans=show_nans, slices=slices)
+        else:
+            self._show2d(var, cmap, norm, show_nans=show_nans)
+
+    def _show2d(self, var, cmap, norm, show_nans=False):
+        """ Show 2d results. """
+        _, axes = _plt.subplots(1, 1, figsize=(9, 4))
+
         axes.imshow(var, origin='lower', cmap=cmap, norm=norm)
 
-        if nans:
+        if show_nans:
             nans = _np.where(_np.isnan(var))[::-1]
             axes.plot(*nans, 'r.')
 
@@ -321,6 +331,52 @@ class FDTD:
                                        *(_np.array(obs.size[::-1]) - 1),
                                        linewidth=3, fill=None)
             axes.add_patch(edges)
+        _plt.show()
+
+    def _show3d(self, var, cmap, norm, show_nans=False, slices=None):
+        """ Show 3d results. """
+        
+        from mpl_toolkits.axes_grid1 import make_axes_locatable
+
+        if slices:
+            if all([a < b for a, b in zip(slices[::-1], self.msh.shape)]):
+                i_xy, i_xz, i_zy = slices
+            else:
+                raise IndexError('Slices out of bounds')
+        else:
+            i_xy, i_xz, i_zy = self.cfg.izS, self.cfg.iyS, self.cfg.ixS
+
+        fig, ax = _plt.subplots(figsize=(6, 6))
+
+        # Sizes
+        width, height = fig.get_size_inches()
+        size_x = self.msh.x[-1] - self.msh.x[0]
+        size_y = self.msh.y[-1] - self.msh.y[0]
+        size_z = self.msh.z[-1] - self.msh.z[0]
+
+        # xy plot:
+        ax.pcolorfast(self.msh.x, self.msh.y, var[:, :, i_xy], cmap=cmap, norm=norm)
+        ax.plot(self.msh.x[[0, -1]], self.msh.y[[i_xz, i_xz]], color='gold', linewidth=1)
+        ax.plot(self.msh.x[[i_zy, i_zy]], self.msh.y[[0, -1]], color='green', linewidth=1)
+
+        # create new axes on the right and on the top of the current axes
+        divider = make_axes_locatable(ax)
+        # below height and pad are in inches
+        ax_xz = divider.append_axes("top", 0.8*height*size_z/size_x, pad=0., sharex=ax)    # position, size, pad
+        ax_zy = divider.append_axes("right", 0.8*width*size_z/size_y, pad=0., sharey=ax)
+
+        # xz and zy plots
+        ax_xz.pcolorfast(self.msh.x, self.msh.z, var[:, i_xz, :].T, cmap=cmap, norm=norm)
+        ax_xz.plot(self.msh.x[[0, -1]], self.msh.z[[i_xy, i_xy]], color='gold', linewidth=1)
+        ax_xz.xaxis.set_tick_params(labelbottom=False)
+
+        ax_zy.pcolorfast(self.msh.z, self.msh.y, var[i_zy, :, :], cmap=cmap, norm=norm)
+        ax_zy.plot(self.msh.z[[i_xy, i_xy]], self.msh.y[[0, -1]], color='green', linewidth=1)
+        ax_zy.yaxis.set_tick_params(labelleft=False)
+
+        for ax in fig.get_axes():
+            ax.set_aspect(1.)
+
         _plt.show()
 
 

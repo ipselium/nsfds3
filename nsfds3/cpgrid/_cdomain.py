@@ -33,7 +33,7 @@ import numpy as _np
 import rich.progress as _rp
 from ._geometry import ObstacleSet, DomainSet, Domain
 from nsfds3.utils.misc import locations_to_cuboids, unique, Schemes, scheme_to_str
-from nsfds3.graphics import CDViewer
+import nsfds3.graphics as _graphics
 from libfds.cutils import nonzeros, where
 
 
@@ -43,18 +43,18 @@ class ComputationDomains:
     Parameters
     ----------
     shape : tuple
-        Size of the domain. Must be a tuple with three int objects.
+        Size of the domain. Must be a tuple with 3 int objects.
     obstacles : list, :py:class:`nsfds3.mesher.geometry.ObstacleSet`, optional
         Obstacles in the computation domain.
     bc : {'[ARZPW][ARZPW][ARZPW][ARZPW]'}, optional
         Boundary conditions. Must be a 6 characters string corresponding to
-        left, right, front, back, bottom, and top boundaries respectively
+        left, right, front, back, bottom, and top boundaries, respectively.
     stencil : int, optional
         Size of the finite difference stencil.
     Npml : int, optional
         Number of points of the absorbing area (used if 'A' in `bc`).
-    flat : tuple, list
-        Consider a 2d computation domain. flat must be of the form (axis, index).
+    free: bool, optional
+        Free memory after the domains are found
 
     TODO
     ----
@@ -66,7 +66,11 @@ class ComputationDomains:
             - locations_to_cuboids
     """
 
-    def __init__(self, shape, obstacles=None, bc='WWWWWW', stencil=3, Npml=15):
+    _BC_U = ['W', 'Z', 'V']
+    _BC_C = ['P', ]
+
+
+    def __init__(self, shape, obstacles=None, bc='WWWWWW', stencil=3, Npml=15, free=True):
         self.shape = shape
         self.bc = bc.upper()
         self.stencil = stencil
@@ -78,22 +82,20 @@ class ComputationDomains:
             self.obstacles = obstacles
         else:
             self.obstacles = ObstacleSet(shape, obstacles, stencil=stencil)
+
         self.bounds = Domain(origin=(0, ) * len(shape), size=shape, bc=self.bc).faces
 
-        # Init listing of configs encountered in the domain and uncentered domains list
-        self.configs = set()
+        # Init listing of domains
         self.domains = []
 
         # Init mask with obstacle locations
-        self._mask = _np.zeros(shape + (3, ), dtype=_np.int8)
+        # umask will be filled with 0 if centered scheme and \pm stencil if uncentered
+        # cmask values are true when scheme is centered
+        self._umask = _np.zeros(shape + (3, ), dtype=_np.int8)
         self._cmask = _np.ones(shape, dtype=_np.int8)
         for obs in self.obstacles:
-            self._mask[obs.slices + (slice(0, 3), )] = 1
+            self._umask[obs.slices + (slice(0, 3), )] = 1
             self._cmask[obs.slices] = False
-
-        # List of bc
-        self._bc_uncenter = ['W', 'Z', 'V']
-        self._bc_center = ['P', ]
 
         # Fill mask
         self._fill_faces_tangent()
@@ -106,10 +108,13 @@ class ComputationDomains:
         # Find computation domains
         self._find_domains()
 
+        # Free memory
+        if free:
+            self._free()
+
     def _find_domains(self):
         """ Find uncentered and centered domains. """
-        schemes = Schemes(stencil=self.stencil, ndim=len(self.shape))
-        configs = schemes.all
+        configs = Schemes(stencil=self.stencil, ndim=len(self.shape))(all=True)
 
         with _rp.Progress(_rp.TextColumn("[bold blue]{task.description:<20}...", justify="right"),
                           _rp.BarColumn(bar_width=None),
@@ -154,75 +159,73 @@ class ComputationDomains:
 
         return slices
 
-    def _fill_faces_tangent(self):
-        """ Setup face for tangential schemes. """
-        # Fill faces
-        faces = [face for face in self.obstacles.faces if not face.clamped]
-        for face in faces:
-            self._mask[face.slices + (face.not_axis, )] = 0
-            self._cmask[face.slices] = True
-
     def _fill_boundaries(self):
         """ Setup boundary areas. """
         # Fill boundaries
-        if self.bc[0] in self._bc_uncenter:
+        if self.bc[0] in self._BC_U:
             slices = (slice(None, self._midstencil), slice(None), slice(None))
             if not self.volumic:
                 slices = slices[:2]
-            self._mask[slices + (0, )] = self.stencil
+            self._umask[slices + (0, )] = self.stencil
             self._cmask[slices] = False
-        if self.bc[1] in self._bc_uncenter:
+        if self.bc[1] in self._BC_U:
             slices = (slice(-self._midstencil, None), slice(None), slice(None))
             if not self.volumic:
                 slices = slices[:2]
-            self._mask[slices + (0, )] = -self.stencil
+            self._umask[slices + (0, )] = -self.stencil
             self._cmask[slices] = False
-        if self.bc[2] in self._bc_uncenter:
+        if self.bc[2] in self._BC_U:
             slices = (slice(None), slice(None, self._midstencil), slice(None))
             if not self.volumic:
                 slices = slices[:2]
-            self._mask[slices + (1, )] = self.stencil
+            self._umask[slices + (1, )] = self.stencil
             self._cmask[slices] = False
-        if self.bc[3] in self._bc_uncenter:
+        if self.bc[3] in self._BC_U:
             slices = (slice(None), slice(-self._midstencil, None), slice(None))
             if not self.volumic:
                 slices = slices[:2]
-            self._mask[slices + (1, )] = -self.stencil
+            self._umask[slices + (1, )] = -self.stencil
             self._cmask[slices] = False
         if self.volumic:
-            if self.bc[4] in self._bc_uncenter:
+            if self.bc[4] in self._BC_U:
                 slices = (slice(None), slice(None), slice(None, self._midstencil))
-                self._mask[slices + (2, )] = self.stencil
+                self._umask[slices + (2, )] = self.stencil
                 self._cmask[slices] = False
-            if self.bc[5] in self._bc_uncenter:
+            if self.bc[5] in self._BC_U:
                 slices = (slice(None), slice(None), slice(-self._midstencil, None))
-                self._mask[slices + (2,)] = -self.stencil
+                self._umask[slices + (2,)] = -self.stencil
                 self._cmask[slices] = False
 
-        # Fix boundaries
-        faces = [(bound, face) for bound, face in _it.product(self.bounds, self.obstacles.faces)
+        # Fix boundaries that are a superset of an obstacle face
+        fix = [(bound, face) for bound, face in _it.product(self.bounds, self.obstacles.faces)
                  if bound.side == face.side and face.clamped]
 
-        for bound, face in faces:
+        for bound, face in fix:
             slices = list(self._inner_slices(face))
             if bound.normal == 1:
                 slices[face.axis] = slice(None, self._midstencil)
             else:
                 slices[face.axis] = slice(-self._midstencil, None)
-            self._mask[tuple(slices) + (slice(None, None), )] = 1
+            self._umask[tuple(slices) + (slice(None, None), )] = 1
             self._cmask[tuple(slices)] = False
+
+    def _fill_faces_tangent(self):
+        """ Setup face for tangential schemes. """
+        # Fill faces that are not clamped
+        for face in self.obstacles.faces.not_clamped:
+            self._umask[face.slices + (face.not_axis, )] = 0
+            self._cmask[face.slices] = True
 
     def _fill_faces_normal(self):
         """ Setup faces for normal schemes. """
-        # Fill faces
-        faces = [face for face in self.obstacles.faces if not face.clamped]
-        for face in faces:
+        # Fill faces that are not clamped
+        for face in self.obstacles.faces.not_clamped:
             slices = list(self._inner_slices(face))
             if face.normal == 1:
                 slices[face.axis] = slice(face.loc, face.loc + self._midstencil)
             else:
                 slices[face.axis] = slice(face.loc - self._midstencil + 1, face.loc + 1)
-            self._mask[tuple(slices) + (face.axis,)] = face.normal * self.stencil
+            self._umask[tuple(slices) + (face.axis,)] = face.normal * self.stencil
             self._cmask[tuple(slices)] = False
 
         # Fix faces that overlap
@@ -232,9 +235,8 @@ class ComputationDomains:
             inter = [slice(min(i) + 1 if min(i) != max(i) else min(i), max(i)) for i in inter]
             inter[face1.axis] = slice(inter[face1.axis].start - self._midstencil,
                                       inter[face1.axis].start + self._midstencil - 1)
-            inter = tuple(inter)
-            self._mask[inter + ((0, 1, 2), )] = 1
-            self._cmask[inter] = False
+            self._umask[tuple(inter) + ((0, 1, 2), )] = 1
+            self._cmask[tuple(inter)] = False
 
         # Fix faces that have common edges
         for face1, face2 in self.obstacles.faces.common_edge:
@@ -247,7 +249,7 @@ class ComputationDomains:
             else:
                 slices[face1.axis] = slice(face1.loc - self._midstencil + 1, face1.loc + 1)
             slices[axis] = slice(min(inter[axis]) + 1, max(inter[axis]))
-            self._mask[tuple(slices) + (face1.axis, )] = face1.normal * self.stencil
+            self._umask[tuple(slices) + (face1.axis, )] = face1.normal * self.stencil
             self._cmask[tuple(slices)] = False
 
     @staticmethod
@@ -278,8 +280,8 @@ class ComputationDomains:
         for obs in _it.chain(self.obstacles, self.bounds):
             slices = obs.box(self.shape, stencil=self.stencil)
             offset = [s.start for s in slices]
-            #idx = tuple(a + o for a, o in zip(self._argwhere(self._mask[slices], pattern), offset))
-            mask_c = _np.ascontiguousarray(self._mask[slices])
+            #idx = tuple(a + o for a, o in zip(self._argwhere(self._umask[slices], pattern), offset))
+            mask_c = _np.ascontiguousarray(self._umask[slices])
             idx = tuple(a + o for a, o in zip(where(mask_c, pattern).T, offset))
             pattern_idx = [_np.concatenate((pattern_idx[i], idx[i])) for i in range(len(pattern))]
 
@@ -288,9 +290,16 @@ class ComputationDomains:
 
     def show(self, obstacles=True, domains=False, bounds=True, only_mesh=True):
         """ Plot 3d representation of computation domain. """
-        viewer = CDViewer(self)
+        viewer = _graphics.CDViewer(self)
         viewer.show(obstacles=obstacles, domains=domains, bounds=bounds,
                     only_mesh=only_mesh)
+
+    def _free(self):
+        try:
+            del self._umask
+            del self._cmask
+        except AttributeError:
+            pass
 
 
 if __name__ == "__main__":

@@ -315,9 +315,12 @@ class CfgSetup:
         self.p0 = THP.getfloat('p0', 101325.0)
         self.rho0 = self.p0 / (self.T0 * (self.cp - self.cv))
         self.c0 = (self.gamma * self.p0 / self.rho0)**0.5
+	# Dynamic viscosity at T = 0 deg. C
         self.mu0 = 0.00001716
+	# Dynamic viscosity at T0
         self.mu = (self.mu0 * (self.T0 / self.Tref)**(3. / 2.) *
                    (self.Tref + self.Ssu) / (self.T0 + self.Ssu))
+	# Kinematic viscosity at T0
         self.nu = self.mu / self.rho0
 
         if self.c0 < 1:

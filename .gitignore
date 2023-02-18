@@ -1,5 +1,6 @@
 archives/
 results/
+*.npy
 *TODO*
 *.hdf5
 *.cfg

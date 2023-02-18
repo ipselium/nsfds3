@@ -34,8 +34,6 @@ Module `mesh` provides three classes to build meshes:
 
 import re as _re
 import numpy as _np
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 from ._cdomain import ComputationDomains
 from ._geometry import ObstacleSet
 import nsfds3.graphics as _graphics
@@ -51,12 +49,12 @@ class RegularMesh:
     Parameters
     ----------
     shape : tuple
-        Size of the domain. Must be a tuple with two int objects.
-    steps : tuple
-        Spatial steps. Must be a tuple with two float objects.
+        Size of the domain. Must be a tuple with 2 or 3 int objects.
+    steps : tuple, optional
+        Spatial steps. Must be a tuple with 2 or 3 float objects.
     origin : tuple, optional
-        Origin of the grid. Must be a tuple with two int objects.
-    bc : {'[ARZPW][ARZPW][ARZPW][ARZPW]'}, optional
+        Origin of the grid. Must be a tuple with 2 or 3 int objects.
+    bc : {'[ARZPW][ARZPW][ARZPW][ARZPW][[ARZPW][ARZPX]]'}, optional
         Boundary conditions. Must be a 4 characters string.
     obstacles : :py:class:`fdgrid.domains.Domain`, optional
         Obstacles in the computation domain.
@@ -64,6 +62,8 @@ class RegularMesh:
         Number of points of the absorbing area (only if 'A' in `bc`).
     stencil : int, optional
         Size of the finite difference stencil (used by :py:mod:`nsfds2`).
+    flat : {(axe, index)}, optional
+        Flat version of the mesh. The cut is made along axe at index.
 
     See also
     --------
@@ -106,6 +106,7 @@ class RegularMesh:
         return [n for i, n in enumerate(values) if i != self.flat_ax]
 
     def _set_attributes(self, names, values):
+        """ Helper method to set attributes. """
         values = self._axes(values)
         _ = [setattr(self, attr, val) for attr, val in zip(names, values)]
 
@@ -137,11 +138,11 @@ class RegularMesh:
     def _update_arguments(self):
 
         self.shape = tuple(getattr(self, attr, None) for attr
-                           in ('nx', 'ny', 'nz') if getattr(self, attr, None))
+                           in ('nx', 'ny', 'nz') if getattr(self, attr, None) is not None)
         self.origin = tuple(getattr(self, attr, None) for attr
-                            in ('ix0', 'iy0', 'iz0') if getattr(self, attr, None))
+                            in ('ix0', 'iy0', 'iz0') if getattr(self, attr, None) is not None)
         self.steps = tuple(getattr(self, attr, None) for attr
-                           in ('dx', 'dy', 'dz') if getattr(self, attr, None))
+                           in ('dx', 'dy', 'dz') if getattr(self, attr, None) is not None)
         if self.flat and len(self.bc) == 6:
             self.bc = ''.join(bc for i, bc in enumerate(self.bc)
                               if i not in [self.flat_ax, self.flat_ax + 1])
@@ -164,7 +165,7 @@ class RegularMesh:
 
     @property
     def volumic(self):
-        """ Return whether mesh is 2d or 3d. """
+        """ Return True if mesh is 3d. """
         return not self.flat and len(self.shape) == 3
 
     def _check_bc(self):

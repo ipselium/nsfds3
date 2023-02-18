@@ -376,8 +376,8 @@ class Face(BasicGeo):
             self.normal = - self.normal
 
         self.clamped = False        # is face attached to computation domain ?
-        self.free = True            # free face
-        self.overlapped = False     # face overlapped by another
+        self.free = True            # is face free ?
+        self.overlapped = False     # is face overlapped by another ?
         self.bounded = False
         self.loc = self.coords[self.axis][0]
 
@@ -525,6 +525,11 @@ class FaceSet(GeoMeta):
                  if face1.side == face2.side and face1.loc == face2.loc
                  and face1.intersects(face2)
                  and not face1.clamped and not face2.clamped]
+
+    @property
+    def not_clamped(self):
+        """ Return faces that are not clamped to global domain. """
+        return [face for face in self if not face.clamped]
 
     def items(self):
         """ A set-like object providing a view on self items. """

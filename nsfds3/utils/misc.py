@@ -101,6 +101,11 @@ class Schemes:
         # centered
         self.centered = [(0,) * ndim, ]
 
+    def __call__(self, all=True):
+        if all:
+            return self.all
+        return self.uncentered
+
     @property
     def all(self):
         """ Return all kind of schemes. """
@@ -253,9 +258,10 @@ def _locations_to_2d_cuboids(coordinates):
     return cuboids
 
 
-def getsizeof(obj, seen=None):
-    """Recursively finds size of objects"""
-    size = _sys.getsizeof(obj)
+def getsizeof(obj, seen=None, unit=None):
+    """Recursively finds size of objects in bytes."""
+    scale = 1e-3 if unit == 'k' else 1e-6 if unit == 'M' else 1e-9 if unit == 'G' else 1
+    size = _sys.getsizeof(obj) * scale
     if seen is None:
         seen = set()
     obj_id = id(obj)
@@ -265,12 +271,12 @@ def getsizeof(obj, seen=None):
     # self-referential objects
     seen.add(obj_id)
     if isinstance(obj, dict):
-        size += sum(getsizeof(v, seen) for v in obj.values())
-        size += sum(getsizeof(k, seen) for k in obj.keys())
+        size += sum(getsizeof(v, seen=seen, unit=unit) for v in obj.values())
+        size += sum(getsizeof(k, seen=seen, unit=unit) for k in obj.keys())
     elif hasattr(obj, '__dict__'):
-        size += getsizeof(obj.__dict__, seen)
+        size += getsizeof(obj.__dict__, seen=seen, unit=unit)
     elif hasattr(obj, '__iter__') and not isinstance(obj, (str, bytes, bytearray)):
-        size += sum(getsizeof(i, seen) for i in obj)
+        size += sum(getsizeof(i, seen=seen, unit=unit) for i in obj)
     return size
 
 

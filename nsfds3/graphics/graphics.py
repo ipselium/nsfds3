@@ -180,7 +180,7 @@ class CDViewer:
         # Figure
         if only_mesh:
             fig = _go.Figure()
-            fig.add_traces(self._mesh3d(obstacles=True, domains=False, bounds=True))
+            fig.add_traces(self._mesh3d(obstacles=obstacles, domains=domains, bounds=True))
         else:
             fig = make_subplots(rows=2, cols=2,
                                 horizontal_spacing=0.01, vertical_spacing=0.01,
@@ -226,7 +226,7 @@ class CDViewer:
                                  #range=[ax2.min(), ax2.max()],
                                  )
 
-            fig.add_traces(self._mesh3d(obstacles=True, domains=False, bounds=True),
+            fig.add_traces(self._mesh3d(obstacles=obstacles, domains=domains, bounds=bounds),
                            rows=2, cols=2)
 
         return fig
