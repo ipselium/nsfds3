@@ -172,6 +172,7 @@ class FDTD:
         """ Compute viscous fluxes. """
         if self.cfg.vsc:
             self.vfluxes.integrate()
+            self.efluxes.cout()
 
     @timer
     def selective_filter(self):
@@ -216,25 +217,25 @@ class FDTD:
         self.sfile.attrs['itmax'] = self.cfg.it
 
         if self.cfg.save_fields:
-            self.sfile.create_dataset('r_it' + str(self.cfg.it),
+            self.sfile.create_dataset(f'r_it{self.cfg.it}',
                                       data=self.fld.r,
                                       compression=self.cfg.comp)
-            self.sfile.create_dataset('ru_it' + str(self.cfg.it),
+            self.sfile.create_dataset(f'ru_it{self.cfg.it}',
                                       data=self.fld.ru,
                                       compression=self.cfg.comp)
-            self.sfile.create_dataset('rv_it' + str(self.cfg.it),
+            self.sfile.create_dataset(f'rv_it{self.cfg.it}',
                                       data=self.fld.rv,
                                       compression=self.cfg.comp)
-            self.sfile.create_dataset('re_it' + str(self.cfg.it),
+            self.sfile.create_dataset(f're_it{self.cfg.it}',
                                       data=self.fld.re,
                                       compression=self.cfg.comp)
             if self.msh.volumic:
-                self.sfile.create_dataset('rw_it' + str(self.cfg.it),
-                                          data=self.fld.re,
+                self.sfile.create_dataset(f'rw_it{self.cfg.it}',
+                                          data=self.fld.rw,
                                           compression=self.cfg.comp)
 
         if self.cfg.save_vortis:
-            self.sfile.create_dataset('w_it' + str(self.cfg.it),
+            self.sfile.create_dataset(f'w_it{self.cfg.it}',
                                       data=self.fld.w,
                                       compression=self.cfg.comp)
 
@@ -346,7 +347,7 @@ class FDTD:
         else:
             i_xy, i_xz, i_zy = self.cfg.izS, self.cfg.iyS, self.cfg.ixS
 
-        fig, ax = _plt.subplots(figsize=(6, 6))
+        fig, ax_xy = _plt.subplots(figsize=(9, 9), tight_layout=True)
 
         # Sizes
         width, height = fig.get_size_inches()
@@ -355,15 +356,15 @@ class FDTD:
         size_z = self.msh.z[-1] - self.msh.z[0]
 
         # xy plot:
-        ax.pcolorfast(self.msh.x, self.msh.y, var[:, :, i_xy], cmap=cmap, norm=norm)
-        ax.plot(self.msh.x[[0, -1]], self.msh.y[[i_xz, i_xz]], color='gold', linewidth=1)
-        ax.plot(self.msh.x[[i_zy, i_zy]], self.msh.y[[0, -1]], color='green', linewidth=1)
+        ax_xy.pcolorfast(self.msh.x, self.msh.y, var[:, :, i_xy], cmap=cmap, norm=norm)
+        ax_xy.plot(self.msh.x[[0, -1]], self.msh.y[[i_xz, i_xz]], color='gold', linewidth=1)
+        ax_xy.plot(self.msh.x[[i_zy, i_zy]], self.msh.y[[0, -1]], color='green', linewidth=1)
 
         # create new axes on the right and on the top of the current axes
-        divider = make_axes_locatable(ax)
+        divider = make_axes_locatable(ax_xy)
         # below height and pad are in inches
-        ax_xz = divider.append_axes("top", 0.8*height*size_z/size_x, pad=0., sharex=ax)    # position, size, pad
-        ax_zy = divider.append_axes("right", 0.8*width*size_z/size_y, pad=0., sharey=ax)
+        ax_xz = divider.append_axes("top", 1.25*width*(size_x/size_z - 1), pad=0., sharex=ax_xy)    # position, size, pad
+        ax_zy = divider.append_axes("right", 1.25*width*(size_x/size_z - 1), pad=0., sharey=ax_xy)
 
         # xz and zy plots
         ax_xz.pcolorfast(self.msh.x, self.msh.z, var[:, i_xz, :].T, cmap=cmap, norm=norm)
@@ -376,6 +377,41 @@ class FDTD:
 
         for ax in fig.get_axes():
             ax.set_aspect(1.)
+
+        # Obstacles
+        facecolor = (0.8, 0.8, 1)
+        alpha = 0.2
+    
+        for obs in self.msh.obstacles:
+            if i_xy in obs.rz:
+                edges = _patches.Rectangle((self.msh.x[obs.origin[0]], self.msh.y[obs.origin[1]]),
+                                        obs.size[0] - 1, obs.size[1] - 1,
+                                        linewidth=3, fill=False)
+            else:
+                edges = _patches.Rectangle((self.msh.x[obs.origin[0]], self.msh.y[obs.origin[1]]),
+                                        obs.size[0] - 1, obs.size[1] - 1,
+                                        linewidth=1, fill=True, facecolor=facecolor, alpha=alpha)
+            ax_xy.add_patch(edges)
+            
+            if i_xz in obs.ry:
+                edges = _patches.Rectangle((self.msh.x[obs.origin[0]], self.msh.y[obs.origin[2]]),
+                                        obs.size[0] - 1, obs.size[2] - 1,
+                                        linewidth=3, fill=False)
+            else:
+                edges = _patches.Rectangle((self.msh.x[obs.origin[0]], self.msh.y[obs.origin[2]]),
+                                        obs.size[0] - 1, obs.size[2] - 1,
+                                        linewidth=1, fill=True, facecolor=facecolor, alpha=alpha)
+            ax_xz.add_patch(edges)
+            
+            if i_zy in obs.rx:
+                edges = _patches.Rectangle((self.msh.x[obs.origin[2]], self.msh.y[obs.origin[1]]),
+                                        obs.size[2] - 1, obs.size[1] - 1,
+                                        linewidth=3, fill=False)
+            else:
+                edges = _patches.Rectangle((self.msh.x[obs.origin[2]], self.msh.y[obs.origin[1]]),
+                                        obs.size[2] - 1, obs.size[1] - 1,
+                                        linewidth=1, fill=True, facecolor=facecolor, alpha=alpha)
+            ax_zy.add_patch(edges)
 
         _plt.show()
 
