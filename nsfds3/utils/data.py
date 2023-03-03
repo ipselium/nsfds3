@@ -229,7 +229,7 @@ class DataExtractor:
             rv = self.data[f"rv_it{iteration}"][...] * self.J
             re = self.data[f"re_it{iteration}"][...] * self.J
             p = _np.empty_like(r)
-            _fld.update_p(p, r, ru, rv, re, self.data.attrs['gamma'])
+            _fld.update_p2d(p, r, ru, rv, re, self.data.attrs['gamma'])
 
             return p.T - self.data.attrs['p0']
 

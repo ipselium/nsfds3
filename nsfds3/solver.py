@@ -168,7 +168,7 @@ def solve(cfg, msh):
         plt = graphics.Plot(cfg.datafile, quiet=cfg.quiet)
         if cfg.save_fields:
             plt.fields(view=cfg.args.view, ref=cfg.args.ref,
-                       show_pml=cfg.show_pml, show_probes=cfg.show_probes)
+                       show_bz=cfg.show_bz, show_probes=cfg.show_probes)
         if cfg.probes:
             plt.probes()
 
@@ -184,11 +184,11 @@ def show(cfg, msh):
         headers.parameters(cfg, msh)
 
     elif cfg.args.show_command == 'grid':
-        msh.plot_grid(axis=True, pml=cfg.show_pml, bc_profiles=cfg.bc_profiles,
+        msh.plot_grid(axis=True, bz=cfg.show_bz, bc_profiles=cfg.bc_profiles,
                       probes=cfg.probes if cfg.show_probes else False)
 
     elif cfg.args.show_command == 'pgrid':
-        msh.plot_physical(pml=cfg.show_pml, bc_profiles=cfg.bc_profiles,
+        msh.plot_physical(bz=cfg.show_bz, bc_profiles=cfg.bc_profiles,
                           probes=cfg.probes if cfg.show_probes else False)
 
     elif cfg.args.show_command == 'domains':
@@ -200,7 +200,7 @@ def show(cfg, msh):
     elif cfg.args.show_command == 'frame':
         plt = graphics.Plot(cfg.datafile, quiet=cfg.quiet)
         plt.fields(view=cfg.args.view, iteration=cfg.args.nt, ref=cfg.args.ref,
-                   show_pml=cfg.show_pml, show_probes=cfg.show_probes,
+                   show_bz=cfg.show_bz, show_probes=cfg.show_probes,
                    logscale=cfg.args.logscale, xlim=cfg.xlim, ylim=cfg.ylim)
 
     elif cfg.args.show_command == 'probes':
@@ -225,7 +225,7 @@ def make(cfg, _):
 
         plt = graphics.Plot(cfg.datafile, quiet=cfg.quiet)
         plt.movie(view=cfg.args.view, nt=cfg.args.nt, ref=cfg.args.ref,
-                  show_pml=cfg.show_pml, show_probes=cfg.show_probes,
+                  show_bz=cfg.show_bz, show_probes=cfg.show_probes,
                   fps=cfg.fps, logscale=cfg.args.logscale,
                   xlim=cfg.xlim, ylim=cfg.ylim)
         plt.show()
@@ -289,8 +289,8 @@ def run(args):
     msh = mesh.build(cfg.mesh, (cfg.nx, cfg.nz), (cfg.dx, cfg.dz),
                      origin=(cfg.ix0, cfg.iz0),
                      bc=cfg.bc, obstacles=cfg.obstacles,
-                     Npml=cfg.Npml, stencil=cfg.stencil,
-                     dilatation=cfg.Rx, Nd=cfg.Nd, only_pml=cfg.only_pml,
+                     nbz=cfg.nbz, stencil=cfg.stencil,
+                     dilatation=cfg.Rx, Nd=cfg.Nd, only_bz=cfg.only_bz,
                      fcurvxz=files.get_curvilinear(cfg))
 
     if args.command:

@@ -54,11 +54,12 @@ class RegularMesh:
         Spatial steps. Must be a tuple with 2 or 3 float objects.
     origin : tuple, optional
         Origin of the grid. Must be a tuple with 2 or 3 int objects.
-    bc : {'[ARZPW][ARZPW][ARZPW][ARZPW][[ARZPW][ARZPX]]'}, optional
-        Boundary conditions. Must be a 4 characters string.
+    bc : {'[ARZPW][ARZPW][ARZPW][ARZPW][[ARZPW][ARZPW]]'}, optional
+        Boundary conditions. Must be a 4 or 6 characters string corresponding to
+        left, right, front, back, bottom, and top boundaries, respectively.
     obstacles : :py:class:`fdgrid.domains.Domain`, optional
         Obstacles in the computation domain.
-    Npml : int, optional
+    nbz : int, optional
         Number of points of the absorbing area (only if 'A' in `bc`).
     stencil : int, optional
         Size of the finite difference stencil (used by :py:mod:`nsfds2`).
@@ -74,13 +75,13 @@ class RegularMesh:
     """
 
     def __init__(self, shape, steps=None, origin=None, bc=None, obstacles=None,
-                 Npml=15, stencil=11, flat=None):
+                 nbz=20, stencil=11, flat=None):
 
         self.shape = shape
         self.steps = steps
         self.origin = origin
         self.stencil = stencil
-        self.Npml = Npml
+        self.nbz = nbz
         self.obstacles = obstacles
         self.bc = bc
         self.flat = flat
@@ -170,24 +171,22 @@ class RegularMesh:
 
     def _check_bc(self):
 
-        regex = [r'[^P].P...', r'P.[^P]...', r'.[^P].P..', r'.P.[^P]..',
-                 r'..[^P].P.', r'..P.[^P].', r'...[^P].P', r'...P.[^P]']
+        regex = [r'[^P]P..', r'P[^P]..', r'[^P]P....', r'P[^P]....',
+                 r'..[^P]P', r'..P[^P]', r'..[^P]P..', r'..P[^P]..',
+                 r'....[^P]P', r'....P[^P]',]
 
-        if not _re.match(r'^[ZRAPW]*$', self.bc):
-            raise ValueError("bc must be combination of 'ZRAPW'!")
+        if not _re.match(r'^[ZRAPW]*$', self.bc) or len(self.bc) not in (4, 6):
+            raise ValueError("bc must be combination of 4 or 6 chars among 'ZRAPW'!")
 
         if any(_re.match(r, self.bc) for r in regex):
             msg = "periodic condition must be on both sides of the domain,"
-            msg += " i.e. '(P.P...)'|'(.P.P..)'"
+            msg += " i.e. '(PP....)'|'(..PP..)'|'(....PP)'"
             raise ValueError(msg)
 
     def _check_grid(self):
 
         if any(s > _np.iinfo(_np.int16).max for s in self.shape):
             raise GridError(f'At least 1 dimension of the mesh exceeds {_np.iinfo(_np.int16)}')
-
-        if self.Npml < self.stencil:
-            raise GridError("Number of points of PML must be larger than stencil")
 
         if any(i0 >= N for i0, N in zip(self.origin, self.shape)):
             raise GridError("Origin of the domain must be in the domain")
@@ -206,7 +205,7 @@ class RegularMesh:
         """ Divide the computation domain into subdomains. """
 
         self.compdom = ComputationDomains(self.shape, self.obstacles,
-                                          self.bc, self.stencil, self.Npml)
+                                          self.bc, self.stencil, self.nbz)
 
         self.domains = self.compdom.domains
         self.udomains = [sub for sub in self.domains if sub.tag in [(0, 0), (0, 0, 0)]]
@@ -219,7 +218,7 @@ class RegularMesh:
         """ Plot grid.
 
         todo :
-            - BC profiles, figsize, pml, probes, filename
+            - BC profiles, figsize, buffer zones, probes, filename
             - Take one division over N(=4)
             - evolution of the (dx, dy, dz) steps
         """
@@ -234,7 +233,7 @@ class RegularMesh:
         s += f"\t* Spatial step : ({', '.join(str(n) for n in self.steps)})\n"
         s += f"\t* Origin       : ({', '.join(str(n) for n in self.origin)})\n"
         if 'A' in self.bc:
-            s += f'\t* Points in PML: {self.Npml}\n'
+            s += f'\t* Points in Buffer Zone : {self.nbz}\n'
         s += f'\t* Max stencil  : {self.stencil}\n'
 
         return s

@@ -269,7 +269,7 @@ class FDTD:
         self.sfile.attrs['p0'] = self.cfg.p0
         self.sfile.attrs['rho0'] = self.cfg.rho0
         self.sfile.attrs['gamma'] = self.cfg.gamma
-        self.sfile.attrs['Npml'] = self.cfg.Npml
+        self.sfile.attrs['nbz'] = self.cfg.nbz
         self.sfile.attrs['mesh'] = self.cfg.mesh
         self.sfile.attrs['bc'] = self.cfg.bc
         self.sfile.attrs['itmax'] = self.cfg.it
@@ -319,9 +319,11 @@ class FDTD:
 
     def _show2d(self, var, cmap, norm, show_nans=False):
         """ Show 2d results. """
-        _, axes = _plt.subplots(1, 1, figsize=(9, 4))
+        _, axes = _plt.subplots(1, 1, figsize=(9, 9))
 
-        axes.imshow(var, origin='lower', cmap=cmap, norm=norm)
+        im = axes.pcolorfast(self.msh.x, self.msh.y, var.T, cmap=cmap, norm=norm)
+        _plt.colorbar(im)
+        axes.set_aspect(1.)
 
         if show_nans:
             nans = _np.where(_np.isnan(var))[::-1]
@@ -336,7 +338,7 @@ class FDTD:
 
     def _show3d(self, var, cmap, norm, show_nans=False, slices=None):
         """ Show 3d results. """
-        
+
         from mpl_toolkits.axes_grid1 import make_axes_locatable
 
         if slices:

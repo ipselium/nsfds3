@@ -97,13 +97,9 @@ def create_template(path=None, filename=None, cfg=None):
     cfg.set('geometry', 'dz', '1')
     cfg.set('geometry', 'flat', '[]')
 
-    cfg.add_section('PML')
-    cfg.set('PML', 'beta', '0.')
-    cfg.set('PML', 'alpha', '4.')
-    cfg.set('PML', 'sigmax', 'auto')
-    cfg.set('PML', 'sigmay', 'auto')
-    cfg.set('PML', 'sigmaz', 'auto')
-    cfg.set('PML', 'npml', '15')
+    cfg.add_section('BZ')
+    cfg.set('BZ', 'beta', '3.')
+    cfg.set('BZ', 'nbz', '20')
 
     cfg.add_section('source')
     cfg.set('source', 'type', 'pulse')
@@ -143,7 +139,7 @@ def create_template(path=None, filename=None, cfg=None):
     cfg.add_section('figures')
     cfg.set('figures', 'figures', 'True')
     cfg.set('figures', 'show_probes', 'True')
-    cfg.set('figures', 'show_pml', 'True')
+    cfg.set('figures', 'show_bz', 'True')
     cfg.set('figures', 'show_bc_profiles', 'True')
     cfg.set('figures', 'fps', '24')
 
@@ -269,7 +265,7 @@ class CfgSetup:
             self._sim()
             self._thp()
             self._geo()
-            self._pml()
+            self._bz()
             self._src()
             self._flw()
             self._save()
@@ -404,15 +400,11 @@ class CfgSetup:
         else:
             self.Nd, self.Rx, self.only_pml = None, None, None
 
-    def _pml(self):
-        """ Get PML parameters. """
-        PML = self.cfg['PML']
-        self.beta = PML.getfloat('beta', 0.)
-        self.alpha = PML.getfloat('alpha', 4.)
-        self.sigmax = PML.get('sigmax', 'auto')
-        self.sigmay = PML.get('sigmay', 'auto')
-        self.sigmaz = PML.get('sigmaz', 'auto')
-        self.Npml = PML.getint('npml', 15)
+    def _bz(self):
+        """ Get Buffer Zone parameters. """
+        BZ = self.cfg['BZ']
+        self.beta = BZ.getfloat('beta', 3.)
+        self.nbz = BZ.getint('nbz', 20)
 
     def _src(self):
         """ Get source parameters. """
@@ -535,7 +527,7 @@ class CfgSetup:
         FIGS = self.cfg['figures']
         self.figures = FIGS.getboolean('figures', True) and not self.quiet
         self.show_probes = FIGS.getboolean('show_probes', True)
-        self.show_pml = FIGS.getboolean('show_pml', True)
+        self.show_bz = FIGS.getboolean('show_bz', True)
         self.show_bc_profiles = FIGS.getboolean('show_bc_profiles', True)
         self.fps = FIGS.getint('fps', 24)
         self.xlim = _json.loads(FIGS.get('xlim', '[]'))
@@ -548,6 +540,6 @@ class CfgSetup:
                 {'origin': self.origin,
                  'bc': self.bc,
                  'obstacles': self.obstacles,
-                 'Npml': self.Npml,
+                 'nbz': self.nbz,
                  'stencil': self.stencil,
                  'flat': self.flat}

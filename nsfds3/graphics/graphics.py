@@ -140,7 +140,7 @@ class CDViewer:
         """ Plot grid.
 
         todo :
-            - BC profiles, figsize, pml, probes, filename
+            - BC profiles, figsize, Buffer Zone, probes, filename
             - Take one division over N(=4)
             - evolution of the (dx, dy, dz) steps
         """
@@ -303,7 +303,7 @@ class Plot:
         """ Init coordinate system. """
 
         self.obstacles = self.data.get_attr('obstacles')
-        self.Npml = self.data.get_attr('Npml')
+        self.nbz = self.data.get_attr('nbz')
         self.mesh = self.data.get_attr('mesh')
         self.bc = self.data.get_attr('bc')
 
@@ -330,7 +330,7 @@ class Plot:
 
     def movie(self, view=('p', 'e', 'vx', 'vy'), nt=None, ref=None,
               figsize='auto', xlim=None, ylim=None,
-              show_pml=False, show_probes=False,
+              show_bz=False, show_probes=False,
               dpi=100, fps=24, logscale=False):
         """ Make movie. """
 
@@ -348,7 +348,7 @@ class Plot:
         data = DataIterator(self.data, view=view, nt=nt)
         i, *var = next(data)
         fig, axes, ims = self.fields(view=view, iteration=i, ref=ref,
-                                     show_pml=show_pml,
+                                     show_bz=show_bz,
                                      show_probes=show_probes,
                                      figsize=figsize,
                                      xlim=xlim, ylim=ylim,
@@ -433,7 +433,7 @@ class Plot:
         return None
 
     def fields(self, view=('p', 'e', 'vx', 'vy'), iteration=None, ref=None,
-               show_pml=False, show_probes=True, figsize='auto',
+               show_bz=False, show_probes=True, figsize='auto',
                xlim=None, ylim=None, midpoint=0, logscale=False):
         """ Make figure """
 
@@ -500,9 +500,9 @@ class Plot:
                     _ = [ax.plot(self.x[i, j], self.y[i, j], 'ro') for i, j in probes]
 
                 #_graphics.plot_subdomains(ax, self.x, self.y, self.obstacles)
-                if show_pml:
+                if show_bz:
                     pass
-                    #_graphics.plot_pml(ax, self.x, self.y, self.bc, self.Npml)
+                    #_graphics.plot_bz(ax, self.x, self.y, self.bc, self.nbz)
                 if xlim:
                     ax.set_xlim(xlim)
                 if ylim:

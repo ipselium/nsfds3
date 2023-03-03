@@ -51,8 +51,8 @@ class ComputationDomains:
         left, right, front, back, bottom, and top boundaries, respectively.
     stencil : int, optional
         Size of the finite difference stencil.
-    Npml : int, optional
-        Number of points of the absorbing area (used if 'A' in `bc`).
+    nbz : int, optional
+        Number of points of the Buffer Zone (used if 'A' in `bc`).
     free: bool, optional
         Free memory after the domains are found
 
@@ -66,16 +66,16 @@ class ComputationDomains:
             - locations_to_cuboids
     """
 
-    _BC_U = ['W', 'Z', 'V']
+    _BC_U = ['W', 'Z', 'V', 'A']
     _BC_C = ['P', ]
 
 
-    def __init__(self, shape, obstacles=None, bc='WWWWWW', stencil=3, Npml=15, free=True):
+    def __init__(self, shape, obstacles=None, bc='WWWWWW', stencil=3, nbz=15, free=True):
         self.shape = shape
         self.bc = bc.upper()
         self.stencil = stencil
         self._midstencil = int((stencil - 1) / 2)
-        self.Npml = Npml
+        self.nbz = nbz
         self.volumic = len(shape) == 3
 
         if isinstance(obstacles, ObstacleSet):
@@ -134,12 +134,27 @@ class ComputationDomains:
                         details=f'Total : {pbar.tasks[0].finished_time:.2f} s')
             pbar.refresh()
 
+        self._update_domains_bc()
         self.domains = DomainSet(shape=self.shape, subs=self.domains, stencil=self.stencil)
 
     def _update_domains(self, config):
-        cuboids = locations_to_cuboids(self.argwhere(config))
-        for cub in cuboids:
-            self.domains.append(Domain(cub['origin'], cub['size'], tag=config))
+        idx = self.argwhere(config)
+        if idx is not None:
+            cuboids = locations_to_cuboids(idx)
+            for cub in cuboids:
+                self.domains.append(Domain(cub['origin'], cub['size'], tag=config))
+
+    def _update_domains_bc(self):
+        """ bc W à fixer également ! """
+
+        for sub in self.domains:
+            if sub.scm_fx == 'c' and (sub.ix[0] == 0 or sub.ix[1] == self.shape[0] - 1):
+                sub.scm_fx = 'P'
+            if sub.scm_fy == 'c' and (sub.iy[0] == 0 or sub.iy[1] == self.shape[1] - 1):
+                sub.scm_fy = 'P'
+            if self.volumic:
+                if sub.scm_fz == 'c' and (sub.iz[0] == 0 or sub.iz[1] == self.shape[2] - 1):
+                    sub.scm_fz = 'P'
 
     def _inner_slices(self, f):
         """ Return inner slices of a face. """
@@ -285,8 +300,11 @@ class ComputationDomains:
             idx = tuple(a + o for a, o in zip(where(mask_c, pattern).T, offset))
             pattern_idx = [_np.concatenate((pattern_idx[i], idx[i])) for i in range(len(pattern))]
 
-        #return unique(_np.array(pattern_idx, dtype=_np.int16).T)
-        return unique(_np.array(pattern_idx).T)
+        if any([len(i) for i in pattern_idx]):
+            #return unique(_np.array(pattern_idx, dtype=_np.int16).T)
+            return unique(_np.array(pattern_idx).T)
+        else:
+            return None
 
     def show(self, obstacles=True, domains=False, bounds=True, only_mesh=True):
         """ Plot 3d representation of computation domain. """
