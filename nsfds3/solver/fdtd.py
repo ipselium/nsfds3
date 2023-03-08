@@ -1,7 +1,7 @@
 #! /usr/bin/env python3
 # -*- coding: utf-8 -*-
 #
-# Copyright © 2016-2020 Cyril Desjouy <cyril.desjouy@univ-lemans.fr>
+# Copyright © 2016-2023 Cyril Desjouy <cyril.desjouy@univ-lemans.fr>
 #
 # This file is part of nsfds3
 #
@@ -41,7 +41,7 @@ import h5py as _h5py
 from libfds.fields import Fields
 from libfds.fluxes import EulerianFluxes, ViscousFluxes
 from libfds.filters import SelectiveFilter, ShockCapture
-from mplutils.custom_cmap import modified_jet, MidPointNorm
+
 
 from rich import print
 from rich.prompt import Prompt
@@ -49,8 +49,9 @@ from rich.panel import Panel
 from rich.progress import track
 from rich.color import ANSI_COLOR_NAMES
 
-from nsfds3.cpgrid import RegularMesh
+from nsfds3.cpgrid import CartesianGrid
 from nsfds3.solver import CfgSetup
+from nsfds3.graphics import MPLViewer
 from nsfds3.utils import misc
 
 
@@ -78,7 +79,7 @@ class FDTD:
         self.fld = Fields(self.cfg, self.msh)
         self.efluxes = EulerianFluxes(self.fld)
         if self.cfg.vsc:
-            self.vfluxes = ViscousFluxes(self.fld) 
+            self.vfluxes = ViscousFluxes(self.fld)
         if self.cfg.flt:
             self.sfilter = SelectiveFilter(self.fld)
         if self.cfg.cpt:
@@ -293,135 +294,17 @@ class FDTD:
                 self.sfile.create_dataset('zn', data=self.msh.yn, compression=self.cfg.comp)
                 self.sfile.create_dataset('zp', data=self.msh.yp, compression=self.cfg.comp)
 
-    def show(self, variable='p', vmin=None, vmax=None, show_nans=False, slices=None):
+    def show(self, variable='p', vmin=None, vmax=None, show_nans=False, slices=None, show_bz=False):
         """ Show results. """
-
-        if variable in ['p', 'ru', 'rv', 're', 'r']:
-            var = _np.array(getattr(self.fld, variable))
-        else:
-            raise Exception('var must be p, ru, rv, re, or r')
-
-        if variable == 'p':
-            var -= self.cfg.p0
-
-        if not vmin:
-            vmin = _np.nanmin(var)
-        if not vmax:
-            vmax = _np.nanmax(var)
-
-        cmap = modified_jet()
-        norm = MidPointNorm(vmin=vmin, vmax=vmax, midpoint=0)
-
-        if self.cfg.volumic:
-            self._show3d(var, cmap, norm, show_nans=show_nans, slices=slices)
-        else:
-            self._show2d(var, cmap, norm, show_nans=show_nans)
-
-    def _show2d(self, var, cmap, norm, show_nans=False):
-        """ Show 2d results. """
-        _, axes = _plt.subplots(1, 1, figsize=(9, 9))
-
-        im = axes.pcolorfast(self.msh.x, self.msh.y, var.T, cmap=cmap, norm=norm)
-        _plt.colorbar(im)
-        axes.set_aspect(1.)
-
-        if show_nans:
-            nans = _np.where(_np.isnan(var))[::-1]
-            axes.plot(*nans, 'r.')
-
-        for obs in self.msh.obstacles:
-            edges = _patches.Rectangle(obs.origin[::-1],
-                                       *(_np.array(obs.size[::-1]) - 1),
-                                       linewidth=3, fill=None)
-            axes.add_patch(edges)
-        _plt.show()
-
-    def _show3d(self, var, cmap, norm, show_nans=False, slices=None):
-        """ Show 3d results. """
-
-        from mpl_toolkits.axes_grid1 import make_axes_locatable
-
-        if slices:
-            if all([a < b for a, b in zip(slices[::-1], self.msh.shape)]):
-                i_xy, i_xz, i_zy = slices
-            else:
-                raise IndexError('Slices out of bounds')
-        else:
-            i_xy, i_xz, i_zy = self.cfg.izS, self.cfg.iyS, self.cfg.ixS
-
-        fig, ax_xy = _plt.subplots(figsize=(9, 9), tight_layout=True)
-
-        # Sizes
-        width, height = fig.get_size_inches()
-        size_x = self.msh.x[-1] - self.msh.x[0]
-        size_y = self.msh.y[-1] - self.msh.y[0]
-        size_z = self.msh.z[-1] - self.msh.z[0]
-
-        # xy plot:
-        ax_xy.pcolorfast(self.msh.x, self.msh.y, var[:, :, i_xy], cmap=cmap, norm=norm)
-        ax_xy.plot(self.msh.x[[0, -1]], self.msh.y[[i_xz, i_xz]], color='gold', linewidth=1)
-        ax_xy.plot(self.msh.x[[i_zy, i_zy]], self.msh.y[[0, -1]], color='green', linewidth=1)
-
-        # create new axes on the right and on the top of the current axes
-        divider = make_axes_locatable(ax_xy)
-        # below height and pad are in inches
-        ax_xz = divider.append_axes("top", 1.25*width*(size_x/size_z - 1), pad=0., sharex=ax_xy)    # position, size, pad
-        ax_zy = divider.append_axes("right", 1.25*width*(size_x/size_z - 1), pad=0., sharey=ax_xy)
-
-        # xz and zy plots
-        ax_xz.pcolorfast(self.msh.x, self.msh.z, var[:, i_xz, :].T, cmap=cmap, norm=norm)
-        ax_xz.plot(self.msh.x[[0, -1]], self.msh.z[[i_xy, i_xy]], color='gold', linewidth=1)
-        ax_xz.xaxis.set_tick_params(labelbottom=False)
-
-        ax_zy.pcolorfast(self.msh.z, self.msh.y, var[i_zy, :, :], cmap=cmap, norm=norm)
-        ax_zy.plot(self.msh.z[[i_xy, i_xy]], self.msh.y[[0, -1]], color='green', linewidth=1)
-        ax_zy.yaxis.set_tick_params(labelleft=False)
-
-        for ax in fig.get_axes():
-            ax.set_aspect(1.)
-
-        # Obstacles
-        facecolor = (0.8, 0.8, 1)
-        alpha = 0.2
-    
-        for obs in self.msh.obstacles:
-            if i_xy in obs.rz:
-                edges = _patches.Rectangle((self.msh.x[obs.origin[0]], self.msh.y[obs.origin[1]]),
-                                        obs.size[0] - 1, obs.size[1] - 1,
-                                        linewidth=3, fill=False)
-            else:
-                edges = _patches.Rectangle((self.msh.x[obs.origin[0]], self.msh.y[obs.origin[1]]),
-                                        obs.size[0] - 1, obs.size[1] - 1,
-                                        linewidth=1, fill=True, facecolor=facecolor, alpha=alpha)
-            ax_xy.add_patch(edges)
-            
-            if i_xz in obs.ry:
-                edges = _patches.Rectangle((self.msh.x[obs.origin[0]], self.msh.y[obs.origin[2]]),
-                                        obs.size[0] - 1, obs.size[2] - 1,
-                                        linewidth=3, fill=False)
-            else:
-                edges = _patches.Rectangle((self.msh.x[obs.origin[0]], self.msh.y[obs.origin[2]]),
-                                        obs.size[0] - 1, obs.size[2] - 1,
-                                        linewidth=1, fill=True, facecolor=facecolor, alpha=alpha)
-            ax_xz.add_patch(edges)
-            
-            if i_zy in obs.rx:
-                edges = _patches.Rectangle((self.msh.x[obs.origin[2]], self.msh.y[obs.origin[1]]),
-                                        obs.size[2] - 1, obs.size[1] - 1,
-                                        linewidth=3, fill=False)
-            else:
-                edges = _patches.Rectangle((self.msh.x[obs.origin[2]], self.msh.y[obs.origin[1]]),
-                                        obs.size[2] - 1, obs.size[1] - 1,
-                                        linewidth=1, fill=True, facecolor=facecolor, alpha=alpha)
-            ax_zy.add_patch(edges)
-
-        _plt.show()
+        viewer = MPLViewer(self.cfg, self.msh, self.fld)
+        viewer.show(variable=variable, vmin=vmin, vmax=vmax, 
+                    show_nans=show_nans, show_bz=show_bz, slices=slices)
 
 
 if __name__ == '__main__':
     config = CfgSetup()
     args, kwargs = config.get_config()
-    mesh = RegularMesh(*args, **kwargs)
+    mesh = CartesianGrid(*args, **kwargs)
     fdtd = FDTD(config, mesh)
     print(mesh)
     print(mesh.domains)

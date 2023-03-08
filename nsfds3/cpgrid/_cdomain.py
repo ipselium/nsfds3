@@ -1,7 +1,7 @@
 #! /usr/bin/env python3
 # -*- coding: utf-8 -*-
 #
-# Copyright © 2016-2020 Cyril Desjouy <cyril.desjouy@univ-lemans.fr>
+# Copyright © 2016-2023 Cyril Desjouy <cyril.desjouy@univ-lemans.fr>
 #
 # This file is part of nsfds3
 #
@@ -47,7 +47,7 @@ class ComputationDomains:
     obstacles : list, :py:class:`nsfds3.mesher.geometry.ObstacleSet`, optional
         Obstacles in the computation domain.
     bc : {'[ARZPW][ARZPW][ARZPW][ARZPW]'}, optional
-        Boundary conditions. Must be a 6 characters string corresponding to
+        Boundary conditions. Must be a 4 or 6 characters string corresponding to
         left, right, front, back, bottom, and top boundaries, respectively.
     stencil : int, optional
         Size of the finite difference stencil.

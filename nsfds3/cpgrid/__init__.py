@@ -26,9 +26,10 @@ DOCSTRING
 -----------
 """
 
-from ._mesh import RegularMesh
+from ._mesh import CartesianGrid, CurvilinearGrid
 from ._cdomain import ComputationDomains
 from ._geometry import Obstacle, ObstacleSet, Domain, DomainSet
 
-__all__ = ['templates', 'RegularMesh', 'ComputationDomains',
+__all__ = ['templates', 'CartesianGrid', 'CurvilinearGrid', 
+           'ComputationDomains',
            'ObstacleSet', 'Obstacle', 'DomainSet', 'Domain']

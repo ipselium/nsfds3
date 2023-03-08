@@ -98,8 +98,10 @@ def create_template(path=None, filename=None, cfg=None):
     cfg.set('geometry', 'flat', '[]')
 
     cfg.add_section('BZ')
-    cfg.set('BZ', 'beta', '3.')
-    cfg.set('BZ', 'nbz', '20')
+    cfg.set('BZ', 'grid points', '20')
+    cfg.set('BZ', 'filter order', '3.')
+    cfg.set('BZ', 'stretch level', '2.')
+    cfg.set('BZ', 'stretch order', '3.')
 
     cfg.add_section('source')
     cfg.set('source', 'type', 'pulse')
@@ -403,8 +405,10 @@ class CfgSetup:
     def _bz(self):
         """ Get Buffer Zone parameters. """
         BZ = self.cfg['BZ']
-        self.beta = BZ.getfloat('beta', 3.)
-        self.nbz = BZ.getint('nbz', 20)
+        self.nbz = BZ.getint('grid points', 20)
+        self.forder = BZ.getfloat('filter ordrer', 3.)
+        self.slevel = BZ.getfloat('stretch level', 2.)
+        self.sorder = BZ.getfloat('stretch order', 3.)
 
     def _src(self):
         """ Get source parameters. """
@@ -541,5 +545,7 @@ class CfgSetup:
                  'bc': self.bc,
                  'obstacles': self.obstacles,
                  'nbz': self.nbz,
+                 'slevel': self.slevel,
+                 'sorder': self.sorder,
                  'stencil': self.stencil,
                  'flat': self.flat}

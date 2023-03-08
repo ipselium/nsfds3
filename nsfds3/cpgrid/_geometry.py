@@ -1,7 +1,7 @@
 #! /usr/bin/env python3
 # -*- coding: utf-8 -*-
 #
-# Copyright © 2016-2020 Cyril Desjouy <cyril.desjouy@univ-lemans.fr>
+# Copyright © 2016-2023 Cyril Desjouy <cyril.desjouy@univ-lemans.fr>
 #
 # This file is part of nsfds3
 #

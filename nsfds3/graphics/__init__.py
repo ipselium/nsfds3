@@ -26,4 +26,4 @@ DOCSTRING
 -----------
 """
 
-from .graphics import CDViewer, fig_scale
+from .graphics import CDViewer, MPLViewer, fig_scale

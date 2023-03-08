@@ -1,7 +1,7 @@
 #! /usr/bin/env python3
 # -*- coding: utf-8 -*-
 #
-# Copyright © 2016-2020 Cyril Desjouy <cyril.desjouy@univ-lemans.fr>
+# Copyright © 2016-2023 Cyril Desjouy <cyril.desjouy@univ-lemans.fr>
 #
 # This file is part of nsfds3
 #
@@ -32,17 +32,22 @@ import getpass
 import pathlib
 import numpy as _np
 from scipy import signal as _signal
+
 import matplotlib.pyplot as _plt
-import matplotlib.animation as _ani
+from matplotlib import patches as _patches, path as _path
 from matplotlib.colors import SymLogNorm
+import matplotlib.animation as _ani
 from mpl_toolkits.axes_grid1 import make_axes_locatable
-from progressbar import ProgressBar, Bar, ReverseBar, ETA
-from mplutils import modified_jet, MidPointNorm, set_figsize, get_subplot_shape
-import fdgrid.graphics as _graphics
+
 import plotly.graph_objects as _go
 from plotly.subplots import make_subplots
-from nsfds3.utils.data import DataExtractor, DataIterator, nearest_index
+
+from progressbar import ProgressBar, Bar, ReverseBar, ETA
 from rich.progress import track
+
+from mplutils import modified_jet, MidPointNorm, set_figsize, get_subplot_shape
+import fdgrid.graphics as _graphics
+from nsfds3.utils.data import DataExtractor, DataIterator, nearest_index
 
 
 def fig_scale(ax1, ax2, ref=None):
@@ -68,6 +73,191 @@ def fig_scale(ax1, ax2, ref=None):
             b1, b2 = ref, ref * b2 / b1
 
     return b2 if s1 < s2 else b1, b2 if s2 < s1 else b1
+
+
+class MPLViewer:
+    """ """
+
+    def __init__(self, cfg, msh, fld):
+
+        self.cfg = cfg
+        self.fld = fld
+        self.msh = msh
+
+    def show(self, variable='p', vmin=None, vmax=None, show_nans=False, show_bz=False, slices=None):
+        """ Show results. """
+
+        if variable in ['p', 'ru', 'rv', 're', 'r']:
+            var = _np.array(getattr(self.fld, variable))
+        else:
+            raise Exception('var must be p, ru, rv, re, or r')
+
+        if variable == 'p':
+            var -= self.cfg.p0
+
+        if not vmin:
+            vmin = _np.nanmin(var)
+        if not vmax:
+            vmax = _np.nanmax(var)
+
+        cmap = modified_jet()
+        norm = MidPointNorm(vmin=vmin, vmax=vmax, midpoint=0)
+
+        if self.cfg.volumic:
+            self._show3d(var, cmap, norm, show_nans=show_nans, show_bz=show_bz, slices=slices)
+        else:
+            self._show2d(var, cmap, norm, show_nans=show_nans, show_bz=show_bz)
+
+    def _show2d(self, var, cmap, norm, show_nans=False, show_bz=False):
+        """ Show 2d results. """
+
+        # midpoint
+        if norm.vmin > 0 and norm.vmax > 0:
+            midpoint = _np.nanmean(var)
+        else:
+            midpoint = 0
+
+        # ticks
+        if abs(norm.vmin - midpoint) / norm.vmax > 0.33:
+            ticks = [norm.vmin, midpoint, norm.vmax]
+        else:
+            ticks = [midpoint, norm.vmax]
+
+        _, ax = _plt.subplots(1, 1, figsize=(9, 9))
+
+        im = ax.pcolorfast(self.msh.x, self.msh.y, var.T[:-1, :-1], cmap=cmap, norm=norm)
+        ax.set_aspect(1.)
+        ax.set_xlabel(r'$x$ [m]')
+        ax.set_ylabel(r'$y$ [m]')
+
+        divider = make_axes_locatable(ax)
+        cax = divider.append_axes("right", size="5%", pad=0.05)
+        _plt.colorbar(im, cax=cax, ticks=ticks)
+
+        # Buffer zones
+        bc = [self.msh.nbz if bc == 'A' else 0 for bc in self.msh.bc]
+        origin, extrema = (bc[0], bc[2]), (bc[1], bc[3])
+        size = [s - o - e for s, o, e in zip(self.msh.shape, origin, extrema)]
+        size = [self.msh.axis[i][o + s - 1] - self.msh.axis[i][o]
+                for i, (o, s) in enumerate(zip(origin, size))]
+        origin = [self.msh.axis[i][j] for i, j in enumerate(origin)]
+        edges = _patches.Rectangle(origin, *size, linewidth=3, fill=None)
+        ax.add_patch(edges)
+        if not show_bz:
+            ax.set_xlim(origin[0], origin[0] + size[0])
+            ax.set_ylim(origin[1], origin[1] + size[1])
+
+        # Nan
+        if show_nans:
+            nans = _np.where(_np.isnan(var))[::-1]
+            ax.plot(*nans, 'r.')
+
+        # Obstacles
+        for obs in self.msh.obstacles:
+            origin = [self.msh.axis[i][j] for i, j in enumerate(obs.origin)]
+            size = [self.msh.axis[i][o + s - 1] - self.msh.axis[i][o]
+                    for i, (o, s) in enumerate(zip(obs.origin, obs.size))]
+            edges = _patches.Rectangle(origin, *size, linewidth=3, fill=None)
+            ax.add_patch(edges)
+
+        _plt.show()
+
+    def _show3d(self, var, cmap, norm, show_nans=False, show_bz=False, slices=None):
+        """ Show 3d results. """
+
+        foreground = {'linewidth': 3, 'fill': False}
+        background = {'linewidth': 3, 'fill': True, 'facecolor': (0.8, 0.8, 1), 'alpha':0.2}
+
+        if slices:
+            if all([a < b for a, b in zip(slices[::-1], self.msh.shape)]):
+                i_xy, i_xz, i_zy = slices
+            else:
+                raise IndexError('Slices out of bounds')
+        else:
+            i_xy, i_xz, i_zy = self.cfg.izS, self.cfg.iyS, self.cfg.ixS
+
+        fig, ax_xy = _plt.subplots(figsize=(9, 9), tight_layout=True)
+
+        # Sizes
+        width, height = fig.get_size_inches()
+        size_x = self.msh.x[-1] - self.msh.x[0]
+        size_y = self.msh.y[-1] - self.msh.y[0]
+        size_z = self.msh.z[-1] - self.msh.z[0]
+
+        # xy plot:
+        ax_xy.pcolorfast(self.msh.x, self.msh.y, var[:-1, :-1, i_xy], cmap=cmap, norm=norm)
+        ax_xy.plot(self.msh.x[[0, -1]], self.msh.y[[i_xz, i_xz]], color='gold', linewidth=1)
+        ax_xy.plot(self.msh.x[[i_zy, i_zy]], self.msh.y[[0, -1]], color='green', linewidth=1)
+        ax_xy.set_xlabel(r'$x$ [m]')
+        ax_xy.set_ylabel(r'$y$ [m]')
+
+        # create new axes on the right and on the top of the current axes
+        divider = make_axes_locatable(ax_xy)
+        # below height and pad are in inches
+        ax_xz = divider.append_axes("top", 1.25*width*(size_x/size_z - 1), pad=0., sharex=ax_xy)    # position, size, pad
+        ax_zy = divider.append_axes("right", 1.25*width*(size_x/size_z - 1), pad=0., sharey=ax_xy)
+
+        # xz and zy plots
+        ax_xz.pcolorfast(self.msh.x, self.msh.z, var[:-1, i_xz, :-1].T, cmap=cmap, norm=norm)
+        ax_xz.plot(self.msh.x[[0, -1]], self.msh.z[[i_xy, i_xy]], color='gold', linewidth=1)
+        ax_xz.xaxis.set_tick_params(labelbottom=False)
+        ax_xz.set_ylabel(r'$z$ [m]')
+
+        ax_zy.pcolorfast(self.msh.z, self.msh.y, var[i_zy, :-1, :-1], cmap=cmap, norm=norm)
+        ax_zy.plot(self.msh.z[[i_xy, i_xy]], self.msh.y[[0, -1]], color='green', linewidth=1)
+        ax_zy.yaxis.set_tick_params(labelleft=False)
+        ax_zy.set_xlabel(r'$z$ [m]')
+
+        for ax in fig.get_axes():
+            ax.set_aspect(1.)
+
+        # Buffer zones
+        bc = [self.msh.nbz if bc == 'A' else 0 for bc in self.msh.bc]
+        origin, extrema = (bc[0], bc[2], bc[4]), (bc[1], bc[3], bc[5])
+        size = [s - o - e for s, o, e in zip(self.msh.shape, origin, extrema)]
+        size = [self.msh.axis[i][o + s - 1] - self.msh.axis[i][o]
+                for i, (o, s) in enumerate(zip(origin, size))]
+        origin = [self.msh.axis[i][j] for i, j in enumerate(origin)]
+
+        edges = _patches.Rectangle((origin[0], origin[1]), size[0], size[1], **foreground)
+        ax_xy.add_patch(edges)
+
+        edges = _patches.Rectangle((origin[0], origin[2]), size[0], size[2], **foreground)
+        ax_xz.add_patch(edges)
+
+        edges = _patches.Rectangle((origin[2], origin[1]), size[2], size[1], **foreground)
+        ax_zy.add_patch(edges)
+
+        if not show_bz:
+            ax_xy.set_xlim(origin[0], origin[0] + size[0])
+            ax_xy.set_ylim(origin[1], origin[1] + size[1])
+
+            ax_xz.set_xlim(origin[0], origin[0] + size[0])
+            ax_xz.set_ylim(origin[2], origin[2] + size[2])
+
+            ax_zy.set_xlim(origin[2], origin[2] + size[2])
+            ax_zy.set_ylim(origin[1], origin[1] + size[1])
+
+        # Obstacles
+        for obs in self.msh.obstacles:
+
+            origin = [self.msh.axis[i][j] for i, j in enumerate(obs.origin)]
+            size = [self.msh.axis[i][o + s - 1] - self.msh.axis[i][o]
+                    for i, (o, s) in enumerate(zip(obs.origin, obs.size))]
+
+            kwargs = foreground if i_xy in obs.rz else background
+            edges = _patches.Rectangle((origin[0], origin[1]), size[0], size[1], **kwargs)
+            ax_xy.add_patch(edges)
+
+            kwargs = foreground if i_xz in obs.ry else background
+            edges = _patches.Rectangle((origin[0], origin[2]), size[0], size[2], **kwargs)
+            ax_xz.add_patch(edges)
+
+            kwargs = foreground if i_zy in obs.rx else background
+            edges = _patches.Rectangle((origin[2], origin[1]), size[2], size[1], **kwargs)
+            ax_zy.add_patch(edges)
+
+        _plt.show()
 
 
 class CDViewer:
@@ -284,7 +474,6 @@ class Plot:
         hdf5 file
     quiet : bool, optional
         Quiet mode.
-
     """
 
     def __init__(self, filename, quiet=False):
