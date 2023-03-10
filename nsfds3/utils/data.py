@@ -96,6 +96,9 @@ class DataIterator:
         elif isinstance(data, (pathlib.Path, str)):
             self.data = DataExtractor(data)
 
+        if not isinstance(view, (tuple, list)):
+            view = (view, )
+
         self.view = view
         self.ns = self.data.get_attr('ns')
         self.icur = 0
@@ -146,14 +149,25 @@ class DataExtractor:
         else:
             self.data = data
 
-        self.var = {'p': 'p', 'rho': 'r', 'vx': 'ru', 'vy': 'rv', 'e': 're', 'vxyz': 'vxyz'}
+        self.var = {'p': 'p', 'rho': 'r',
+                    'vx': 'ru', 'vy': 'rv', 'vz': 'rw',
+                    'e': 're', 'vxyz': 'vxyz'}
         self.nt = self.get_attr('nt')
         self.ns = self.get_attr('ns')
 
+        self.gamma = self.get_attr('gamma')
+        self.p0 = self.data.attrs['p0']
+
+        self.volumic = self.get_attr('volumic')
+        self.vorticity = self.get_attr('vorticity')
+
+        if self.volumic:
+            self.T = (0, 1, 2)
+        else:
+            self.T = (1, 0)
+
         if self.get_attr('mesh') == 'curvilinear':
             self.J = self.get_dataset('J')
-        else:
-            self.J = _np.ones((self.get_attr('nx'), self.get_attr('ny')))
 
     def __enter__(self):
         return self
@@ -178,7 +192,7 @@ class DataExtractor:
         if isinstance(ref, int):
             var = self.get(view=view,
                            iteration=nearest_index(ref, self.ns, self.nt))
-            return _np.nanmin(var), _np.nanmax(var.max)
+            return _np.nanmin(var), _np.nanmax(var)
 
         if isinstance(ref, tuple):
             varmin = self.get(view=view,
@@ -187,8 +201,7 @@ class DataExtractor:
                               iteration=nearest_index(ref[1], self.ns, self.nt))
             return _np.nanmin(varmin), _np.nanmax(varmax)
 
-        print("Only 'p', 'rho', 'vx', 'vy', 'vxyz' and 'e' available !")
-        sys.exit(1)
+        self._bad_choice()
 
     def autoref(self, view='p'):
         """ Autoset reference. """
@@ -223,29 +236,40 @@ class DataExtractor:
     def get(self, view='p', iteration=0):
         """ Get data at iteration. """
 
-        if view == 'p':
-            r = self.data[f"r_it{iteration}"][...] * self.J
-            ru = self.data[f"ru_it{iteration}"][...] * self.J
-            rv = self.data[f"rv_it{iteration}"][...] * self.J
-            re = self.data[f"re_it{iteration}"][...] * self.J
-            p = _np.empty_like(r)
-            _fld.update_p2d(p, r, ru, rv, re, self.data.attrs['gamma'])
+        if view in ['rw', 'vz'] and not self.volumic:
+            print('No z-component for velocity')
+            sys.exit(1)
 
-            return p.T - self.data.attrs['p0']
+        if view == 'vxyz' and not self.vorticity:
+            print('No data for vorticity')
+            sys.exit(1)
+
+        if view == 'p':
+            r = self.data[f"r_it{iteration}"][...]
+            ru = self.data[f"ru_it{iteration}"][...]
+            rv = self.data[f"rv_it{iteration}"][...]
+            re = self.data[f"re_it{iteration}"][...]
+            p = _np.empty_like(r)
+            if self.volumic:
+                rw = self.data[f"rw_it{iteration}"][...]
+                _fld.update_p3d(p, r, ru, rv, rw, re, self.gamma)
+            else:
+                _fld.update_p2d(p, r, ru, rv, re, self.gamma)
+
+            return p.transpose(self.T) - self.p0
 
         if view in ['rho', 'vxyz']:
-            try:
-                return (self.data[f"{self.var[view]}_it{iteration}"][...] * self.J).T
-            except KeyError:
-                print('No data for vorticity')
-                sys.exit(1)
+            return (self.data[f"{self.var[view]}_it{iteration}"][...]).transpose(self.T)
 
-        if view in ['vx', 'vy', 'e']:
-            vx = (self.data[f"{self.var[view]}_it{iteration}"][...] * self.J)
-            r = (self.data[f"r_it{iteration}"][...] * self.J)
-            return (vx / r).T
+        if view in ['vx', 'vy', 'vz', 'e']:
+            vx = self.data[f"{self.var[view]}_it{iteration}"][...]
+            r = self.data[f"r_it{iteration}"][...]
+            return (vx / r).transpose(self.T)
 
-        raise ValueError("view must be 'p', 'rho', 'vx', 'vy', 'e', or 'vxyz'")
+        if view in ['r', 'ru', 'rv', 'rw', 're']:
+            return (self.data[f"{view}_it{iteration}"][...]).transpose(self.T)
+
+        self._bad_choice()
 
     def get_attr(self, attr):
         """ Get attribute from hdf5 file. attr must be string."""
@@ -253,5 +277,76 @@ class DataExtractor:
 
     def get_dataset(self, dataset):
         """ Get dataset from hdf5 file. attr must be string."""
-
         return self.data[dataset][...]
+
+    def _bad_choice(self):
+
+        msg = 'view must be : {}' + ('|vxyz' if self.vorticity else '')
+        var3d = 'p|r|rho|r|ru|rv|rw|re|vx|vy|vz|e'
+        var2d = 'p|r|rho|r|ru|rv|re|vx|vy|e'
+
+        if self.volumic:
+            print(msg.format(var3d))
+        else:
+            print(msg.format(var2d))
+
+        sys.exit(1)
+
+
+class FieldExtractor:
+
+    def __init__(self, fld):
+
+        self.fld = fld
+
+        if isinstance(fld, _fld.Fields2d):
+            self.volumic = False
+            self.T = (1, 0)
+        elif isinstance(fld, _fld.Fields3d):
+            self.volumic = True
+            self.T = (0, 1, 2)
+        else:
+            raise ValueError('fld must be Fields2d or Fields3d')
+
+
+        self.vorticity = False if len(fld.vxyz) == 0 else True
+
+        self.var = {'p': 'p', 'rho': 'r',
+                    'vx': 'ru', 'vy': 'rv', 'vz': 'rw',
+                    'e': 're', 'vxyz': 'vxyz'}
+
+    def get(self, view='p', iteration=None):
+        """ Get data at iteration. """
+
+        if view == 'rho':
+            view == 'r'
+
+        if view in ['rw', 'vz'] and not self.volumic:
+            print('No z-component for velocity')
+            sys.exit(1)
+
+        if view == 'vxyz' and not self.vorticity:
+            print('No data for vorticity')
+            sys.exit(1)
+
+        if view == 'p':
+            return _np.array(self.fld.p).transpose(self.T) - self.fld.p0
+
+        if view in ['r', 'ru', 'rv', 'rw', 're', 'vxyz']:
+            return _np.array(getattr(self.fld, view)).transpose(self.T)
+
+        if view in ['vx', 'vy', 'vz', 'e']:
+            return _np.array(getattr(self.fld, self.var[view]) / self.fld.r).transpose(self.T)
+
+        self._bad_choice()
+
+    def _bad_choice(self):
+
+        msg = 'view must be : {}' + ('|vxyz' if self.vorticity else '')
+        var3d = 'p|r|rho|r|ru|rv|rw|re|vx|vy|vz|e'
+        var2d = 'p|r|rho|r|ru|rv|re|vx|vy|e'
+        if self.volumic:
+            print(msg.format(var3d))
+        else:
+            print(msg.format(var2d))
+        sys.exit(1)

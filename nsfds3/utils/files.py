@@ -46,7 +46,7 @@ def get_obstacle(cfg):
             obstacle = []
     else:
         try:
-            template = _tplt.TestCases(cfg.shape, cfg.stencil)
+            template = _tplt.TestCases(cfg.shape, stencil=11)
             obstacle = getattr(template, cfg.geoname)
             cfg.geoflag = True
         except AttributeError:

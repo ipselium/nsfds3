@@ -36,7 +36,7 @@ from nsfds3.cpgrid import Obstacle
 class TestCases:
     """ Collection of test cases for obstacle arrangements. """
 
-    def __init__(self, shape, stencil=3):
+    def __init__(self, shape, stencil=11):
         self.shape = shape
         self.stencil = stencil
         self.thresh = self.stencil * 2 + 1

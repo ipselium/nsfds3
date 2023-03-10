@@ -28,26 +28,24 @@ Some helper classes and functions to represent meshes graphically.
 """
 
 import os
-import getpass
+import sys
 import pathlib
 import numpy as _np
-from scipy import signal as _signal
 
 import matplotlib.pyplot as _plt
-from matplotlib import patches as _patches, path as _path
-from matplotlib.colors import SymLogNorm
+from matplotlib import patches as _patches
 import matplotlib.animation as _ani
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 import plotly.graph_objects as _go
 from plotly.subplots import make_subplots
 
-from progressbar import ProgressBar, Bar, ReverseBar, ETA
+from progressbar import ProgressBar, Bar, ETA
 from rich.progress import track
 
 from mplutils import modified_jet, MidPointNorm, set_figsize, get_subplot_shape
-import fdgrid.graphics as _graphics
-from nsfds3.utils.data import DataExtractor, DataIterator, nearest_index
+from nsfds3.utils.data import DataExtractor, FieldExtractor, DataIterator, nearest_index
+from libfds.fields import Fields2d, Fields3d
 
 
 def fig_scale(ax1, ax2, ref=None):
@@ -75,40 +73,50 @@ def fig_scale(ax1, ax2, ref=None):
     return b2 if s1 < s2 else b1, b2 if s2 < s1 else b1
 
 
+cmap = modified_jet()
+
+
 class MPLViewer:
     """ """
 
-    def __init__(self, cfg, msh, fld):
+    def __init__(self, cfg, msh, data):
 
         self.cfg = cfg
-        self.fld = fld
         self.msh = msh
-
-    def show(self, variable='p', vmin=None, vmax=None, show_nans=False, show_bz=False, slices=None):
-        """ Show results. """
-
-        if variable in ['p', 'ru', 'rv', 're', 'r']:
-            var = _np.array(getattr(self.fld, variable))
+        if isinstance(data, (Fields2d, Fields3d)):
+            self.data = FieldExtractor(data)
+        elif isinstance(data, (pathlib.Path, str)):
+            self.data = DataExtractor(data)
+        elif isinstance(data, DataExtractor):
+            self.data = data
         else:
-            raise Exception('var must be p, ru, rv, re, or r')
+            raise ValueError('fld can be Fields2d, Fields3d, DataExtractor, or path to hdf5 file')
 
-        if variable == 'p':
-            var -= self.cfg.p0
+        self.volumic = True if len(cfg.shape) == 3 else False
+
+    def show(self, view='p', vmin=None, vmax=None, show_nans=False, show_bz=False, slices=None, iteration=0, figsize=(9, 9)):
+
+        var = self.data.get(view=view, iteration=iteration)
 
         if not vmin:
             vmin = _np.nanmin(var)
         if not vmax:
             vmax = _np.nanmax(var)
 
-        cmap = modified_jet()
         norm = MidPointNorm(vmin=vmin, vmax=vmax, midpoint=0)
 
-        if self.cfg.volumic:
-            self._show3d(var, cmap, norm, show_nans=show_nans, show_bz=show_bz, slices=slices)
-        else:
-            self._show2d(var, cmap, norm, show_nans=show_nans, show_bz=show_bz)
+        fig, ax = self.frame(var, norm, show_nans=show_nans, show_bz=show_bz, slices=slices, figsize=figsize)
 
-    def _show2d(self, var, cmap, norm, show_nans=False, show_bz=False):
+        _plt.show()
+
+    def frame(self, var, norm, show_nans=False, show_bz=False, slices=None, iteration=0, figsize=(9, 9)):
+
+        if len(self.msh.shape) == 3:
+            return self._fields3d(var, norm, show_nans, show_bz, slices, figsize)
+        else:
+            return self._fields2d(var, norm, show_nans, show_bz, figsize)
+
+    def _fields2d(self, var, norm, show_nans, show_bz, figsize=(9, 9)):
         """ Show 2d results. """
 
         # midpoint
@@ -123,9 +131,9 @@ class MPLViewer:
         else:
             ticks = [midpoint, norm.vmax]
 
-        _, ax = _plt.subplots(1, 1, figsize=(9, 9))
+        fig, ax = _plt.subplots(1, 1, figsize=figsize)
 
-        im = ax.pcolorfast(self.msh.x, self.msh.y, var.T[:-1, :-1], cmap=cmap, norm=norm)
+        im = ax.pcolorfast(self.msh.x, self.msh.y, var[:-1, :-1], cmap=cmap, norm=norm)
         ax.set_aspect(1.)
         ax.set_xlabel(r'$x$ [m]')
         ax.set_ylabel(r'$y$ [m]')
@@ -160,23 +168,29 @@ class MPLViewer:
             edges = _patches.Rectangle(origin, *size, linewidth=3, fill=None)
             ax.add_patch(edges)
 
-        _plt.show()
+        return fig, im
 
-    def _show3d(self, var, cmap, norm, show_nans=False, show_bz=False, slices=None):
+    def _get_slices(self, slices):
+
+        if slices:
+            if all([a < b for a, b in zip(slices[::-1], self.msh.shape)]):
+                self.i_xy, self.i_xz, self.i_zy = slices
+            else:
+                raise IndexError('Slices out of bounds')
+        else:
+            self.i_xy, self.i_xz, self.i_zy = [int(n/2) for n in self.msh.shape]
+
+    def _fields3d(self, var, norm, show_nans, show_bz, slices, figsize=(9, 9)):
         """ Show 3d results. """
 
         foreground = {'linewidth': 3, 'fill': False}
         background = {'linewidth': 3, 'fill': True, 'facecolor': (0.8, 0.8, 1), 'alpha':0.2}
 
-        if slices:
-            if all([a < b for a, b in zip(slices[::-1], self.msh.shape)]):
-                i_xy, i_xz, i_zy = slices
-            else:
-                raise IndexError('Slices out of bounds')
-        else:
-            i_xy, i_xz, i_zy = self.cfg.izS, self.cfg.iyS, self.cfg.ixS
+        self._get_slices(slices)
 
-        fig, ax_xy = _plt.subplots(figsize=(9, 9), tight_layout=True)
+        ims = []
+
+        fig, ax_xy = _plt.subplots(figsize=figsize, tight_layout=True)
 
         # Sizes
         width, height = fig.get_size_inches()
@@ -185,28 +199,32 @@ class MPLViewer:
         size_z = self.msh.z[-1] - self.msh.z[0]
 
         # xy plot:
-        ax_xy.pcolorfast(self.msh.x, self.msh.y, var[:-1, :-1, i_xy], cmap=cmap, norm=norm)
-        ax_xy.plot(self.msh.x[[0, -1]], self.msh.y[[i_xz, i_xz]], color='gold', linewidth=1)
-        ax_xy.plot(self.msh.x[[i_zy, i_zy]], self.msh.y[[0, -1]], color='green', linewidth=1)
+        ims.append(ax_xy.pcolorfast(self.msh.x, self.msh.y, var[:-1, :-1, self.i_xy].T, cmap=cmap, norm=norm))
+        ax_xy.plot(self.msh.x[[0, -1]], self.msh.y[[self.i_xz, self.i_xz]], color='gold', linewidth=1)
+        ax_xy.plot(self.msh.x[[self.i_zy, self.i_zy]], self.msh.y[[0, -1]], color='green', linewidth=1)
         ax_xy.set_xlabel(r'$x$ [m]')
         ax_xy.set_ylabel(r'$y$ [m]')
 
         # create new axes on the right and on the top of the current axes
         divider = make_axes_locatable(ax_xy)
         # below height and pad are in inches
-        ax_xz = divider.append_axes("top", 1.25*width*(size_x/size_z - 1), pad=0., sharex=ax_xy)    # position, size, pad
-        ax_zy = divider.append_axes("right", 1.25*width*(size_x/size_z - 1), pad=0., sharey=ax_xy)
+        ax_xz = divider.append_axes("top", 1.*width*(size_x/size_z - 1), pad=0., sharex=ax_xy)    # position, size, pad
+        ax_zy = divider.append_axes("left", 1.*width*(size_x/size_z - 1), pad=0., sharey=ax_xy)
+        ax_bar = divider.append_axes("right", size="5%", pad=0.05)
 
         # xz and zy plots
-        ax_xz.pcolorfast(self.msh.x, self.msh.z, var[:-1, i_xz, :-1].T, cmap=cmap, norm=norm)
-        ax_xz.plot(self.msh.x[[0, -1]], self.msh.z[[i_xy, i_xy]], color='gold', linewidth=1)
+        ims.append(ax_xz.pcolorfast(self.msh.x, self.msh.z, var[:-1, self.i_xz, :-1].T, cmap=cmap, norm=norm))
+        ax_xz.plot(self.msh.x[[0, -1]], self.msh.z[[self.i_xy, self.i_xy]], color='gold', linewidth=1)
         ax_xz.xaxis.set_tick_params(labelbottom=False)
         ax_xz.set_ylabel(r'$z$ [m]')
 
-        ax_zy.pcolorfast(self.msh.z, self.msh.y, var[i_zy, :-1, :-1], cmap=cmap, norm=norm)
-        ax_zy.plot(self.msh.z[[i_xy, i_xy]], self.msh.y[[0, -1]], color='green', linewidth=1)
+        ims.append(ax_zy.pcolorfast(self.msh.z, self.msh.y, var[self.i_zy, :-1, :-1], cmap=cmap, norm=norm))
+        ax_zy.plot(self.msh.z[[self.i_xy, self.i_xy]], self.msh.y[[0, -1]], color='green', linewidth=1)
         ax_zy.yaxis.set_tick_params(labelleft=False)
         ax_zy.set_xlabel(r'$z$ [m]')
+
+        fig.colorbar(ims[0], cax=ax_bar)
+        #ax_bar.xaxis.set_ticks_position("top")
 
         for ax in fig.get_axes():
             ax.set_aspect(1.)
@@ -245,19 +263,82 @@ class MPLViewer:
             size = [self.msh.axis[i][o + s - 1] - self.msh.axis[i][o]
                     for i, (o, s) in enumerate(zip(obs.origin, obs.size))]
 
-            kwargs = foreground if i_xy in obs.rz else background
+            kwargs = foreground if self.i_xy in obs.rz else background
             edges = _patches.Rectangle((origin[0], origin[1]), size[0], size[1], **kwargs)
             ax_xy.add_patch(edges)
 
-            kwargs = foreground if i_xz in obs.ry else background
+            kwargs = foreground if self.i_xz in obs.ry else background
             edges = _patches.Rectangle((origin[0], origin[2]), size[0], size[2], **kwargs)
             ax_xz.add_patch(edges)
 
-            kwargs = foreground if i_zy in obs.rx else background
+            kwargs = foreground if self.i_zy in obs.rx else background
             edges = _patches.Rectangle((origin[2], origin[1]), size[2], size[1], **kwargs)
             ax_zy.add_patch(edges)
 
-        _plt.show()
+        return fig, ims
+
+    def _init_movie(self, view):
+
+        title = os.path.basename(self.cfg.savefile).split('.')[0]
+        views = {'p': r'$p_a$ [Pa]',
+                 'e': r'$e$ [kg.m$^2$.s$^{-2}$]',
+                 'vx': r'$v_x$ [m/s]',
+                 'vy': r'$v_y$ [m/s]',
+                 'vz': r'$v_y$ [m/s]',
+                 'rho': r'$\rho$ [kg.m$^3$]',
+                 're': r'$\rho e$ [kg$^2$.m$^{-1}$.s$^{-2}$]',
+                 'ru': r'$\rho v_x$ [kg.m$^{-2}$/s]',
+                 'rv': r'$\rho v_y$ [kg.m$^{-2}$/s]',
+                 'rw': r'$\rho v_y$ [kg.m$^{-2}$/s]',
+                 'vxyz': r'$\omega$ [m/s]'}
+
+        metadata = dict(title=title, filename=f'{title}_{view}.mkv',
+                        view=view, var=views[view], comment='Made with nsfds3')
+
+        return metadata
+
+    def movie(self, view='p', nt=None, ref=None, figsize=(9, 9),
+              show_nans=False, show_bz=False, slices=None,
+              dpi=100, fps=24):
+        """ Make movie. """
+
+        if not isinstance(self.data, DataExtractor):
+            print('movie method only available for DataExtractor')
+            sys.exit(1)
+
+        # Nb of iterations and reference
+        nt = self.cfg.nt if not nt else nearest_index(nt, self.cfg.ns, self.cfg.nt)
+        ref = 'auto' if not ref else ref
+
+        # Create Iterator and make 1st frame
+        data = DataIterator(self.data, view=view, nt=nt)
+        vmin, vmax = self.data.reference(view=view, ref=ref)
+        norm = MidPointNorm(vmin=vmin, vmax=vmax, midpoint=0)
+        i, var = next(data)
+        fig, im = self.frame(var, norm,
+                             show_nans=show_nans, show_bz=show_bz,
+                             slices=slices, iteration=i, figsize=figsize)
+
+        # Movie parameters
+        metadata = self._init_movie(view)
+        writer = _ani.FFMpegWriter(fps=fps, metadata=metadata, bitrate=-1, codec="libx264")
+        with writer.saving(fig, self.cfg.savepath / metadata['filename'], dpi=dpi):
+
+            writer.grab_frame()
+
+            for i, var in track(data, description='Making movie...', disable=self.cfg.quiet):
+                axes = fig.get_axes()
+                if self.volumic:
+                    im[0].set_data(self.msh.x, self.msh.y, var[:-1, :-1, self.i_xy].T)
+                    im[1].set_data(self.msh.x, self.msh.z, var[:-1, self.i_xz, :-1].T)
+                    im[2].set_data(self.msh.z, self.msh.y, var[self.i_zy, :-1, :-1])
+                    axes[1].set_title(metadata['var'] + f' (n={i})')
+                else:
+                    im.set_data(self.msh.x, self.msh.y, var[:-1, :-1])
+                    axes[0].set_title(metadata['var'] + f' (n={i})')
+
+                writer.grab_frame()
+            self.data.close()
 
 
 class CDViewer:
@@ -265,11 +346,9 @@ class CDViewer:
 
     def __init__(self, obj):
         self.shape = obj.shape
-        self.volumic = obj.volumic
-        self.stencil = obj.stencil
+        self.volumic = len(self.shape) == 3
         self.obstacles = obj.obstacles
         self.domains = obj.domains
-        self.udomains = [s for s in self.domains if s.tag != (0, ) * len(self.shape)]
         self.traces = []
 
         self.x = getattr(obj, 'x', _np.arange(self.shape[0]))
@@ -463,248 +542,3 @@ class CDViewer:
                                        flatshading=True   # to hide the triangles
                                        ))
         return data
-
-
-class Plot:
-    """ Helper class to plot results from nsfds2.
-
-    Parameters
-    ----------
-    filename : str
-        hdf5 file
-    quiet : bool, optional
-        Quiet mode.
-    """
-
-    def __init__(self, filename, quiet=False):
-        self.filename = pathlib.Path(filename).expanduser()
-        self.path = self.filename.parent
-        self.quiet = quiet
-
-        self.data = DataExtractor(self.filename)
-        self.nt = self.data.get_attr('nt')
-        self.ns = self.data.get_attr('ns')
-
-        self._init_geo()
-        self._init_fig()
-
-    def _init_geo(self):
-        """ Init coordinate system. """
-
-        self.obstacles = self.data.get_attr('obstacles')
-        self.nbz = self.data.get_attr('nbz')
-        self.mesh = self.data.get_attr('mesh')
-        self.bc = self.data.get_attr('bc')
-
-        if self.mesh == 'curvilinear':
-            self.x = self.data.get_dataset('xp')
-            self.y = self.data.get_dataset('yp')
-        else:
-            self.x, self.y = _np.meshgrid(self.data.get_dataset('x'),
-                                          self.data.get_dataset('y'))
-            self.x = _np.ascontiguousarray(self.x.T)
-            self.y = _np.ascontiguousarray(self.y.T)
-
-    def _init_fig(self):
-        """ Init figure parameters. """
-
-        self.cm = modified_jet()
-        self.title = r'{} -- iteration : {}'
-        self.titles = {'p': r'$p_a$ [Pa]',
-                       'e': r'$e$ [kg.m$^2$.s$^{-2}$]',
-                       'vx': r'$v_x$ [m/s]',
-                       'vy': r'$v_y$ [m/s]',
-                       'rho': r'$\rho$ [kg.m$^3$]',
-                       'vxyz': r'$\omega$ [m/s]'}
-
-    def movie(self, view=('p', 'e', 'vx', 'vy'), nt=None, ref=None,
-              figsize='auto', xlim=None, ylim=None,
-              show_bz=False, show_probes=False,
-              dpi=100, fps=24, logscale=False):
-        """ Make movie. """
-
-        # Movie parameters
-        title = os.path.basename(self.filename).split('.')[0]
-        metadata = dict(title=title, artist=getpass.getuser(), comment='From nsfds2')
-        writer = _ani.FFMpegWriter(fps=fps, metadata=metadata, bitrate=-1, codec="libx264")
-        movie_filename = f'{title}.mkv'
-
-        # Nb of iterations and reference
-        nt = self.nt if not nt else nearest_index(nt, self.ns, self.nt)
-        ref = 'auto' if not ref else ref
-
-        # Create Iterator and make 1st frame
-        data = DataIterator(self.data, view=view, nt=nt)
-        i, *var = next(data)
-        fig, axes, ims = self.fields(view=view, iteration=i, ref=ref,
-                                     show_bz=show_bz,
-                                     show_probes=show_probes,
-                                     figsize=figsize,
-                                     xlim=xlim, ylim=ylim,
-                                     logscale=logscale)
-
-        with writer.saving(fig, self.path / movie_filename, dpi=dpi):
-
-            writer.grab_frame()
-
-            for i, *var in track(data, description='Making movie...', disable=self.quiet):
-
-                # StackOv : using-set-array-with-pyplot-pcolormesh-ruins-figure
-                for ax, mesh, v, j in zip(axes.ravel(), ims, var, range(len(ims))):
-                    mesh.set_array(v[:-1, :-1].T.flatten())
-                    ax.set_title(self.titles[view[j]] + f' (n={i})')
-
-                writer.grab_frame()
-
-    def probes(self):
-        """ Plot pressure at probes. """
-
-        probes = self.data.get_dataset('probe_locations').tolist()
-
-        if not probes:
-            return None
-
-        p = self.data.get_dataset('probe_values')
-        t = _np.arange(self.nt) * self.data.get_attr('dt')
-
-        _, ax = _plt.subplots(figsize=(9, 4))
-        for i, c in enumerate(probes):
-            if self.data.get_attr('mesh') == 'curvilinear':
-                p0 = self.data.get_attr('p0') / self.data.get_dataset('J')[c[0], c[1]]
-            else:
-                p0 = self.data.get_attr('p0')
-            ax.plot(t, p[i, :] - p0, label=f'@{tuple(c)}')
-        ax.set_xlim(t.min(), t.max())
-        ax.set_xlabel('Time [s]')
-        ax.set_ylabel('Pressure [Pa]')
-        ax.legend()
-        ax.grid()
-
-        return None
-
-    def spectrogram(self):
-        """ Plot spectograms at probes. """
-
-        probes = self.data.get_dataset('probe_locations').tolist()
-
-        if not probes:
-            return None
-
-        p = self.data.get_dataset('probe_values')
-
-        M = 1024
-
-        fig, ax = _plt.subplots(p.shape[0], figsize=(9, 4))
-        for i, c in enumerate(probes):
-
-            if self.data.get_attr('mesh') == 'curvilinear':
-                p0 = self.data.get_attr('p0') / self.data.get_dataset('J')[c[0], c[1]]
-            else:
-                p0 = self.data.get_attr('p0')
-
-            freqs, times, Sx = _signal.spectrogram(p[i, :] - p0,
-                                                   fs=1 / self.data.get_attr('dt'),
-                                                   window='hanning',
-                                                   nperseg=M, noverlap=M - 100,
-                                                   detrend=False,
-                                                   scaling='spectrum')
-            im = ax[i].pcolormesh(times, freqs / 1000, 10 * _np.log10(Sx), cmap='viridis')
-            ax[i].set_ylabel('Frequency [kHz]')
-            if i != len(probes) - 1:
-                ax[i].set_xticks([])
-
-            fig.colorbar(im, ax=ax[i], label=f'probe {i}')
-
-        ax[-1].set_xlabel('Time [s]')
-        ax[0].set_title('Square spectrum magitude')
-        _plt.tight_layout()
-
-        return None
-
-    def fields(self, view=('p', 'e', 'vx', 'vy'), iteration=None, ref=None,
-               show_bz=False, show_probes=True, figsize='auto',
-               xlim=None, ylim=None, midpoint=0, logscale=False):
-        """ Make figure """
-
-        if iteration is None:
-            iteration = self.nt
-        else:
-            iteration = nearest_index(iteration, self.ns, self.nt)
-
-        var = []
-        norm = []
-        ims = []
-        ticks = []
-
-        for v in view:
-            var.append(self.data.get(view=v, iteration=iteration).T)
-
-            # vmin & vmax
-            if ref:
-                vmin, vmax = self.data.reference(view=v, ref=ref)
-            else:
-                vmin, vmax = _np.nanmin(var[-1]), _np.nanmax(var[-1].max)
-
-            # midpoint
-            if vmin > 0 and vmax > 0:
-                midpoint = _np.nanmean(var[-1])
-            else:
-                midpoint = 0
-
-            # ticks
-            if abs(vmin-midpoint) / vmax > 0.33:
-                ticks.append([vmin, midpoint, vmax])
-            else:
-                ticks.append([midpoint, vmax])
-
-            if logscale:
-                bins, values = _np.histogram(var[-1], bins=100)
-                thresh = 25 * abs(values[bins.argmax()])
-                thresh = thresh if thresh != 0 else vmax / 25
-                #thresh = max(0.03, 0.8*abs(values[bins.argmax()]))
-                norm.append(SymLogNorm(linthresh=thresh, linscale=1,
-                                       vmin=vmin, vmax=vmax, base=10))
-            else:
-                norm.append(MidPointNorm(vmin=vmin, vmax=vmax, midpoint=midpoint))
-
-        fig, axes = _plt.subplots(*get_subplot_shape(len(var)))
-
-        if not isinstance(axes, _np.ndarray):   # if only 1 varible in view
-            axes = _np.array(axes)
-
-        for i, ax in enumerate(axes.ravel()):
-            if i < len(var):
-                ims.append(ax.pcolormesh(self.x, self.y, var[i][:-1, :-1],
-                                         cmap=self.cm, norm=norm[i]))
-                ax.set_title(self.titles[view[i]] + f' (n={iteration})')
-                ax.set_xlabel(r'$x$ [m]')
-                ax.set_ylabel(r'$y$ [m]')
-                ax.set_aspect('equal')
-                divider = make_axes_locatable(ax)
-                cax = divider.append_axes("right", size="5%", pad=0.05)
-                _plt.colorbar(ims[i], cax=cax, ticks=ticks[i])
-
-                probes = self.data.get_dataset('probe_locations').tolist()
-                if probes and show_probes:
-                    _ = [ax.plot(self.x[i, j], self.y[i, j], 'ro') for i, j in probes]
-
-                #_graphics.plot_subdomains(ax, self.x, self.y, self.obstacles)
-                if show_bz:
-                    pass
-                    #_graphics.plot_bz(ax, self.x, self.y, self.bc, self.nbz)
-                if xlim:
-                    ax.set_xlim(xlim)
-                if ylim:
-                    ax.set_ylim(ylim)
-            else:
-                ax.remove()
-
-        fig.set_size_inches(*set_figsize(axes, figsize))
-#        _plt.tight_layout()
-
-        return fig, axes, ims
-
-    @staticmethod
-    def show():
-        """ Show all figures. """
-        _plt.show()

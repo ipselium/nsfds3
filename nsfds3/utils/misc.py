@@ -64,7 +64,7 @@ class GeoMeta:
 class Schemes:
     """ Listing of schemes. """
 
-    def __init__(self, stencil=3, ndim=3):
+    def __init__(self, stencil=11, ndim=3):
 
         if ndim not in [2, 3]:
             raise ValueError('dim must be 2 or 3')

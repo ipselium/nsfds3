@@ -53,6 +53,18 @@ from pkg_resources import parse_version as _parse_version
 from nsfds3.utils import files
 
 
+def parse_int_tuple(input):
+    if input.lower() not in [None, 'none']:
+        return tuple(int(k.strip()) for k in input[1:-1].split(','))
+    return None
+
+
+def parse_float_tuple(input):
+    if input.lower() not in [None, 'none']:
+        return tuple(float(k.strip()) for k in input[1:-1].split(','))
+    return None
+
+
 def create_template(path=None, filename=None, cfg=None):
     """ Create default configuration file. Default location is .nsfds3/nsfds3.conf."""
 
@@ -78,65 +90,38 @@ def create_template(path=None, filename=None, cfg=None):
     cfg.set('thermophysic', 'prandtl', '0.7')
 
     cfg.add_section('geometry')
-    cfg.set('geometry', 'mesh', 'regular')
+    cfg.set('geometry', 'mesh', 'cartesian')
     cfg.set('geometry', 'file', 'None')
-    cfg.set('geometry', 'geoname', 'helmholtz_double')
+    cfg.set('geometry', 'geoname', 'single')
     cfg.set('geometry', 'curvname', 'None')
-    cfg.set('geometry', 'Nd', '23')
-    cfg.set('geometry', 'Rx', '3.')
-    cfg.set('geometry', 'only_pml', 'False')
     cfg.set('geometry', 'bc', 'WWWWWW')
-    cfg.set('geometry', 'nx', '256')
-    cfg.set('geometry', 'ny', '256')
-    cfg.set('geometry', 'nz', '256')
-    cfg.set('geometry', 'ix0', '0')
-    cfg.set('geometry', 'iy0', '0')
-    cfg.set('geometry', 'iz0', '0')
-    cfg.set('geometry', 'dx', '1')
-    cfg.set('geometry', 'dy', '1')
-    cfg.set('geometry', 'dz', '1')
+    cfg.set('geometry', 'shape', '(256, 256, 256)')
+    cfg.set('geometry', 'origin', 'None')
+    cfg.set('geometry', 'steps', '(1., 1., 1.)')
     cfg.set('geometry', 'flat', '[]')
 
-    cfg.add_section('BZ')
-    cfg.set('BZ', 'grid points', '20')
-    cfg.set('BZ', 'filter order', '3.')
-    cfg.set('BZ', 'stretch level', '2.')
-    cfg.set('BZ', 'stretch order', '3.')
+    cfg.add_section('buffer zone')
+    cfg.set('buffer zone', 'grid points', '20')
+    cfg.set('buffer zone', 'filter order', '3.')
+    cfg.set('buffer zone', 'stretch level', '2.')
+    cfg.set('buffer zone', 'stretch order', '3.')
 
-    cfg.add_section('source')
+    cfg.add_section('acoustic source')
     cfg.set('source', 'type', 'pulse')
-    cfg.set('source', 'ixS', '32')
-    cfg.set('source', 'iyS', '32')
-    cfg.set('source', 'izS', '128')
+    cfg.set('source', 'origin', '(32, 32, 32)')
     cfg.set('source', 's0', '1e6')
     cfg.set('source', 'b0', '5')
-    cfg.set('source', 'f0', '20000')
-    cfg.set('source', 'seed', 'None')
-    cfg.set('source', 'wavfile', 'None')
 
     cfg.add_section('flow')
     cfg.set('flow', 'type', 'None')
-    cfg.set('flow', 'u0', '0')
-    cfg.set('flow', 'v0', '0')
-    cfg.set('flow', 'w0', '0')
+    cfg.set('flow', 'components', '(0, 0, 0)')
 
-    cfg.add_section('eulerian fluxes')
-    cfg.set('eulerian fluxes', 'stencil', '11')
-
-    cfg.add_section('filtering')
-    cfg.set('filtering', 'filter', 'True')
-    cfg.set('filtering', 'stencil', '11')
-    cfg.set('filtering', 'strength', '0.6')
-    cfg.set('filtering', 'strength_on_walls', '0.01')
-
-    cfg.add_section('viscous fluxes')
-    cfg.set('viscous fluxes', 'viscosity', 'True')
-    cfg.set('viscous fluxes', 'stencil', '7')
-
-    cfg.add_section('shock capture')
-    cfg.set('shock capture', 'shock capture', 'True')
-    cfg.set('shock capture', 'stencil', '7')
-    cfg.set('shock capture', 'method', 'pressure')
+    cfg.add_section('solver')
+    cfg.set('solver', 'viscous fluxes', 'True')
+    cfg.set('solver', 'shock capture', 'True')
+    cfg.set('solver', 'selective filter', 'True')
+    cfg.set('solver', 'selective filter n-strength', '0.6')
+    cfg.set('solver', 'selective filter 0-strength ', '0.01')
 
     cfg.add_section('figures')
     cfg.set('figures', 'figures', 'True')
@@ -170,35 +155,30 @@ def create_template(path=None, filename=None, cfg=None):
 class CfgSetup:
     """ Handle configuration file. """
 
-    def __init__(self, args=None):
+    def __init__(self, cfgfile=None):
 
         # Minimal version of the config file
         self.base_version = '0.1.0'
 
-        # Command line arguments + home
-        self.args = args
+        # Default configuration
         self.home = _pathlib.Path.home()
         self.path_default = self.home / '.nsfds3'
         self.cfgfile_default = self.path_default / 'nsfds3.conf'
 
         # Create config parser
-        self.cfg = _configparser.ConfigParser(allow_no_value=True)
+        self.cfg = _configparser.ConfigParser(allow_no_value=True,
+                                              converters={'tuple_int': parse_int_tuple,
+                                                          'tuple_float': parse_float_tuple})
 
         # Load config file
-        if isinstance(self.args, str):
-            self.cfgfile = _pathlib.Path(self.args)
-        else:
-            self.cfgfile = getattr(self.args, 'cfgfile', None)
-
-        # Check cfg file
-        if self.cfgfile:
-            self.cfgfile = _pathlib.Path(self.cfgfile)
+        if isinstance(cfgfile, (_pathlib.Path, str)):
+            self.cfgfile = _pathlib.Path(cfgfile)
             self.path = self.cfgfile.absolute().parent
         else:
             self.path = self.path_default
             self.cfgfile = self.cfgfile_default
             self.mkdir(self.path)     # Check if cfg dir exists. If not create it.
-            self.mkcfg()           # Check if cfg file exist. If not create it
+            self.mkcfg()              # Check if cfg file exist. If not create it
 
         # Check if config file version is ok
         self.check_version()
@@ -260,10 +240,7 @@ class CfgSetup:
 
         try:
             self._cfg()
-            self._eul()
-            self._flt()
-            self._vsc()
-            self._cpt()
+            self._sol()
             self._sim()
             self._thp()
             self._geo()
@@ -272,32 +249,33 @@ class CfgSetup:
             self._flw()
             self._save()
             self._figs()
+            if self.flat and len(self.shape) == 3:
+                self._3d_to_2d()
         except _configparser.Error as err:
             print('Bad cfg file : ', err)
             _sys.exit(1)
 
-        du = min(self.dx, self.dy, self.dz)
-        c = self.c0 + max(abs(self.U0), abs(self.V0), abs(self.W0))
+        du = min(self.steps)
+        c = self.c0 + max([abs(u) for u in self.U])
         self.dt = du * self.CFL / c
 
     def _cfg(self):
         """ Get global parameters. """
         CFG = self.cfg['configuration']
-        self.timings = getattr(self.args, 'timings', CFG.getboolean('timings', False))
-        self.quiet = getattr(self.args, 'quiet', CFG.getboolean('quiet', False))
+        self.timings = CFG.getboolean('timings', False)
+        self.quiet = CFG.getboolean('quiet', False)
         self.cpu = CFG.getint('cpu', 1)
 
     def _sim(self):
         """ Get simulation parameters. """
         SIM = self.cfg['simulation']
-        self.nt = getattr(self.args, 'nt', SIM.getint('nt', 500))
+        self.nt = SIM.getint('nt', 500)
         self.ns = SIM.getint('ns', 10)
         self.CFL = SIM.getfloat('cfl', 0.5)
+        self.it = 0
 
         if self.nt % self.ns:
             self.nt -= self.nt % self.ns
-
-        self.it = 0
 
     def _thp(self):
         """ Get thermophysical parameters. """
@@ -336,57 +314,26 @@ class CfgSetup:
 
         # Grid
         self.bc = GEO.get('bc', 'WWWWWW').upper()
-        self.nx = GEO.getint('nx', 256)
-        self.ny = GEO.getint('ny', 256)
-        self.nz = GEO.getint('nz', 256)
-        self.ix0 = GEO.getint('ix0', 0)
-        self.iy0 = GEO.getint('iy0', 0)
-        self.iz0 = GEO.getint('iz0', 0)
-        self.dx = GEO.getfloat('dx', 1)
-        self.dy = GEO.getfloat('dy', 1)
-        self.dz = GEO.getfloat('dz', 1)
-        self.volumic = GEO.getboolean('volumic', True)
-        self.flat = _json.loads(GEO.get('flat', '[]'))
-        if self.flat and self.volumic:
-            self.volumic = False
-            self.flat_ax, self.flat_idx = self.flat
-            self.shape = tuple(s for i, s in
-                               enumerate((self.nx, self.ny, self.nz))
-                               if i != self.flat_ax)
-            self.origin = tuple(s for i, s in
-                                enumerate((self.ix0, self.iy0, self.iz0))
-                                if i != self.flat_ax)
-            self.steps = tuple(s for i, s in
-                               enumerate((self.dx, self.dy, self.dz))
-                               if i != self.flat_ax)
-            if len(self.bc) == 6:
-                self.bc = ''.join(bc for i, bc in enumerate(self.bc) if i
-                                  not in [2*self.flat_ax, 2*self.flat_ax + 1])
-        elif not self.volumic:
-            self.flat = None
-            self.shape = (self.nx, self.ny)
-            self.origin = (self.ix0, self.iy0)
-            self.steps = (self.dx, self.dy)
-            if len(self.bc) == 6:
-                self.bc = self.bc[:4]
-        elif not self.flat and self.volumic:
-            self.shape = (self.nx, self.ny, self.nz)
-            self.origin = (self.ix0, self.iy0, self.iz0)
-            self.steps = (self.dx, self.dy, self.dz)
+        self.shape = GEO.gettuple_int('shape', (256, 256, 256))
+        self.origin = GEO.gettuple_int('origin', None)
+        self.steps = GEO.gettuple_float('steps', (1., 1., 1.))
+        self.flat = GEO.gettuple_int('flat', None)
 
         # Mesh type and geometry
-        self.mesh = GEO.get('mesh', 'regular').lower()
+        self.mesh = GEO.get('mesh', 'cartesian').lower()
         self.geofile = GEO.get('file', None)
         self.geoname = GEO.get('geoname', 'square')
 
+        if len(self.shape) != len(self.steps) or 2*len(self.shape) != len(self.bc):
+            raise ValueError('shape, steps and bc must have coherent dims.')
+
+        if self.mesh not in ['cartesian', 'curvilinear']:
+            raise ValueError('mesh must be cartesian or curvilinear')
+
+        # Geometry
         if self.geofile not in self.none:
             self.geofile = self.path / self.geofile
-
         self.obstacles = files.get_obstacle(self)
-
-        if self.mesh not in ['regular', 'adaptative', 'curvilinear']:
-            raise ValueError('mesh must be regular, adaptative, or curvilinear')
-
 
         # Curvilinear mesh
         if self.mesh == 'curvilinear':
@@ -394,104 +341,55 @@ class CfgSetup:
         else:
             self.curvname = None
 
-        # Adaptative mesh
-        if self.mesh == 'adaptative':
-            self.Nd = GEO.getint('Nd', 23)                      # Adapt over Nd pts
-            self.Rx = GEO.getfloat('Rx', 3.)                    # dilatation rate
-            self.only_pml = GEO.getboolean('only_pml', False)   # adapt only in PML
-        else:
-            self.Nd, self.Rx, self.only_pml = None, None, None
-
     def _bz(self):
         """ Get Buffer Zone parameters. """
-        BZ = self.cfg['BZ']
+        BZ = self.cfg['buffer zone']
         self.nbz = BZ.getint('grid points', 20)
-        self.forder = BZ.getfloat('filter ordrer', 3.)
-        self.slevel = BZ.getfloat('stretch level', 2.)
-        self.sorder = BZ.getfloat('stretch order', 3.)
+        self.sigma_order = BZ.getfloat('filter ordrer', 3.)
+        self.stretch_factor = BZ.getfloat('stretch factor', 2.)
+        self.stretch_order = BZ.getfloat('stretch order', 3.)
 
     def _src(self):
         """ Get source parameters. """
-        SRC = self.cfg['source']
+        SRC = self.cfg['acoustic source']
         self.stype = SRC.get('type', 'pulse').lower()
-        self.ixS = SRC.getint('ixS', 32)
-        self.iyS = SRC.getint('iyS', 32)
-        self.izS = SRC.getint('izS', 32)
-        self.S0 = SRC.getfloat('s0', 1e3)
-        self.B0 = SRC.getfloat('b0', 5)
-        self.f0 = SRC.getfloat('f0', 20000)
-        self.wavfile = SRC.get('wavfile', None)
-        self.seed = SRC.get('seed', None)
-        self.off = SRC.getint('off', self.nt)
+        self.sorigin = SRC.gettuple_int('origin', tuple([int(n/2) for n in self.shape]))
+        self.S0 = SRC.getfloat('amplitude', 1e3)
+        self.B0 = SRC.getfloat('width', 5)
 
-        if self.wavfile:
-            self.wavfile = _pathlib.Path(self.wavfile).expanduser()
-
-        if self.seed not in self.none:
-            try:
-                self.seed = int(self.seed)
-            except ValueError:
-                raise ValueError('Seed must be int or None')
-
-        if self.stype not in ['pulse', 'harmonic', 'wav', 'white']:
+        if self.stype not in ['pulse', ]:
+            self.stype = None
             self.S0 = 0
+
+        if len(self.sorigin) != len(self.shape):
+            raise ValueError(f'Source location must be {len(self.shape)}d')
+
 
     def _flw(self):
         """ Get flow parameters. """
         FLW = self.cfg['flow']
+        U0 = tuple([0 for i in range(len(self.shape))])
         self.ftype = FLW.get('type', 'None').lower()
-        self.U0 = FLW.getfloat('u0', 0)
-        self.V0 = FLW.getfloat('v0', 0)
-        self.V0 = FLW.getfloat('w0', 0)
+        self.U = FLW.gettuple_float('components', U0)
 
-        if self.ftype not in ['custom', 'vortex', 'poiseuille']:
+        if self.ftype not in ['mean flow', ]:
             self.ftype = None
-            self.U0, self.V0, self.W0 = 0., 0., 0.
+            self.U = U0
 
-    def _eul(self):
-        """ Get Euler fluxes parameters. """
-        EUL = self.cfg['eulerian fluxes']
-        self.stencil = EUL.getint('stencil', 11)
+        if len(self.U) != len(self.shape):
+            raise ValueError(f'Mean flow component must be {len(self.shape)}d')
 
-        if self.stencil not in [3, 7, 11]:
-            raise ValueError('stencil must be 3, 7 or 11')
+    def _sol(self):
+        """ Get solver. """
+        SOL = self.cfg['solver']
+        self.vsc = SOL.getboolean('viscous fluxes', True)
+        self.cpt = SOL.getboolean('shock capture', True)
+        self.flt = SOL.getboolean('selective filter', True)
+        self.flt_xnu_n = SOL.getfloat('selective filter n-strength', 0.2)
+        self.flt_xnu_0 = SOL.getfloat('selective filter 0-strength', 0.01)
 
-    def _flt(self):
-        """ Get selective filter parameters. """
-        FLT = self.cfg['filtering']
-        self.flt = FLT.getboolean('filter', True)
-        self.flt_stencil = FLT.getint('stencil', 11)
-        self.flt_xnu = FLT.getfloat('strength', 0.2)
-        self.flt_xnu0 = FLT.getfloat('strength_on_walls', 0.01)
-
-        if self.flt_stencil not in [7, 11]:
-            raise ValueError('only 7 and 11 pts filters implemented for now')
-
-        if any(xnu < 0 or xnu > 1 for xnu in [self.flt_xnu, self.flt_xnu0]):
+        if any(xnu < 0 or xnu > 1 for xnu in [self.flt_xnu_n, self.flt_xnu_0]):
             raise ValueError('Filter strength must be between O and 1')
-
-    def _vsc(self):
-        """ Get viscous fluxes parameters. """
-        VSC = self.cfg['viscous fluxes']
-        self.vsc = VSC.getboolean('viscosity', True)
-        self.vsc_stencil = VSC.getint('stencil', 3)
-
-        if self.vsc_stencil not in [3, 7, 11]:
-            raise ValueError('viscous fluxes only available with 3, 7 or 11 pts')
-
-    def _cpt(self):
-        """ Get shock capture parameters. """
-        CPT = self.cfg['shock capture']
-        self.cpt = CPT.getboolean('shock capture', True)
-        self.cpt_stencil = CPT.getint('stencil', 7)
-        self.cpt_meth = CPT.get('method', 'pressure').lower()
-        self.cpt_rth = 1e-6
-
-        if self.cpt_stencil not in [3, 7, 11]:
-            raise ValueError('capture only available with 3, 7 or 11 pts')
-
-        if self.cpt_meth not in ['pressure', 'dilatation']:
-            raise ValueError('capture method must be pressure or dilatation')
 
     def _save(self):
         """ Get save parameters. """
@@ -512,19 +410,12 @@ class CfgSetup:
         # Check probes
         if self.probes:
             for c in self.probes:
-                if not 0 <= c[0] < self.nx \
-                   or not 0 <= c[1] < self.ny \
-                   or not 0 <= c[2] < self.nz:
+                if any(not 0 <= c[i] < self.shape[i] for i in range(len(self.shape))):
                     raise ValueError('probes must be in the domain')
 
         # if self.savepath does not exist, create it
         self.mkdir(self.savepath)
-
-        self.datafile = getattr(self.args, 'datafile', None)
-        if not self.datafile:
-            self.datafile = self.savepath / self.savefile
-        else:
-            self.datafile = _pathlib.Path(self.datafile).expanduser()
+        self.datafile = self.savepath / self.savefile
 
     def _figs(self):
         """ Get figure parameters. """
@@ -538,6 +429,30 @@ class CfgSetup:
         self.ylim = _json.loads(FIGS.get('ylim', '[]'))
         self.zlim = _json.loads(FIGS.get('zlim', '[]'))
 
+    def _3d_to_2d(self):
+
+        if len(self.flat) != 2:
+            raise ValueError('flat must be a 2 elements tuple : (axis, location)')
+
+        self.flat_ax, self.flat_idx = self.flat
+        if self.flat_ax not in range(3):
+            raise ValueError('flat[0] (axis) must be 0, 1, or 2')
+        if self.flat_idx not in range(self.shape[self.flat_ax]):
+            raise ValueError('flat[1] (index) must be in the domain')
+
+        self.shape = tuple(s for i, s in enumerate(self.shape) if i != self.flat_ax)
+        self.steps = tuple(s for i, s in enumerate(self.steps) if i != self.flat_ax)
+        self.U = tuple(s for i, s in enumerate(self.U) if i != self.flat_ax)
+        self.sorigin = tuple(s for i, s in enumerate(self.sorigin) if i != self.flat_ax)
+        self.bc = ''.join(bc for i, bc in enumerate(self.bc) if i
+                            not in [2*self.flat_ax, 2*self.flat_ax + 1])
+        if self.origin:
+            self.origin = tuple(s for i, s in enumerate(self.origin) if i != self.flat_ax)
+
+        if self.obstacles:
+            self.obstacles = [obs.flatten(self.flat_ax) for obs in self.obstacles
+                              if self.flat_idx in obs.ranges[self.flat_ax] and obs.volumic]
+
     def get_config(self):
         """ Get configuration. """
         return (self.shape, self.steps), \
@@ -545,7 +460,5 @@ class CfgSetup:
                  'bc': self.bc,
                  'obstacles': self.obstacles,
                  'nbz': self.nbz,
-                 'slevel': self.slevel,
-                 'sorder': self.sorder,
-                 'stencil': self.stencil,
-                 'flat': self.flat}
+                 'stretch_factor': self.stretch_factor,
+                 'stretch_order': self.stretch_order}

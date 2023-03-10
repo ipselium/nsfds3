@@ -53,80 +53,68 @@ class CartesianGrid:
         Spatial steps. Must be a tuple with 2 or 3 float objects.
     origin : tuple, optional
         Origin of the grid. Must be a tuple with 2 or 3 int objects.
-    bc : {'[ARZPW][ARZPW][ARZPW][ARZPW][[ARZPW][ARZPW]]'}, optional
+    bc : {'[APW][APW][APW][APW][[APW][APW]]'}, optional
         Boundary conditions. Must be a 4 or 6 characters string corresponding to
         left, right, front, back, bottom, and top boundaries, respectively.
+        A stands for non reflecting boundary, W for non slip condition, and P for 
+        periodic boundary.
     obstacles : :py:class:`fdgrid.domains.Domain`, optional
         Obstacles in the computation domain.
     nbz : int, optional
         Number of points of the absorbing area (only if 'A' in `bc`).
+    stretch_factor : float, optional
+        Factor reach at the end of the stretching zone
+    stretch_order : float, optional
+        Order of the streching function
     stencil : int, optional
         Size of the finite difference stencil (used by :py:mod:`nsfds2`).
-    flat : {(axe, index)}, optional
-        Flat version of the mesh. The cut is made along axe at index.
 
     Note
     ----
-
-    One can override make_grid() method to customize (x, y, z) creation
+    One can override make_grid() method to customize (x, y, z)
 
     See also
     --------
-    :py:class:`AdaptativeMesh`,
     :py:class:`CurvilinearMesh`,
-    :py:mod:`fdgrid.templates`
+    :py:mod:`cpgrid.templates`
 
     """
 
     def __init__(self, shape, steps=None, origin=None, bc=None, obstacles=None,
-                 nbz=20, stencil=11, flat=None, slevel=2, sorder=3):
+                 nbz=20, stretch_factor=2, stretch_order=3, stencil=11):
 
         self.shape = shape
         self.steps = steps
         self.origin = origin
-        self.stencil = stencil
-        self.nbz = nbz
-        self.obstacles = obstacles
         self.bc = bc
-        self.slevel = slevel
-        self.sorder = sorder
-        self.flat = flat
+        self.obstacles = obstacles
+        self.nbz = nbz
+        self.stretch_factor = stretch_factor
+        self.stretch_order = stretch_order
+        self.stencil = stencil
 
         self._check_arguments_dims()
-        self._check_volume()
-
         self._set_attributes(('nx', 'ny', 'nz'), self.shape)
         self._set_attributes(('dx', 'dy', 'dz'), self.steps)
-        self._set_attributes(('odx', 'ody', 'odz'), 1 / _np.array(self.steps))
-        self._set_attributes(('ix0', 'iy0', 'iz0'), self.origin)
-        self._update_arguments()
 
         self.obstacles = ObstacleSet(self.shape, self.obstacles, stencil=self.stencil)
 
         self._check_bc()
         self._check_grid()
         self.make_grid()
-        self._set_flags()
+        self._set_axis_flags()
         self._find_subdomains()
 
-    def _axes(self, values=range(3)):
-        return [n for i, n in enumerate(values) if i != self.flat_ax]
-
-    def _set_attributes(self, names, values):
-        """ Helper method to set attributes. """
-        values = self._axes(values)
-        _ = [setattr(self, attr, val) for attr, val in zip(names, values)]
-
     def _check_arguments_dims(self):
-        """ Check input arguments of the mesh. """
+        """ Check input arguments. """
 
         if len(self.shape) not in [2, 3]:
-            raise ValueError('Shape must be or dim 2 or 3')
+            raise ValueError('Shape must be of dim 2 or 3')
 
         if not self.bc:
             self.bc = 'W' * len(self.shape) * 2
-        elif len(self.bc) not in [4, 6]:
-            raise ValueError('bc must be of dim 4 or 6')
+        elif len(self.bc) != 2 * len(self.shape):
+            raise ValueError(f'Expecting bc of dim {len(2*self.shape)}')
         else:
             self.bc = self.bc.upper()
 
@@ -137,38 +125,14 @@ class CartesianGrid:
             self.origin = tuple([self.nbz if self.bc[2*i] == "A" else 0 for i in range(len(self.shape))])
 
         if len(self.shape) != len(self.steps) or len(self.shape) != len(self.origin):
-            raise ValueError('shape, steps, origin must have coherent dim.')
+            raise ValueError('shape, steps, origin must have same dims.')
 
         if not self.obstacles:
             self.obstacles = []
 
-    def _update_arguments(self):
-
-        self.shape = tuple(getattr(self, attr, None) for attr
-                           in ('nx', 'ny', 'nz') if getattr(self, attr, None) is not None)
-        self.origin = tuple(getattr(self, attr, None) for attr
-                            in ('ix0', 'iy0', 'iz0') if getattr(self, attr, None) is not None)
-        self.steps = tuple(getattr(self, attr, None) for attr
-                           in ('dx', 'dy', 'dz') if getattr(self, attr, None) is not None)
-        if self.flat and len(self.bc) == 6:
-            self.bc = ''.join(bc for i, bc in enumerate(self.bc)
-                              if i not in [self.flat_ax, self.flat_ax + 1])
-
-    def _check_volume(self):
-        """ Check volume of the mesh. """
-        if self.flat:
-            self.flat_ax, self.flat_idx = self.flat
-            self.flat_plane = self._axes()
-            if self.flat_ax not in range(3):
-                raise ValueError('flat[0] (axis) must be 0, 1, or 2')
-            if self.flat_idx not in range(self.shape[self.flat_ax]):
-                raise ValueError('flat[0] (index) must be in the domain')
-        else:
-            self.flat_ax, self.flat_idx = None, None
-
-        if self.obstacles and self.flat:
-            self.obstacles = [obs.flatten(self.flat_ax) for obs in self.obstacles
-                              if self.flat_idx in obs.ranges[self.flat_ax]]
+    def _set_attributes(self, names, values):
+        """ Helper method to set attributes. """
+        _ = [setattr(self, attr, val) for attr, val in zip(names, values)]
 
     def _check_bc(self):
 
@@ -176,8 +140,8 @@ class CartesianGrid:
                  r'..[^P]P', r'..P[^P]', r'..[^P]P..', r'..P[^P]..',
                  r'....[^P]P', r'....P[^P]',]
 
-        if not _re.match(r'^[ZRAPW]*$', self.bc) or len(self.bc) not in (4, 6):
-            raise ValueError("bc must be combination of 4 or 6 chars among 'ZRAPW'!")
+        if not _re.match(r'^[APW]*$', self.bc):
+            raise ValueError(f"bc must be combination of {2 * len(self.shape)} chars among 'APW'!")
 
         if any(_re.match(r, self.bc) for r in regex):
             msg = "periodic condition must be on both sides of the domain,"
@@ -185,7 +149,7 @@ class CartesianGrid:
             raise ValueError(msg)
 
         if not all([n - self.nbz * (self.bc[2*i:2*i + 2].count('A')) > 11 for i, n in enumerate(self.shape)]):
-            raise GridError('One of the dimension is too small to accept buffer zone.')
+            raise GridError('One of the dimension is too small to setup a buffer zone.')
 
     def _check_grid(self):
 
@@ -195,21 +159,21 @@ class CartesianGrid:
         if any(i0 >= N for i0, N in zip(self.origin, self.shape)):
             raise GridError("Origin of the domain must be in the domain")
 
-    def _find_subdomains(self):
-        """ Divide the computation domain into subdomains. """
-
-        self.compdom = ComputationDomains(self.shape, self.obstacles,
-                                          self.bc, self.stencil, self.nbz)
-
-        self.domains = self.compdom.domains
-        self.udomains = [sub for sub in self.domains if sub.tag in [(0, 0), (0, 0, 0)]]
-
-    def _set_flags(self):
-
+    def _set_axis_flags(self):
+        """ Set flag to specify if axis has regular (s) or irregular (v) spacing. """
         self.flag_x = 's' if _np.allclose(_np.diff(self.x), self.dx) else 'v'
         self.flag_y = 's' if _np.allclose(_np.diff(self.y), self.dy) else 'v'
         if self.volumic:
             self.flag_z = 's' if _np.allclose(_np.diff(self.z), self.dz) else 'v'
+
+    def _find_subdomains(self):
+        """ Divide the computation domain into subdomains. """
+
+        self._computation_domains = ComputationDomains(self.shape, self.obstacles,
+                                                       self.bc, self.stencil)
+
+        self.bounds = self._computation_domains.bounds
+        self.domains = self._computation_domains.domains
 
     @property
     def stretched_axis(self):
@@ -232,7 +196,7 @@ class CartesianGrid:
     @property
     def volumic(self):
         """ Return True if mesh is 3d. """
-        return not self.flat and len(self.shape) == 3
+        return len(self.shape) == 3
 
     def get_obstacles(self):
         """ Get obstacles coordinates. """
@@ -240,7 +204,7 @@ class CartesianGrid:
 
     def make_grid(self):
 
-        stretch = 1 + max(self.slevel - 1, 0)  * _np.linspace(0, 1, self.nbz) ** self.sorder
+        stretch = 1 + max(self.stretch_factor - 1, 0)  * _np.linspace(0, 1, self.nbz) ** self.stretch_order
 
         self.x = _np.arange(self.nx, dtype=float) - int(self.nx/2)
         self.y = _np.arange(self.ny, dtype=float) - int(self.ny/2)
@@ -258,8 +222,8 @@ class CartesianGrid:
         self.x *= self.dx
         self.y *= self.dy
 
-        self.x -= self.x[self.ix0]
-        self.y -= self.y[self.iy0]
+        self.x -= self.x[self.origin[0]]
+        self.y -= self.y[self.origin[1]]
 
         if self.volumic:
             self.z = _np.arange(self.nz, dtype=float) - int(self.nz/2)
@@ -268,7 +232,7 @@ class CartesianGrid:
             if self.bc[5] == 'A':
                 self.z[-self.nbz:] *= stretch
             self.z *= self.dz
-            self.z -= self.y[self.iz0]
+            self.z -= self.z[self.origin[2]]
 
     def show(self, dpi=800, obstacles=True, domains=False, bounds=True, only_mesh=False):
         """ Plot grid.
@@ -291,7 +255,8 @@ class CartesianGrid:
         if 'A' in self.bc:
             s += '\t* Buffer zone  :\n'
             s += f'\t\t* Number of points : {self.nbz}\n'
-            s += f'\t\t* Stretch factor   : {self.slevel}\n'
+            s += f'\t\t* Stretch factor   : {self.stretch_factor}\n'
+            s += f'\t\t* Stretch order    : {self.stretch_order}\n'
             s += f'\t\t* Stretched axis   : {self.stretched_axis}'
         return s
 

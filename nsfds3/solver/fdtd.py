@@ -139,29 +139,31 @@ class FDTD:
     def run(self):
         """ Run FDTD. """
         ti = _pc()
-        for self.cfg.it in track(range(self.cfg.it, self.cfg.nt + 1),
-                                 disable=self.quiet):
-            self.eulerian_fluxes()
-            self.viscous_fluxes()
-            self.toggle_system()
-            self.selective_filter()
-            self.shock_capture()
-            self.toggle_system()
-            self.update_vorticity()
-            self.update_probes()
-            if not self.cfg.it % self.cfg.ns:
-                self.save()
-                self.unload_timings()
+        try:
+            for self.cfg.it in track(range(self.cfg.it, self.cfg.nt + 1),
+                                    disable=self.quiet):
+                self.eulerian_fluxes()
+                self.viscous_fluxes()
+                self.toggle_system()
+                self.selective_filter()
+                self.shock_capture()
+                self.toggle_system()
+                self.update_vorticity()
+                self.update_probes()
+                if not self.cfg.it % self.cfg.ns:
+                    self.save()
+                    self.unload_timings()
 
-        if not self.quiet:
-            msg = 'Simulation completed in [red]{}[/].\n'
-            msg += 'Final residuals of [red]{:>.4f}[/].\n'
-            msg += 'End at physical time [red]t = {:.4f} sec.'
-            print(Panel(msg.format(misc.secs_to_dhms(_pc() - ti),
-                                   self.fld.residual(),
-                                   self.cfg.dt * self.cfg.it)))
-
-        self.sfile.close()
+            if not self.quiet:
+                msg = 'Simulation completed in [red]{}[/].\n'
+                msg += 'Final residuals of [red]{:>.4f}[/].\n'
+                msg += 'End at physical time [red]t = {:.4f} sec.'
+                print(Panel(msg.format(misc.secs_to_dhms(_pc() - ti),
+                                    self.fld.residual(),
+                                    self.cfg.dt * self.cfg.it)))
+        finally:
+            self.sfile.close()
+            self.save_objects()
 
     @timer
     def eulerian_fluxes(self):
@@ -243,6 +245,14 @@ class FDTD:
         if self.cfg.probes:
             self.sfile['probe_values'][:, self.cfg.it - self.cfg.ns:self.cfg.it] = self.probes
 
+    def save_objects(self):
+
+        with open(self.cfg.datafile.with_suffix('.cfg'), 'wb') as pkl:
+            _pkl.dump(self.cfg, pkl, protocol=5)
+
+        with open(self.cfg.datafile.with_suffix('.msh'), 'wb') as pkl:
+            _pkl.dump(self.msh, pkl, protocol=5)
+
     def _init_save(self):
         """ Init save. """
 
@@ -252,12 +262,14 @@ class FDTD:
             if overwrite.lower() == 'no':
                 _sys.exit(1)
 
-        with open(self.cfg.datafile.with_suffix('.cfg'), 'wb') as pkl:
-            _pkl.dump(self.cfg, pkl)
-
         self.sfile = _h5py.File(self.cfg.datafile, 'w')
+        self.sfile.attrs['vorticity'] = self.cfg.save_vortis
+        self.sfile.attrs['volumic'] = self.msh.volumic
+        self.sfile.attrs['p0'] = self.cfg.p0
+        self.sfile.attrs['gamma'] = self.cfg.gamma
+
+        # Not necessary ?
         self.sfile.attrs['obstacles'] = self.msh.get_obstacles()
-#        self.sfile.attrs['domains'] = self.msh.get_domains(only_xz=True)
         self.sfile.create_dataset('x', data=self.msh.x, compression=self.cfg.comp)
         self.sfile.create_dataset('y', data=self.msh.y, compression=self.cfg.comp)
         self.sfile.attrs['dx'] = self.msh.dx
@@ -267,9 +279,7 @@ class FDTD:
         self.sfile.attrs['ny'] = self.msh.ny
         self.sfile.attrs['nt'] = self.cfg.nt
         self.sfile.attrs['ns'] = self.cfg.ns
-        self.sfile.attrs['p0'] = self.cfg.p0
         self.sfile.attrs['rho0'] = self.cfg.rho0
-        self.sfile.attrs['gamma'] = self.cfg.gamma
         self.sfile.attrs['nbz'] = self.cfg.nbz
         self.sfile.attrs['mesh'] = self.cfg.mesh
         self.sfile.attrs['bc'] = self.cfg.bc
@@ -294,10 +304,10 @@ class FDTD:
                 self.sfile.create_dataset('zn', data=self.msh.yn, compression=self.cfg.comp)
                 self.sfile.create_dataset('zp', data=self.msh.yp, compression=self.cfg.comp)
 
-    def show(self, variable='p', vmin=None, vmax=None, show_nans=False, slices=None, show_bz=False):
+    def show(self, view='p', vmin=None, vmax=None, show_nans=False, slices=None, show_bz=False):
         """ Show results. """
         viewer = MPLViewer(self.cfg, self.msh, self.fld)
-        viewer.show(variable=variable, vmin=vmin, vmax=vmax, 
+        viewer.show(view=view, vmin=vmin, vmax=vmax, 
                     show_nans=show_nans, show_bz=show_bz, slices=slices)
 
 

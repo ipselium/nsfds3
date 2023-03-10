@@ -234,7 +234,7 @@ class BasicGeo(GeoMeta):
         cy = set(self.ry).issuperset(ry)
         return cx and cy
 
-    def box(self, shape, stencil=3):
+    def box(self, shape, stencil=11):
         """ Return slices representing a box around the object. """
         midstencil = int((stencil - 1) / 2)
         sx = slice(max(0, self.ix[0] - midstencil), min(shape[0], self.ix[1] + midstencil + 1))

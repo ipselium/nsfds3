@@ -46,13 +46,11 @@ class ComputationDomains:
         Size of the domain. Must be a tuple with 3 int objects.
     obstacles : list, :py:class:`nsfds3.mesher.geometry.ObstacleSet`, optional
         Obstacles in the computation domain.
-    bc : {'[ARZPW][ARZPW][ARZPW][ARZPW]'}, optional
+    bc : {'[APW][APW][APW][APW]'}, optional
         Boundary conditions. Must be a 4 or 6 characters string corresponding to
         left, right, front, back, bottom, and top boundaries, respectively.
     stencil : int, optional
         Size of the finite difference stencil.
-    nbz : int, optional
-        Number of points of the Buffer Zone (used if 'A' in `bc`).
     free: bool, optional
         Free memory after the domains are found
 
@@ -66,16 +64,15 @@ class ComputationDomains:
             - locations_to_cuboids
     """
 
-    _BC_U = ['W', 'Z', 'V', 'A']
+    _BC_U = ['W', 'A']
     _BC_C = ['P', ]
 
 
-    def __init__(self, shape, obstacles=None, bc='WWWWWW', stencil=3, nbz=15, free=True):
+    def __init__(self, shape, obstacles=None, bc='WWWWWW', stencil=11, free=True):
         self.shape = shape
         self.bc = bc.upper()
         self.stencil = stencil
         self._midstencil = int((stencil - 1) / 2)
-        self.nbz = nbz
         self.volumic = len(shape) == 3
 
         if isinstance(obstacles, ObstacleSet):
@@ -101,9 +98,6 @@ class ComputationDomains:
         self._fill_faces_tangent()
         self._fill_boundaries()
         self._fill_faces_normal()
-
-        # Check if mask is ok
-        #self._check_mask()
 
         # Find computation domains
         self._find_domains()
@@ -145,7 +139,11 @@ class ComputationDomains:
                 self.domains.append(Domain(cub['origin'], cub['size'], tag=config))
 
     def _update_domains_bc(self):
-        """ bc W à fixer également ! """
+        """
+            Set P marker to periodic bounds.
+
+            TODO : bc W à fixer également !
+        """
 
         for sub in self.domains:
             if sub.scm_fx == 'c' and (sub.ix[0] == 0 or sub.ix[1] == self.shape[0] - 1):
