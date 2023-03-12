@@ -188,15 +188,27 @@ class MPLViewer:
 
         self._get_slices(slices)
 
+        # midpoint
+        if norm.vmin > 0 and norm.vmax > 0:
+            midpoint = _np.nanmean(var)
+        else:
+            midpoint = 0
+
+        # ticks
+        if abs(norm.vmin - midpoint) / norm.vmax > 0.33:
+            ticks = [norm.vmin, midpoint, norm.vmax]
+        else:
+            ticks = [midpoint, norm.vmax]
+
         ims = []
 
         fig, ax_xy = _plt.subplots(figsize=figsize, tight_layout=True)
 
         # Sizes
         width, height = fig.get_size_inches()
-        size_x = self.msh.x[-1] - self.msh.x[0]
-        size_y = self.msh.y[-1] - self.msh.y[0]
-        size_z = self.msh.z[-1] - self.msh.z[0]
+        size_x = self.msh.x[-self.msh.nbz if self.msh.bc[1] == 'A' else -1] - self.msh.x[0 if self.msh.bc[0] == 'A' else 0]
+        size_y = self.msh.y[-self.msh.nbz if self.msh.bc[3] == 'A' else -1] - self.msh.y[0 if self.msh.bc[2] == 'A' else 0]
+        size_z = self.msh.z[-self.msh.nbz if self.msh.bc[5] == 'A' else -1] - self.msh.z[0 if self.msh.bc[4] == 'A' else 0]
 
         # xy plot:
         ims.append(ax_xy.pcolorfast(self.msh.x, self.msh.y, var[:-1, :-1, self.i_xy].T, cmap=cmap, norm=norm))
@@ -205,12 +217,10 @@ class MPLViewer:
         ax_xy.set_xlabel(r'$x$ [m]')
         ax_xy.set_ylabel(r'$y$ [m]')
 
-        # create new axes on the right and on the top of the current axes
+        # position, size, pad
         divider = make_axes_locatable(ax_xy)
-        # below height and pad are in inches
-        ax_xz = divider.append_axes("top", 1.*width*(size_x/size_z - 1), pad=0., sharex=ax_xy)    # position, size, pad
-        ax_zy = divider.append_axes("left", 1.*width*(size_x/size_z - 1), pad=0., sharey=ax_xy)
-        ax_bar = divider.append_axes("right", size="5%", pad=0.05)
+        ax_xz = divider.append_axes("top", height * size_z / (size_y + size_z), pad=0., sharex=ax_xy)
+        ax_zy = divider.append_axes("right", 0.95 * width * size_z / (size_x + size_z), pad=0., sharey=ax_xy)
 
         # xz and zy plots
         ims.append(ax_xz.pcolorfast(self.msh.x, self.msh.z, var[:-1, self.i_xz, :-1].T, cmap=cmap, norm=norm))
@@ -223,11 +233,14 @@ class MPLViewer:
         ax_zy.yaxis.set_tick_params(labelleft=False)
         ax_zy.set_xlabel(r'$z$ [m]')
 
-        fig.colorbar(ims[0], cax=ax_bar)
-        #ax_bar.xaxis.set_ticks_position("top")
+        #fig.subplots_adjust(hspace=0.01, wspace=0.01)
 
         for ax in fig.get_axes():
             ax.set_aspect(1.)
+
+        ax_bar = divider.append_axes("right", size="5%", pad=0.)
+        fig.colorbar(ims[0], cax=ax_bar, ticks=ticks)
+        #ax_bar.xaxis.set_ticks_position("top")
 
         # Buffer zones
         bc = [self.msh.nbz if bc == 'A' else 0 for bc in self.msh.bc]
