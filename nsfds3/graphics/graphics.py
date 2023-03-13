@@ -94,7 +94,7 @@ class MPLViewer:
 
         self.volumic = True if len(cfg.shape) == 3 else False
 
-    def show(self, view='p', vmin=None, vmax=None, show_nans=False, show_bz=False, slices=None, iteration=0, figsize=(9, 9)):
+    def show(self, view='p', vmin=None, vmax=None, show_nans=False, show_bz=False, show_prb=True, slices=None, iteration=0, figsize=(9, 9)):
 
         var = self.data.get(view=view, iteration=iteration)
 
@@ -105,18 +105,18 @@ class MPLViewer:
 
         norm = MidPointNorm(vmin=vmin, vmax=vmax, midpoint=0)
 
-        fig, ax = self.frame(var, norm, show_nans=show_nans, show_bz=show_bz, slices=slices, figsize=figsize)
+        fig, ax = self.frame(var, norm, show_nans=show_nans, show_bz=show_bz, show_prb=show_prb, slices=slices, figsize=figsize)
 
         _plt.show()
 
-    def frame(self, var, norm, show_nans=False, show_bz=False, slices=None, iteration=0, figsize=(9, 9)):
+    def frame(self, var, norm, show_nans=False, show_bz=False, show_prb=True, slices=None, iteration=0, figsize=(9, 9)):
 
         if len(self.msh.shape) == 3:
-            return self._fields3d(var, norm, show_nans, show_bz, slices, figsize)
+            return self._fields3d(var, norm, show_nans, show_bz, show_prb, slices, figsize)
         else:
-            return self._fields2d(var, norm, show_nans, show_bz, figsize)
+            return self._fields2d(var, norm, show_nans, show_bz, show_prb, figsize)
 
-    def _fields2d(self, var, norm, show_nans, show_bz, figsize=(9, 9)):
+    def _fields2d(self, var, norm, show_nans, show_bz, show_prb, figsize=(9, 9)):
         """ Show 2d results. """
 
         # midpoint
@@ -141,6 +141,12 @@ class MPLViewer:
         divider = make_axes_locatable(ax)
         cax = divider.append_axes("right", size="5%", pad=0.05)
         _plt.colorbar(im, cax=cax, ticks=ticks)
+
+        # Probes
+        if self.cfg.prb and show_prb:
+            prbs = [(self.msh.x[ix], self.msh.y[iy]) for ix, iy in self.cfg.prb]
+            for prb in prbs:
+                ax.plot(*prb, 'ro')
 
         # Buffer zones
         bc = [self.msh.nbz if bc == 'A' else 0 for bc in self.msh.bc]
@@ -180,7 +186,7 @@ class MPLViewer:
         else:
             self.i_xy, self.i_xz, self.i_zy = [int(n/2) for n in self.msh.shape]
 
-    def _fields3d(self, var, norm, show_nans, show_bz, slices, figsize=(9, 9)):
+    def _fields3d(self, var, norm, show_nans, show_bz, show_prb, slices, figsize=(9, 9)):
         """ Show 3d results. """
 
         foreground = {'linewidth': 3, 'fill': False}
@@ -233,14 +239,25 @@ class MPLViewer:
         ax_zy.yaxis.set_tick_params(labelleft=False)
         ax_zy.set_xlabel(r'$z$ [m]')
 
-        #fig.subplots_adjust(hspace=0.01, wspace=0.01)
-
         for ax in fig.get_axes():
             ax.set_aspect(1.)
 
         ax_bar = divider.append_axes("right", size="5%", pad=0.)
         fig.colorbar(ims[0], cax=ax_bar, ticks=ticks)
         #ax_bar.xaxis.set_ticks_position("top")
+
+        # Probes
+        if self.cfg.prb and show_prb:
+            prbs = [(self.msh.x[ix], self.msh.y[iy], self.msh.z[iz]) for ix, iy, iz in self.cfg.prb]
+            for prb in prbs:
+                color = 'r' if self.msh.z[self.i_xy] == prb[2] else 'grey'
+                ax_xy.plot(*(c for c in prb[:2]), marker='o', color=color)
+
+                color = 'r' if self.msh.y[self.i_xz] == prb[1] else 'grey'
+                ax_xz.plot(*(c for i, c in enumerate(prb) if i != 1), marker='o', color=color)
+
+                color = 'r' if self.msh.x[self.i_zy] == prb[0] else 'grey'
+                ax_zy.plot(*(c for c in prb[1:][::-1]), marker='o', color=color)
 
         # Buffer zones
         bc = [self.msh.nbz if bc == 'A' else 0 for bc in self.msh.bc]
@@ -303,7 +320,9 @@ class MPLViewer:
                  'ru': r'$\rho v_x$ [kg.m$^{-2}$/s]',
                  'rv': r'$\rho v_y$ [kg.m$^{-2}$/s]',
                  'rw': r'$\rho v_y$ [kg.m$^{-2}$/s]',
-                 'vxyz': r'$\omega$ [m/s]'}
+                 'wx': r'$\omega_x$ [m/s]',
+                 'wy': r'$\omega_y$ [m/s]',
+                 'wz': r'$\omega_z$ [m/s]'}
 
         metadata = dict(title=title, filename=f'{title}_{view}.mkv',
                         view=view, var=views[view], comment='Made with nsfds3')
@@ -311,8 +330,8 @@ class MPLViewer:
         return metadata
 
     def movie(self, view='p', nt=None, ref=None, figsize=(9, 9),
-              show_nans=False, show_bz=False, slices=None,
-              dpi=100, fps=24):
+              show_nans=False, show_bz=False, show_prb=False,
+              slices=None, dpi=100, fps=24):
         """ Make movie. """
 
         if not isinstance(self.data, DataExtractor):
@@ -329,7 +348,7 @@ class MPLViewer:
         norm = MidPointNorm(vmin=vmin, vmax=vmax, midpoint=0)
         i, var = next(data)
         fig, im = self.frame(var, norm,
-                             show_nans=show_nans, show_bz=show_bz,
+                             show_nans=show_nans, show_bz=show_bz, show_prb=show_prb,
                              slices=slices, iteration=i, figsize=figsize)
 
         # Movie parameters
@@ -351,8 +370,36 @@ class MPLViewer:
                     axes[0].set_title(metadata['var'] + f' (n={i})')
 
                 writer.grab_frame()
-            self.data.close()
 
+    def probes(self):
+        """ Plot pressure at probes. """
+
+        if not isinstance(self.data, DataExtractor):
+            print('probes method only available for DataExtractor')
+            sys.exit(1)
+
+        probes = self.data.get_dataset('probe_locations').tolist()
+
+        if not probes:
+            return None
+
+        p = self.data.get_dataset('probe_values')
+        t = _np.arange(self.cfg.nt) * self.cfg.dt
+
+        _, ax = _plt.subplots(figsize=(9, 4))
+        for i, c in enumerate(probes):
+            if self.cfg.mesh == 'curvilinear':
+                p0 = self.cfg.p0 / self.msh.J[c[0], c[1]]
+            else:
+                p0 = self.data.get_attr('p0')
+            ax.plot(t, p[i, :] - p0, label=f'@{tuple([self.msh.axis[i][j] for i, j in enumerate(c)])}')
+        ax.set_xlim(t.min(), t.max())
+        ax.set_xlabel('Time [s]')
+        ax.set_ylabel('Pressure [Pa]')
+        ax.legend()
+        ax.grid()
+
+        return None
 
 class CDViewer:
     """ Computation domain viewer. """

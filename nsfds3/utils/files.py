@@ -39,18 +39,14 @@ def get_obstacle(cfg):
         try:
             sys.path.append(os.path.dirname(cfg.geofile))
             custom = __import__(os.path.basename(cfg.geofile).split('.')[0])
-            obstacle = getattr(custom, cfg.geoname)(cfg.nx, cfg.nz)
-            cfg.geoflag = True
+            obstacle = getattr(custom, cfg.geoname)(cfg.shape)
         except (AttributeError, ImportError):
-            cfg.geoflag = False
             obstacle = []
     else:
         try:
             template = _tplt.TestCases(cfg.shape, stencil=11)
             obstacle = getattr(template, cfg.geoname)
-            cfg.geoflag = True
         except AttributeError:
-            cfg.geoflag = False
             obstacle = []
     return obstacle
 
@@ -58,7 +54,7 @@ def get_obstacle(cfg):
 def get_curvilinear(cfg):
     """ Get curvilinear fonction from custom file or fdgrid templates. """
 
-    if cfg.geofile != 'None':
+    if cfg.geofile not in cfg.none:
         try:
             sys.path.append(os.path.dirname(cfg.geofile))
             custom = __import__(os.path.basename(cfg.geofile).split('.')[0])

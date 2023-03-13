@@ -34,12 +34,10 @@ import itertools as _it
 import pickle as _pkl
 from time import perf_counter as _pc
 import numpy as _np
-import matplotlib.pyplot as _plt
-from matplotlib import patches as _patches, path as _path
 import h5py as _h5py
 
 from libfds.fields import Fields
-from libfds.fluxes import EulerianFluxes, ViscousFluxes
+from libfds.fluxes import EulerianFluxes, ViscousFluxes, Vorticity
 from libfds.filters import SelectiveFilter, ShockCapture
 
 
@@ -84,10 +82,10 @@ class FDTD:
             self.sfilter = SelectiveFilter(self.fld)
         if self.cfg.cpt:
             self.scapture = ShockCapture(self.fld)
-        if self.cfg.probes:
-            self.probes = _np.zeros((len(cfg.probes), cfg.ns))
-        if self.cfg.save_vortis:
-            pass
+        if self.cfg.prb:
+            self.probes = _np.zeros((len(cfg.prb), cfg.ns))
+        if self.cfg.vrt:
+            self.wxyz = Vorticity(self.fld)
 
         # Curvilinear stuff
         self._physical = False
@@ -99,12 +97,9 @@ class FDTD:
         self._timings = {}
         self.colors = [c for n, c in enumerate(ANSI_COLOR_NAMES) if 40 < n < 51]
 
-        [f'yellow{i}' for i in range(1, 5)] + \
-                      ['green1', 'green3', 'green4']
-
     @staticmethod
     def timer(func):
-        """ Time method of a class containing 'bench' attribute. """
+        """ Time method of a class instance containing 'bench' attribute. """
         def wrapper(self, *args, **kwargs):
             if self.timings:
                 start = _pc()
@@ -148,7 +143,7 @@ class FDTD:
                 self.selective_filter()
                 self.shock_capture()
                 self.toggle_system()
-                self.update_vorticity()
+                self.vorticity()
                 self.update_probes()
                 if not self.cfg.it % self.cfg.ns:
                     self.save()
@@ -195,22 +190,21 @@ class FDTD:
         if self.cfg.mesh == 'curvilinear':
             if self._physical:
                 self.fld.phys2num()
-                self._physical = not self._physical
             else:
                 self.fld.num2phys()
-                self._physical = not self._physical
+            self._physical = not self._physical
 
     @timer
-    def update_vorticity(self):
+    def vorticity(self):
         """ Compute vorticity """
-        if self.cfg.save_vortis:
-            pass
+        if self.cfg.vrt:
+            self.wxyz.compute()
 
     @timer
     def update_probes(self):
         """ Update probes. """
-        if self.cfg.probes:
-            for n, c in enumerate(self.cfg.probes):
+        if self.cfg.prb:
+            for n, c in enumerate(self.cfg.prb):
                 self.probes[n, self.cfg.it % self.cfg.ns] = self.fld.p[tuple(c)]
 
     @timer
@@ -219,7 +213,7 @@ class FDTD:
 
         self.sfile.attrs['itmax'] = self.cfg.it
 
-        if self.cfg.save_fields:
+        if self.cfg.save_fld:
             self.sfile.create_dataset(f'r_it{self.cfg.it}',
                                       data=self.fld.r,
                                       compression=self.cfg.comp)
@@ -237,12 +231,18 @@ class FDTD:
                                           data=self.fld.rw,
                                           compression=self.cfg.comp)
 
-        if self.cfg.save_vortis:
-            self.sfile.create_dataset(f'w_it{self.cfg.it}',
-                                      data=self.fld.w,
-                                      compression=self.cfg.comp)
-
-        if self.cfg.probes:
+            if self.cfg.vrt:
+                self.sfile.create_dataset(f'wz_it{self.cfg.it}',
+                                        data=self.fld.wz,
+                                        compression=self.cfg.comp)
+                if self.msh.volumic:
+                    self.sfile.create_dataset(f'wx_it{self.cfg.it}',
+                                            data=self.fld.wx,
+                                            compression=self.cfg.comp)
+                    self.sfile.create_dataset(f'wy_it{self.cfg.it}',
+                                            data=self.fld.wy,
+                                            compression=self.cfg.comp)
+        if self.cfg.prb:
             self.sfile['probe_values'][:, self.cfg.it - self.cfg.ns:self.cfg.it] = self.probes
 
     def save_objects(self):
@@ -263,7 +263,7 @@ class FDTD:
                 _sys.exit(1)
 
         self.sfile = _h5py.File(self.cfg.datafile, 'w')
-        self.sfile.attrs['vorticity'] = self.cfg.save_vortis
+        self.sfile.attrs['vorticity'] = self.cfg.vrt
         self.sfile.attrs['volumic'] = self.msh.volumic
         self.sfile.attrs['p0'] = self.cfg.p0
         self.sfile.attrs['gamma'] = self.cfg.gamma
@@ -289,8 +289,8 @@ class FDTD:
             self.sfile.attrs['nz'] = self.msh.nz
             self.sfile.create_dataset('z', data=self.msh.z, compression=self.cfg.comp)
 
-        probes = _np.zeros((len(self.cfg.probes), self.cfg.nt))
-        self.sfile.create_dataset('probe_locations', data=self.cfg.probes)
+        probes = _np.zeros((len(self.cfg.prb), self.cfg.nt))
+        self.sfile.create_dataset('probe_locations', data=self.cfg.prb)
         self.sfile.create_dataset('probe_values', data=probes,
                                   compression=self.cfg.comp)
 
@@ -307,7 +307,7 @@ class FDTD:
     def show(self, view='p', vmin=None, vmax=None, show_nans=False, slices=None, show_bz=False):
         """ Show results. """
         viewer = MPLViewer(self.cfg, self.msh, self.fld)
-        viewer.show(view=view, vmin=vmin, vmax=vmax, 
+        viewer.show(view=view, vmin=vmin, vmax=vmax,
                     show_nans=show_nans, show_bz=show_bz, slices=slices)
 
 

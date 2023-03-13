@@ -149,9 +149,7 @@ class DataExtractor:
         else:
             self.data = data
 
-        self.var = {'p': 'p', 'rho': 'r',
-                    'vx': 'ru', 'vy': 'rv', 'vz': 'rw',
-                    'e': 're', 'vxyz': 'vxyz'}
+        self.var = {'e': 're', 'vx': 'ru', 'vy': 'rv', 'vz': 'rw'}
         self.nt = self.get_attr('nt')
         self.ns = self.get_attr('ns')
 
@@ -236,11 +234,14 @@ class DataExtractor:
     def get(self, view='p', iteration=0):
         """ Get data at iteration. """
 
-        if view in ['rw', 'vz'] and not self.volumic:
+        if view == 'rho':
+            view == 'r'
+
+        if view in ['rw', 'vz', 'wx', 'wy'] and not self.volumic:
             print('No z-component for velocity')
             sys.exit(1)
 
-        if view == 'vxyz' and not self.vorticity:
+        if view in ['wx', 'wy', 'wz'] and not self.vorticity:
             print('No data for vorticity')
             sys.exit(1)
 
@@ -258,15 +259,12 @@ class DataExtractor:
 
             return p.transpose(self.T) - self.p0
 
-        if view in ['rho', 'vxyz']:
-            return (self.data[f"{self.var[view]}_it{iteration}"][...]).transpose(self.T)
-
         if view in ['vx', 'vy', 'vz', 'e']:
-            vx = self.data[f"{self.var[view]}_it{iteration}"][...]
+            v = self.data[f"{self.var[view]}_it{iteration}"][...]
             r = self.data[f"r_it{iteration}"][...]
-            return (vx / r).transpose(self.T)
+            return (v / r).transpose(self.T)
 
-        if view in ['r', 'ru', 'rv', 'rw', 're']:
+        if view in ['r', 'ru', 'rv', 'rw', 're', 'wx', 'wy', 'wz']:
             return (self.data[f"{view}_it{iteration}"][...]).transpose(self.T)
 
         self._bad_choice()
@@ -281,7 +279,8 @@ class DataExtractor:
 
     def _bad_choice(self):
 
-        msg = 'view must be : {}' + ('|vxyz' if self.vorticity else '')
+        vortis = '|wz' if self.volumic else '|wx|wy|wz'
+        msg = 'view must be : {}' + (vortis if self.vorticity else '')
         var3d = 'p|r|rho|r|ru|rv|rw|re|vx|vy|vz|e'
         var2d = 'p|r|rho|r|ru|rv|re|vx|vy|e'
 
@@ -309,11 +308,9 @@ class FieldExtractor:
             raise ValueError('fld must be Fields2d or Fields3d')
 
 
-        self.vorticity = False if len(fld.vxyz) == 0 else True
+        self.vorticity = False if len(fld.wz) == 0 else True
 
-        self.var = {'p': 'p', 'rho': 'r',
-                    'vx': 'ru', 'vy': 'rv', 'vz': 'rw',
-                    'e': 're', 'vxyz': 'vxyz'}
+        self.var = {'e': 're', 'vx': 'ru', 'vy': 'rv', 'vz': 'rw'}
 
     def get(self, view='p', iteration=None):
         """ Get data at iteration. """
@@ -321,18 +318,18 @@ class FieldExtractor:
         if view == 'rho':
             view == 'r'
 
-        if view in ['rw', 'vz'] and not self.volumic:
+        if view in ['rw', 'vz', 'wx', 'wy'] and not self.volumic:
             print('No z-component for velocity')
             sys.exit(1)
 
-        if view == 'vxyz' and not self.vorticity:
+        if view in ['wx', 'wy', 'wz'] and not self.vorticity:
             print('No data for vorticity')
             sys.exit(1)
 
         if view == 'p':
             return _np.array(self.fld.p).transpose(self.T) - self.fld.p0
 
-        if view in ['r', 'ru', 'rv', 'rw', 're', 'vxyz']:
+        if view in ['r', 'ru', 'rv', 'rw', 're', 'wx', 'wy', 'wz']:
             return _np.array(getattr(self.fld, view)).transpose(self.T)
 
         if view in ['vx', 'vy', 'vz', 'e']:
@@ -342,7 +339,8 @@ class FieldExtractor:
 
     def _bad_choice(self):
 
-        msg = 'view must be : {}' + ('|vxyz' if self.vorticity else '')
+        vortis = '|wz' if self.volumic else '|wx|wy|wz'
+        msg = 'view must be : {}' + (vortis if self.vorticity else '')
         var3d = 'p|r|rho|r|ru|rv|rw|re|vx|vy|vz|e'
         var2d = 'p|r|rho|r|ru|rv|re|vx|vy|e'
         if self.volumic:

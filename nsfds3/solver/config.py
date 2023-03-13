@@ -53,13 +53,13 @@ from pkg_resources import parse_version as _parse_version
 from nsfds3.utils import files
 
 
-def parse_int_tuple(input):
+def _parse_int_tuple(input):
     if input.lower() not in [None, 'none']:
         return tuple(int(k.strip()) for k in input[1:-1].split(','))
     return None
 
 
-def parse_float_tuple(input):
+def _parse_float_tuple(input):
     if input.lower() not in [None, 'none']:
         return tuple(float(k.strip()) for k in input[1:-1].split(','))
     return None
@@ -81,6 +81,7 @@ def create_template(path=None, filename=None, cfg=None):
     cfg.set('simulation', 'nt', '500')
     cfg.set('simulation', 'ns', '10')
     cfg.set('simulation', 'cfl', '0.5')
+    cfg.set('simulation', 'resume', 'False')
 
     cfg.add_section('thermophysic')
     cfg.set('thermophysic', 'norm', 'False')
@@ -118,6 +119,7 @@ def create_template(path=None, filename=None, cfg=None):
 
     cfg.add_section('solver')
     cfg.set('solver', 'viscous fluxes', 'True')
+    cfg.set('solver', 'vorticity', 'True')
     cfg.set('solver', 'shock capture', 'True')
     cfg.set('solver', 'selective filter', 'True')
     cfg.set('solver', 'selective filter n-strength', '0.6')
@@ -134,9 +136,6 @@ def create_template(path=None, filename=None, cfg=None):
     cfg.set('save', 'path', 'nsfds3/')
     cfg.set('save', 'filename', 'tmp')
     cfg.set('save', 'compression', 'None')
-    cfg.set('save', 'resume', 'False')
-    cfg.set('save', 'fields', 'True')
-    cfg.set('save', 'vorticity', 'False')
     cfg.set('save', 'probes', '[]')
 
     if not path:
@@ -167,8 +166,8 @@ class CfgSetup:
 
         # Create config parser
         self.cfg = _configparser.ConfigParser(allow_no_value=True,
-                                              converters={'tuple_int': parse_int_tuple,
-                                                          'tuple_float': parse_float_tuple})
+                                              converters={'tuple_int': _parse_int_tuple,
+                                                          'tuple_float': _parse_float_tuple})
 
         # Load config file
         if isinstance(cfgfile, (_pathlib.Path, str)):
@@ -209,8 +208,7 @@ class CfgSetup:
         """ Check version of the config file. Overwrite it if too old. """
         cfg = _configparser.ConfigParser(allow_no_value=True)
         cfg.read(self.cfgfile)
-        CFG = cfg['configuration']
-        version = CFG.get('version')
+        version = cfg['configuration'].get('version')
         is_default_cfg = self.cfgfile == self.cfgfile_default
         is_version_ok = _parse_version(version) >= _parse_version(self.base_version)
 
@@ -272,6 +270,7 @@ class CfgSetup:
         self.nt = SIM.getint('nt', 500)
         self.ns = SIM.getint('ns', 10)
         self.CFL = SIM.getfloat('cfl', 0.5)
+        self.resume = SIM.getboolean('resume', False)
         self.it = 0
 
         if self.nt % self.ns:
@@ -364,7 +363,6 @@ class CfgSetup:
         if len(self.sorigin) != len(self.shape):
             raise ValueError(f'Source location must be {len(self.shape)}d')
 
-
     def _flw(self):
         """ Get flow parameters. """
         FLW = self.cfg['flow']
@@ -383,6 +381,7 @@ class CfgSetup:
         """ Get solver. """
         SOL = self.cfg['solver']
         self.vsc = SOL.getboolean('viscous fluxes', True)
+        self.vrt = SOL.getboolean('vorticity', True)
         self.cpt = SOL.getboolean('shock capture', True)
         self.flt = SOL.getboolean('selective filter', True)
         self.flt_xnu_n = SOL.getfloat('selective filter n-strength', 0.2)
@@ -399,17 +398,14 @@ class CfgSetup:
         else:
             self.savepath = self.path / SAVE.get('path', 'nsfds3/')
         self.savefile = SAVE.get('filename', 'tmp') + '.hdf5'
+        self.save_fld = SAVE.getboolean('fields', True)
         self.comp = SAVE.get('compression', 'None')
         self.comp = None if self.comp == 'None' else self.comp
-
-        self.resume = SAVE.getboolean('resume', False)
-        self.save_fields = SAVE.getboolean('fields', True)
-        self.save_vortis = SAVE.getboolean('vorticity', False)
-        self.probes = _json.loads(SAVE.get('probes', '[]'))
+        self.prb = _json.loads(SAVE.get('probes', '[]'))
 
         # Check probes
-        if self.probes:
-            for c in self.probes:
+        if self.prb:
+            for c in self.prb:
                 if any(not 0 <= c[i] < self.shape[i] for i in range(len(self.shape))):
                     raise ValueError('probes must be in the domain')
 
@@ -453,8 +449,11 @@ class CfgSetup:
             self.obstacles = [obs.flatten(self.flat_ax) for obs in self.obstacles
                               if self.flat_idx in obs.ranges[self.flat_ax] and obs.volumic]
 
-    def get_config(self):
-        """ Get configuration. """
+        if self.prb:
+            self.prb = [[c for i, c in enumerate(prb) if i != self.flat_ax] for prb in self.prb]
+
+    def get_mesh_config(self):
+        """ Get Mesh configuration. """
         return (self.shape, self.steps), \
                 {'origin': self.origin,
                  'bc': self.bc,

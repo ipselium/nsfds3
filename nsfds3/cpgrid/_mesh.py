@@ -39,7 +39,7 @@ import nsfds3.graphics as _graphics
 
 
 class GridError(Exception):
-    """ Exception when wrong grid parameters. """
+    """ Exception raised when grid parameters are wrong. """
 
 
 class CartesianGrid:
