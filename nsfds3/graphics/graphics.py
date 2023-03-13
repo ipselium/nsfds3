@@ -31,6 +31,7 @@ import os
 import sys
 import pathlib
 import numpy as _np
+from scipy import signal as _signal
 
 import matplotlib.pyplot as _plt
 from matplotlib import patches as _patches
@@ -371,7 +372,7 @@ class MPLViewer:
 
                 writer.grab_frame()
 
-    def probes(self):
+    def probes(self, figsize=(9, 4)):
         """ Plot pressure at probes. """
 
         if not isinstance(self.data, DataExtractor):
@@ -386,7 +387,7 @@ class MPLViewer:
         p = self.data.get_dataset('probe_values')
         t = _np.arange(self.cfg.nt) * self.cfg.dt
 
-        _, ax = _plt.subplots(figsize=(9, 4))
+        _, ax = _plt.subplots(figsize=figsize)
         for i, c in enumerate(probes):
             if self.cfg.mesh == 'curvilinear':
                 p0 = self.cfg.p0 / self.msh.J[c[0], c[1]]
@@ -400,6 +401,52 @@ class MPLViewer:
         ax.grid()
 
         return None
+
+    def spectrogram(self, M=None, figsize=(9, 4)):
+        """ Plot spectograms at probes.
+
+        Parameters
+        ----------
+        M : int
+            Length of each segment
+        """
+
+        probes = self.data.get_dataset('probe_locations').tolist()
+
+        if not probes:
+            return None
+
+        if not M:
+            M = min(int(self.cfg.nt/20), 256)
+
+        p = self.data.get_dataset('probe_values')
+
+        fig, ax = _plt.subplots(p.shape[0], figsize=figsize)
+        for i, c in enumerate(probes):
+
+            if self.cfg.mesh == 'curvilinear':
+                p0 = self.cfg.p0 / self.mesh.J[c[0], c[1]]
+            else:
+                p0 = self.cfg.p0
+
+            freqs, times, Sx = _signal.spectrogram(p[i, :] - p0,
+                                                   nperseg=M,
+                                                   fs=1 / self.cfg.dt,
+                                                   scaling='spectrum')
+            Sx =  10 * _np.log10(Sx)
+            im = ax[i].pcolormesh(times, freqs / 1000, Sx, cmap="Greys")
+            ax[i].set_ylabel('Frequency [kHz]')
+            if i != len(probes) - 1:
+                ax[i].set_xticks([])
+
+            fig.colorbar(im, ax=ax[i], label=f'probe {i}')
+
+        ax[-1].set_xlabel('Time [s]')
+        ax[0].set_title('Square spectrum magitude')
+        _plt.tight_layout()
+
+        return None
+
 
 class CDViewer:
     """ Computation domain viewer. """
