@@ -56,7 +56,7 @@ setup(
     ],
     entry_points={
         'console_scripts': [
-            'nsfds2 = nsfds2.solver:main',
+            'nsfds3 = nsfds3.main:main',
         ],
     }
 )

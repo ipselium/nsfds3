@@ -417,13 +417,10 @@ class CfgSetup:
         """ Get figure parameters. """
         FIGS = self.cfg['figures']
         self.figures = FIGS.getboolean('figures', True) and not self.quiet
-        self.show_probes = FIGS.getboolean('show_probes', True)
+        self.show_prb = FIGS.getboolean('show_probes', True)
         self.show_bz = FIGS.getboolean('show_bz', True)
-        self.show_bc_profiles = FIGS.getboolean('show_bc_profiles', True)
+        self.show_bc = FIGS.getboolean('show_bc', True)
         self.fps = FIGS.getint('fps', 24)
-        self.xlim = _json.loads(FIGS.get('xlim', '[]'))
-        self.ylim = _json.loads(FIGS.get('ylim', '[]'))
-        self.zlim = _json.loads(FIGS.get('zlim', '[]'))
 
     def _3d_to_2d(self):
 
@@ -461,3 +458,27 @@ class CfgSetup:
                  'nbz': self.nbz,
                  'stretch_factor': self.stretch_factor,
                  'stretch_order': self.stretch_order}
+
+    def __str__(self):
+        s = 'Simulation parameters:'
+
+        # Thermophysics
+        s += "\t* Thermophysic : "
+        s += f"c0={self.c0:.2f} m/s, rho0={self.rho0:.2f} kg/m3, p0={self.p0:.2f} Pa\n "
+        s += f'\t\t\t T0={self.T0:.2f} K, nu={self.nu:.3e} m2/s\n'
+
+        # Time
+        s += f"\t* Physical time: {self.dt*self.nt:.5e} s.\n"
+        s += f"\t* Time step    : dt={self.dt:.5e} s and nt={self.nt}.\n"
+
+        # Source
+        if self.stype not in self.none:
+            s += f"\t* source       : {self.stype} at {self.sorigin}"
+
+        if self.ftype not in self.none:
+            s += f"\t* flow         : {self.ftype} {self.components}."
+
+        return s
+
+    def __repr__(self):
+        return self.__str__()

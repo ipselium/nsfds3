@@ -33,35 +33,10 @@ import time
 import argparse
 import pathlib
 from multiprocessing import cpu_count, Pool, current_process
-from fdgrid import mesh
-from nsfds3.config import CfgSetup, create_template
-from nsfds3.fdtd import FDTD
-from nsfds3.utils import files, headers, graphics, sounds
-
-
-class VirtualArguments:
-
-    def __init__(self, cfgfile, command='solve', quiet=True):
-        """Generate a set of virtual arguments as for configparser"""
-        self.cfgfile = cfgfile
-        self.command = command
-        self.quiet = quiet
-
-
-def _wrapper(run, args):
-    """Wrapper function for ploop jobs."""
-    cur = current_process().name
-    ti = time.perf_counter()
-    print(f'{cur} - Solving {args.cfgfile}')
-    run(args)
-    ts = time.perf_counter() - ti
-    print(f'{cur} - {args.cfgfile} solved in {ts:.2f} s')
-    ti = time.perf_counter()
-    cfg = CfgSetup(args=args)
-    plt = graphics.Plot(cfg.datafile, quiet=args.quiet)
-    plt.movie()
-    tm = time.perf_counter() - ti
-    print(f'{cur} - {args.cfgfile} movie made in {tm:.2f} s')
+from nsfds3.cpgrid import build
+from nsfds3.solver import CfgSetup, create_template, FDTD
+from nsfds3.utils import files, headers
+from nsfds3.graphics import MPLViewer
 
 
 def parse_args():
@@ -76,7 +51,6 @@ def parse_args():
     view = argparse.ArgumentParser(add_help=False)
     view.add_argument('-i', dest='nt', type=int, help='number of time iterations')
     view.add_argument('-r', dest='ref', type=int, help='reference frame for colormap')
-    view.add_argument('-l', dest='logscale', action="store_true", help='Plot in log scale')
     view.add_argument('view', nargs='*', default='p',
                       choices=['p', 'rho', 'vx', 'vz', 'vxz', 'e'],
                       help='variable(s) to plot')
@@ -85,12 +59,8 @@ def parse_args():
     data.add_argument('-d', '--dat-file', metavar='DF', dest='datafile',
                       help='path to hdf5 data file')
 
-    path = argparse.ArgumentParser(add_help=False)
-    path.add_argument('-p', dest='path', type=str, required=True,
-                      help='loop over this path')
-
     time = argparse.ArgumentParser(add_help=False)
-    time.add_argument('-t', '--timings', action="store_true", default=None,
+    time.add_argument('-t', '--timings', action="store_true",
                       help='Display complete timings')
 
     description = 'A Navier-Stokes Finite Difference Solver'
@@ -109,12 +79,6 @@ def parse_args():
     mak = commands.add_parser("make",
                               description="Make movie/sound files",
                               help="make movie/sound files")
-    loop = commands.add_parser("loop", parents=[path],
-                               description="Loop over .conf in a directory",
-                               help="Solve multiple configurations")
-    ploop = commands.add_parser("ploop", parents=[path],
-                                description="Loop over .conf in a directory [parallel version]",
-                                help="Solve multiple configurations")
 
     # show section subsubparsers : frame/probe/
     shw_cmds = shw.add_subparsers(dest='show_command',
@@ -157,81 +121,58 @@ def parse_args():
     return root.parse_args()
 
 
-def solve(cfg, msh):
-    """ Solve NS equations. """
-
-    # Simulation
-    fdtd = FDTD(msh, cfg)
-    fdtd.run()
-
-    if cfg.figures:
-        plt = graphics.Plot(cfg.datafile, quiet=cfg.quiet)
-        if cfg.save_fields:
-            plt.fields(view=cfg.args.view, ref=cfg.args.ref,
-                       show_bz=cfg.show_bz, show_probes=cfg.show_probes)
-        if cfg.probes:
-            plt.probes()
-
-        plt.show()
-
-
-def show(cfg, msh):
+def show(args, cfg, msh):
     """ Show simulation parameters and grid. """
 
-    if cfg.args.show_command == 'parameters':
-        headers.version()
-        headers.check_geo(cfg)
+    if args.show_command == 'parameters':
+        headers.versions()
         headers.parameters(cfg, msh)
 
-    elif cfg.args.show_command == 'grid':
-        msh.plot_grid(axis=True, bz=cfg.show_bz, bc_profiles=cfg.bc_profiles,
-                      probes=cfg.probes if cfg.show_probes else False)
+    elif args.show_command == 'grid':
+        msh.show()
 
-    elif cfg.args.show_command == 'pgrid':
-        msh.plot_physical(bz=cfg.show_bz, bc_profiles=cfg.bc_profiles,
-                          probes=cfg.probes if cfg.show_probes else False)
+    elif args.show_command == 'domains':
+        msh.show(domains=True)
 
-    elif cfg.args.show_command == 'domains':
-        if cfg.quiet:
-            msh.plot_domains(legend=False)
-        else:
-            msh.plot_domains(legend=True)
+    elif args.show_command == 'pgrid':
+        print('Not implemented yet!')
+        #msh.plot_physical(bz=cfg.show_bz, bc_profiles=cfg.bc_profiles,
+        #                  probes=cfg.probes if cfg.show_probes else False)
 
-    elif cfg.args.show_command == 'frame':
-        plt = graphics.Plot(cfg.datafile, quiet=cfg.quiet)
-        plt.fields(view=cfg.args.view, iteration=cfg.args.nt, ref=cfg.args.ref,
-                   show_bz=cfg.show_bz, show_probes=cfg.show_probes,
-                   logscale=cfg.args.logscale, xlim=cfg.xlim, ylim=cfg.ylim)
+    elif args.show_command == 'frame':
+        plt = MPLViewer(cfg, msh, cfg.datafile)
+        plt.show(view=args.view, iteration=cfg.nt,
+                   show_bz=cfg.show_bz, show_prb=cfg.show_prb)
 
-    elif cfg.args.show_command == 'probes':
-        plt = graphics.Plot(cfg.datafile, quiet=cfg.quiet)
+    elif args.show_command == 'probes':
+        plt = MPLViewer(cfg, msh, cfg.datafile)
         plt.probes()
 
-    elif cfg.args.show_command == 'spectrogram':
-        plt = graphics.Plot(cfg.datafile, quiet=cfg.quiet)
+    elif args.show_command == 'spectrogram':
+        plt = MPLViewer(cfg, msh, cfg.datafile)
         plt.spectrogram()
 
     else:
         headers.copyright()
-        headers.version()
-
-    msh.show_figures()
+        headers.versions()
 
 
-def make(cfg, _):
+def make(args, cfg, msh):
     """ Create a movie from a dataset. """
+    if not cfg.quiet:
+        headers.copyright()
 
-    if cfg.args.make_command == 'movie':
+    if args.make_command == 'movie':
 
-        plt = graphics.Plot(cfg.datafile, quiet=cfg.quiet)
-        plt.movie(view=cfg.args.view, nt=cfg.args.nt, ref=cfg.args.ref,
-                  show_bz=cfg.show_bz, show_probes=cfg.show_probes,
-                  fps=cfg.fps, logscale=cfg.args.logscale,
-                  xlim=cfg.xlim, ylim=cfg.ylim)
-        plt.show()
+        plt = MPLViewer(cfg, msh, cfg.datafile)
+        plt.movie(view=args.view, nt=cfg.nt, ref=args.ref,
+                  show_bz=cfg.show_bz, show_prb=cfg.show_prb,
+                  fps=cfg.fps)
 
-    elif cfg.args.make_command == 'sound':
-        _ = sounds.probes_to_wave(cfg.datafile)
+    elif args.make_command == 'sound':
+
+        print('Not implemented yet !')
+        #_ = sounds.probes_to_wave(cfg.datafile)
 
 
 def template(args):
@@ -245,78 +186,56 @@ def template(args):
         print(f"{cfgfile} created")
 
 
-def loop(path):
-    """Loop simulations over .conf files"""
-    headers.copyright()
-    path = pathlib.Path(path)
-    files = [f for f in pathlib.os.listdir(path.expanduser())
-             if f.endswith('conf')]
-    ti = time.perf_counter()
-    for file in files:
-        print(f'Processing {file}...')
-        args = VirtualArguments(path.expanduser() / file)
-        run(args=args)
-        print(f'Making movie for {file}...')
-        cfg = CfgSetup(args=args)
-        plt = graphics.Plot(cfg.datafile, quiet=args.quiet)
-        plt.movie()
-    print(f'Simulations ended in {time.perf_counter() - ti:.2f}')
+def solve(args, cfg, msh):
+    """ Solve NS equations. """
+
+    if not cfg.quiet:
+        headers.copyright()
+
+    # Simulation
+    fdtd = FDTD(cfg, msh)
+    fdtd.run()
+
+    if cfg.figures:
+        plt = MPLViewer(cfg, msh, cfg.datafile)
+        if cfg.save_fld:
+            plt.show(iteration=cfg.nt)
+        if cfg.prb:
+            plt.probes()
 
 
-def ploop(path):
-    """Loop simulations over .conf files [separate processes]."""
-    headers.copyright()
-    path = pathlib.Path(path)
-    files = [f for f in pathlib.os.listdir(path.expanduser())
-             if f.endswith('conf')]
-    ti = time.perf_counter()
-    with Pool(processes=(cpu_count() - 1)) as pool:
-        for file in files:
-            args = VirtualArguments(path.expanduser() / file)
-            pool.apply_async(_wrapper, args=(run, args))
-        pool.close()
-        pool.join()
-    print(f'Simulations ended in {time.perf_counter() - ti:.2f}')
+def main():
+    """ Main """
 
-
-def run(args):
-    """Run nsfds3."""
+    # Parse arguments
+    args = parse_args()
 
     # Parse config file
-    cfg = CfgSetup(args=args)
+    if args.cfgfile is not None:
+        cfg = CfgSetup(args.cfgfile)
+    else:
+        cfg = CfgSetup()
+
+    # Override values in config file with command line arguments
+    if hasattr(args, 'quiet'):
+        cfg.quiet = args.quiet if args.quiet is not None else cfg.quiet
+    if hasattr(args, 'timing'):
+        cfg.timings = args.timings if args.timings is not None else cfg.timings
+    if hasattr(args, 'nt'):
+        cfg.nt = args.nt if args.nt is not None else cfg.nt
+
+    # Mesh arguments
+    msh_args, msh_kwargs = cfg.get_mesh_config()
 
     # Mesh
-    msh = mesh.build(cfg.mesh, (cfg.nx, cfg.nz), (cfg.dx, cfg.dz),
-                     origin=(cfg.ix0, cfg.iz0),
-                     bc=cfg.bc, obstacles=cfg.obstacles,
-                     nbz=cfg.nbz, stencil=cfg.stencil,
-                     dilatation=cfg.Rx, Nd=cfg.Nd, only_bz=cfg.only_bz,
-                     fcurvxz=files.get_curvilinear(cfg))
+    msh = build(*msh_args, **msh_kwargs)
 
     if args.command:
-        globals()[args.command](cfg, msh)
+        globals()[args.command](args, cfg, msh)
     else:
         headers.copyright()
         print('Must specify an action among solve/make/show/loop')
         print('See nsfds3 -h for help')
-
-
-def main(args=None):
-    """ Main """
-
-    # Parse arguments
-    if not args:
-        args = parse_args()
-
-    # Command
-    if getattr(args, 'make_command', None) == 'template':
-        template(args)
-    elif getattr(args, 'command', None) == 'loop':
-        loop(args.path)
-    elif getattr(args, 'command', None) == 'ploop':
-        ploop(args.path)
-    else:
-        run(args)
 
 
 if __name__ == "__main__":

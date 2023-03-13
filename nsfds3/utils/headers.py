@@ -37,9 +37,12 @@ import rich.box as _box
 from rich.table import Table as _Table
 from rich.panel import Panel as _Panel
 from rich.text import Text as _Text
+from rich.console import Console
+
+console = Console()
 
 
-def copyright(console):
+def copyright():
     title = f"[magenta]nsfds2 v0.1.0 -- Copyright (C) 2016-{_dt.now().year} -- Cyril Desjouy\n"
     cp = "This program comes with [u]ABSOLUTELY NO WARRANTY[/u]. " + \
          "This is free software, and you are welcome to redistribute it " + \
@@ -53,7 +56,7 @@ def copyright(console):
     console.print(panel)
 
 
-def versions(console):
+def versions():
     """ Displays versions of the dependencies. """
     table = _Table(box=_box.ROUNDED, expand=True)
     table.add_column('software', style='bold blue', justify='center')
@@ -65,6 +68,15 @@ def versions(console):
     table.add_row('maplotlib', _plt.__version__)
     table.add_row('ofdlib2', _ofd.__version__)
     console.print(table)
+
+def parameters(cfg, msh):
+    """ Show simulation parameters. """
+    # Geometry
+    s = msh.__str__()
+    # Configuration
+    s += cfg.__str__()
+
+    console.print(s)
 
 
 if __name__ == '__main__':

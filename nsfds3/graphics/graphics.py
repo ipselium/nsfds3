@@ -332,6 +332,7 @@ class MPLViewer:
 
     def movie(self, view='p', nt=None, ref=None, figsize=(9, 9),
               show_nans=False, show_bz=False, show_prb=False,
+              xlim=None, ylim=None, zlim=None,
               slices=None, dpi=100, fps=24):
         """ Make movie. """
 
@@ -400,6 +401,8 @@ class MPLViewer:
         ax.legend()
         ax.grid()
 
+        _plt.show()
+
         return None
 
     def spectrogram(self, M=None, figsize=(9, 4)):
@@ -444,6 +447,8 @@ class MPLViewer:
         ax[-1].set_xlabel('Time [s]')
         ax[0].set_title('Square spectrum magitude')
         _plt.tight_layout()
+
+        _plt.show()
 
         return None
 

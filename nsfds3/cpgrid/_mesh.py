@@ -38,6 +38,11 @@ from ._geometry import ObstacleSet
 import nsfds3.graphics as _graphics
 
 
+def build(*args, **kwargs):
+
+    return CartesianGrid(*args, **kwargs)
+
+
 class GridError(Exception):
     """ Exception raised when grid parameters are wrong. """
 
@@ -257,7 +262,7 @@ class CartesianGrid:
             s += f'\t\t* Number of points : {self.nbz}\n'
             s += f'\t\t* Stretch factor   : {self.stretch_factor}\n'
             s += f'\t\t* Stretch order    : {self.stretch_order}\n'
-            s += f'\t\t* Stretched axis   : {self.stretched_axis}'
+            s += f'\t\t* Stretched axis   : {self.stretched_axis}\n\n'
         return s
 
     def __repr__(self):

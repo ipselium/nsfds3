@@ -26,7 +26,7 @@ DOCSTRING
 -----------
 """
 
-from .config import CfgSetup
+from .config import CfgSetup, create_template
 from .fdtd import FDTD
 
-__all__ = ['CfgSetup', 'FDTD']
+__all__ = ['CfgSetup', 'FDTD', 'create_template']
