@@ -69,6 +69,7 @@ def versions():
     table.add_row('ofdlib2', _ofd.__version__)
     console.print(table)
 
+
 def parameters(cfg, msh):
     """ Show simulation parameters. """
     # Geometry

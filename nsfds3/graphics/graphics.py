@@ -46,6 +46,8 @@ from rich.progress import track
 
 from mplutils import modified_jet, MidPointNorm, set_figsize, get_subplot_shape
 from nsfds3.utils.data import DataExtractor, FieldExtractor, DataIterator, nearest_index
+from nsfds3.utils.misc import dict_update, bc2nbz
+
 from libfds.fields import Fields2d, Fields3d
 
 
@@ -77,105 +79,119 @@ def fig_scale(ax1, ax2, ref=None):
 cmap = modified_jet()
 
 
-class MPLViewer:
+class MeshViewer:
     """ """
 
-    def __init__(self, cfg, msh, data):
+    dkwargs = dict(figsize=(10, 10), dpi=100,
+                   grid=True, buffer=True, obstacles=True, domains=False, N=1,
+                   slices = None,
+                   kwargs_grid=dict(),
+                   kwargs_obstacles=dict(facecolor='k', alpha=0.2, fill=True, hatch='x'),
+                   kwargs_domains=dict(facecolor='y'),)
 
-        self.cfg = cfg
+    def __init__(self, msh):
+
         self.msh = msh
-        if isinstance(data, (Fields2d, Fields3d)):
-            self.data = FieldExtractor(data)
-        elif isinstance(data, (pathlib.Path, str)):
-            self.data = DataExtractor(data)
-        elif isinstance(data, DataExtractor):
-            self.data = data
+
+    def show(self, **kwargs):
+
+        kwargs = dict_update(self.dkwargs, kwargs)
+
+        if self.msh.volumic:
+            fig, *_ = self._frame3d(**kwargs)
         else:
-            raise ValueError('fld can be Fields2d, Fields3d, DataExtractor, or path to hdf5 file')
+            fig, *_ = self._frame2d(**kwargs)
 
-        self.volumic = True if len(cfg.shape) == 3 else False
+        fig.show()
 
-    def show(self, view='p', vmin=None, vmax=None, show_nans=False, show_bz=False, show_prb=True, slices=None, iteration=0, figsize=(9, 9)):
+    def _frame3d(self, cbar=False, **kwargs):
 
-        var = self.data.get(view=view, iteration=iteration)
+        self._get_slices(kwargs.get('slices'))
 
-        if not vmin:
-            vmin = _np.nanmin(var)
-        if not vmax:
-            vmax = _np.nanmax(var)
+        fig, ax_xy = _plt.subplots(figsize=kwargs.get('figsize'), dpi=kwargs.get('dpi'), tight_layout=True)
 
-        norm = MidPointNorm(vmin=vmin, vmax=vmax, midpoint=0)
+        # Size fig. & Limits
+        width, height = fig.get_size_inches()
+        limits = self.msh.domain_limits if kwargs.get('buffer') else self.msh.buffer_limits
+        size_x = _np.diff(limits[0])[0]
+        size_y = _np.diff(limits[1])[0]
+        size_z = _np.diff(limits[2])[0]
 
-        fig, ax = self.frame(var, norm, show_nans=show_nans, show_bz=show_bz, show_prb=show_prb, slices=slices, figsize=figsize)
+        # Axes
+        divider = make_axes_locatable(ax_xy)
+        ax_xz = divider.append_axes("top", height * size_z / (size_y + size_z), pad=0., sharex=ax_xy)
+        ax_zy = divider.append_axes("right", 0.95 * width * size_z / (size_x + size_z), pad=0., sharey=ax_xy)
 
-        _plt.show()
+        for ax in fig.get_axes():
+            ax.set_aspect(1.)
 
-    def frame(self, var, norm, show_nans=False, show_bz=False, show_prb=True, slices=None, iteration=0, figsize=(9, 9)):
-
-        if len(self.msh.shape) == 3:
-            return self._fields3d(var, norm, show_nans, show_bz, show_prb, slices, figsize)
+        if cbar:
+            ax_bar = divider.append_axes("right", size="5%", pad=0.1)
         else:
-            return self._fields2d(var, norm, show_nans, show_bz, show_prb, figsize)
+            ax_bar = None
 
-    def _fields2d(self, var, norm, show_nans, show_bz, show_prb, figsize=(9, 9)):
-        """ Show 2d results. """
+        # Labels
+        ax_xy.set_xlabel(r'$x$ [m]')
+        ax_xy.set_ylabel(r'$y$ [m]')
 
-        # midpoint
-        if norm.vmin > 0 and norm.vmax > 0:
-            midpoint = _np.nanmean(var)
+        ax_xz.xaxis.set_tick_params(labelbottom=False)
+        ax_xz.set_ylabel(r'$z$ [m]')
+
+        ax_zy.yaxis.set_tick_params(labelleft=False)
+        ax_zy.set_xlabel(r'$z$ [m]')
+
+        # Cross section lines
+        ax_xy.plot(self.msh.x[[0, -1]], self.msh.y[[self.i_xz, self.i_xz]], color='gold', linewidth=1)
+        ax_xy.plot(self.msh.x[[self.i_zy, self.i_zy]], self.msh.y[[0, -1]], color='green', linewidth=1)
+        ax_xz.plot(self.msh.x[[0, -1]], self.msh.z[[self.i_xy, self.i_xy]], color='gold', linewidth=1)
+        ax_zy.plot(self.msh.z[[self.i_xy, self.i_xy]], self.msh.y[[0, -1]], color='green', linewidth=1)
+
+        # Grid, Buffer zones, Obstacles, and domains
+        obs_xy = ([obs for obs in self.msh.obstacles if self.i_xy in obs.rz],
+                  [obs for obs in self.msh.obstacles if self.i_xy not in obs.rz])
+        obs_xz = ([obs for obs in self.msh.obstacles if self.i_xz in obs.ry],
+                  [obs for obs in self.msh.obstacles if self.i_xz not in obs.ry])
+        obs_zy = ([obs for obs in self.msh.obstacles if self.i_zy in obs.rx],
+                  [obs for obs in self.msh.obstacles if self.i_zy not in obs.rx])
+
+        for ax, indices, obs in zip([ax_xy, ax_xz, ax_zy], [(0, 1), (0, 2), (2, 1)], [obs_xy, obs_xz, obs_zy]):
+            args = ax, self.msh.axis, indices
+            self.buffer_zone(*args, self.msh.buffer_limits, extend=kwargs.get('buffer'))
+            if kwargs.get('grid'):
+                self.cartesian_grid(*args, N=kwargs.get('N'), **kwargs.get('kwargs_grid'))
+            if kwargs.get('obstacles'):
+                self.cartesian_objects(*args, obs[0], **kwargs.get('kwargs_obstacles'))
+                self.cartesian_objects(*args, obs[1], alpha=0.1, facecolor='k')
+
+        return fig, ax_xy, ax_xz, ax_zy, ax_bar
+
+    def _frame2d(self, cbar=False, **kwargs):
+
+        fig, ax = _plt.subplots(figsize=kwargs.get('figsize'), dpi=kwargs.get('dpi'), tight_layout=True)
+        if cbar:
+            divider = make_axes_locatable(ax)
+            ax_bar = divider.append_axes("right", size="5%", pad=0.1)
         else:
-            midpoint = 0
+            ax_bar = None
 
-        # ticks
-        if abs(norm.vmin - midpoint) / norm.vmax > 0.33:
-            ticks = [norm.vmin, midpoint, norm.vmax]
-        else:
-            ticks = [midpoint, norm.vmax]
+        args = ax, self.msh.axis, (0, 1)
 
-        fig, ax = _plt.subplots(1, 1, figsize=figsize)
+        if kwargs.get('grid'):
+            self.cartesian_grid(*args, N=kwargs.get('N'), **kwargs.get('kwargs_grid'))
 
-        im = ax.pcolorfast(self.msh.x, self.msh.y, var[:-1, :-1], cmap=cmap, norm=norm)
-        ax.set_aspect(1.)
+        if kwargs.get('obstacles'):
+            self.cartesian_objects(*args, self.msh.obstacles, **kwargs.get('kwargs_obstacles'))
+
+        if kwargs.get('domains'):
+            self.cartesian_objects(*args, self.msh.domains, **kwargs.get('kwargs_domains'))
+
+        self.buffer_zone(*args, self.msh.buffer_limits, extend=kwargs.get('buffer'))
+
         ax.set_xlabel(r'$x$ [m]')
         ax.set_ylabel(r'$y$ [m]')
+        ax.set_aspect(1.)
 
-        divider = make_axes_locatable(ax)
-        cax = divider.append_axes("right", size="5%", pad=0.05)
-        _plt.colorbar(im, cax=cax, ticks=ticks)
-
-        # Probes
-        if self.cfg.prb and show_prb:
-            prbs = [(self.msh.x[ix], self.msh.y[iy]) for ix, iy in self.cfg.prb]
-            for prb in prbs:
-                ax.plot(*prb, 'ro')
-
-        # Buffer zones
-        bc = [self.msh.nbz if bc == 'A' else 0 for bc in self.msh.bc]
-        origin, extrema = (bc[0], bc[2]), (bc[1], bc[3])
-        size = [s - o - e for s, o, e in zip(self.msh.shape, origin, extrema)]
-        size = [self.msh.axis[i][o + s - 1] - self.msh.axis[i][o]
-                for i, (o, s) in enumerate(zip(origin, size))]
-        origin = [self.msh.axis[i][j] for i, j in enumerate(origin)]
-        edges = _patches.Rectangle(origin, *size, linewidth=3, fill=None)
-        ax.add_patch(edges)
-        if not show_bz:
-            ax.set_xlim(origin[0], origin[0] + size[0])
-            ax.set_ylim(origin[1], origin[1] + size[1])
-
-        # Nan
-        if show_nans:
-            nans = _np.where(_np.isnan(var))[::-1]
-            ax.plot(*nans, 'r.')
-
-        # Obstacles
-        for obs in self.msh.obstacles:
-            origin = [self.msh.axis[i][j] for i, j in enumerate(obs.origin)]
-            size = [self.msh.axis[i][o + s - 1] - self.msh.axis[i][o]
-                    for i, (o, s) in enumerate(zip(obs.origin, obs.size))]
-            edges = _patches.Rectangle(origin, *size, linewidth=3, fill=None)
-            ax.add_patch(edges)
-
-        return fig, im
+        return fig, ax, ax_bar
 
     def _get_slices(self, slices):
 
@@ -187,124 +203,211 @@ class MPLViewer:
         else:
             self.i_xy, self.i_xz, self.i_zy = [int(n/2) for n in self.msh.shape]
 
-    def _fields3d(self, var, norm, show_nans, show_bz, show_prb, slices, figsize=(9, 9)):
-        """ Show 3d results. """
+    @staticmethod
+    def cartesian_objects(ax, axes, indices, obj, **kwargs):
+        """ Plot cartesian objects on ax.
 
-        foreground = {'linewidth': 3, 'fill': False}
-        background = {'linewidth': 3, 'fill': True, 'facecolor': (0.8, 0.8, 1), 'alpha':0.2}
+        Parameters
+        ----------
+        ax : matplotlib.axes._subplots.AxesSubplot
+            Axis where to draw the grid
+        axes : tuple of np.ndarray
+            Grid axes (x, y [, z])
+        indices : tuple of int
+            Indices of the axes to use
+        obj : sequence
+            Sequence of objects that must be drawn
+        **kwargs : dict
+            Keyword Arguments of matplotlib.patches.Rectangle
+        """
+        dkwargs = dict(linewidth=3, edgecolor='k', facecolor=None, alpha=1., fill=False, hatch=None)
+        dkwargs.update(kwargs)
 
-        self._get_slices(slices)
+        for obs in obj:
+            origin = [axes[i][j] for i, j in zip(indices, obs.origin)]
+            size = [axes[i][o + s - 1] - axes[i][o]
+                    for i, o, s in zip(indices, obs.origin, obs.size)]
+            edges = _patches.Rectangle(origin, *size, **dkwargs)
+            ax.add_patch(edges)
 
-        # midpoint
-        if norm.vmin > 0 and norm.vmax > 0:
-            midpoint = _np.nanmean(var)
+    @staticmethod
+    def cartesian_grid(ax, axes, indices, N, **kwargs):
+        """ Plot cartesian grid on ax.
+
+        Parameters
+        ----------
+        ax : matplotlib.axes._subplots.AxesSubplot
+            Axis where to draw the grid
+        axes : tuple of np.ndarray
+            Grid axes (x, y [, z])
+        indices : tuple of int
+            Indices of the axes to use
+        N : int
+            Plot a grid line every N points
+        **kwargs : dict
+            Keyword Arguments of ax.vlines/ax.hlines
+        """
+
+        dkwargs = dict(color='k', linewidth=0.1)
+        dkwargs.update(kwargs)
+
+        for i in _np.append(axes[indices[0]][::N], axes[indices[0]][-1]):
+            ax.vlines(i, axes[indices[1]].min(), axes[indices[1]].max(), **dkwargs)
+
+        for i in _np.append(axes[indices[1]][::N], axes[indices[1]][-1]):
+            ax.hlines(i, axes[indices[0]].min(), axes[indices[0]].max(), **dkwargs)
+
+    @staticmethod
+    def buffer_zone(ax, axes, indices, buffer_limits, extend=True):
+        """ Plot buffer zone.
+
+        Parameters
+        ----------
+        ax : matplotlib.axes._subplots.AxesSubplot
+            Axis where to draw the grid
+        axes : tuple of np.ndarray
+            Grid axes (x, y [, z])
+        indices : tuple of int
+            Indices of the axes to use
+        buffer_limits : tuple
+            Limits of the buffer zone ((xmin, xmax), (ymin, ymax), ...)
+        extend : bool, optional
+            Whether to display buffer zone or not&ia=web
+        """
+        origin = [buffer_limits[i][0] for i in indices]
+        size = [buffer_limits[i][1] - buffer_limits[i][0] for i in indices]
+
+        if extend:
+            edges = _patches.Rectangle(origin, *size, linewidth=3, fill=None)
+            ax.add_patch(edges)
         else:
-            midpoint = 0
+            ax.set_xlim(origin[0], origin[0] + size[0])
+            ax.set_ylim(origin[1], origin[1] + size[1])
 
-        # ticks
+
+class MPLViewer(MeshViewer):
+    """
+    TODO : Factoriser fields2d/fields3d avec MeshViewer._frame2d/frame3d
+
+    """
+
+    dkwargs = dict(figsize=(9, 9), dpi=100, fps=24,
+                   grid=False, buffer=True, obstacles=True, domains=False,
+                   probes=True, nans=False,
+                   kwargs_grid=dict(),
+                   kwargs_obstacles=dict(),
+                   kwargs_domains=dict(facecolor='r', alpha=0.1), )
+
+    def __init__(self, cfg, msh, data):
+
+        super().__init__(msh)
+        self.cfg = cfg
+
+        if isinstance(data, (Fields2d, Fields3d)):
+            self.data = FieldExtractor(data)
+        elif isinstance(data, (pathlib.Path, str)):
+            self.data = DataExtractor(data)
+        elif isinstance(data, DataExtractor):
+            self.data = data
+        else:
+            raise ValueError('fld can be Fields2d, Fields3d, DataExtractor, or path to hdf5 file')
+
+        for name, ax in zip(('x', 'y', 'z'), msh.axis):
+            setattr(self, name, ax)
+
+    def show(self, view='p', vmin=None, vmax=None,  iteration=0, slices=None, **kwargs):
+
+
+        kwargs = dict_update(self.dkwargs, kwargs)
+
+        var = self.data.get(view=view, iteration=iteration)
+
+        if not vmin:
+            vmin = _np.nanmin(var)
+        if not vmax:
+            vmax = _np.nanmax(var)
+
+        norm = MidPointNorm(vmin=vmin, vmax=vmax, midpoint=0)
+
+        fig, ax = self.frame(var, norm, slices=slices, **kwargs)
+
+        _plt.show()
+
+    def frame(self, var, norm, slices=None, **kwargs):
+
+        kwargs = dict_update(self.dkwargs, kwargs)
+
+        if len(self.msh.shape) == 3:
+            return self._fields3d(var, norm, slices, **kwargs)
+        else:
+            return self._fields2d(var, norm, **kwargs)
+
+    def _fields2d(self, var, norm, **kwargs):
+        """ Show 2d results. """
+
+        fig, ax, ax_bar = self._frame2d(cbar=True, **kwargs)
+
+        # Fill figure
+        im = ax.pcolorfast(self.x, self.y, var[:-1, :-1], cmap=cmap, norm=norm)
+
+        # Colorbar
+        midpoint = _np.nanmean(var) if norm.vmin > 0 and norm.vmax > 0 else 0
         if abs(norm.vmin - midpoint) / norm.vmax > 0.33:
             ticks = [norm.vmin, midpoint, norm.vmax]
         else:
             ticks = [midpoint, norm.vmax]
+        _plt.colorbar(im, cax=ax_bar, ticks=ticks)
+
+        # Nans & Probes
+        if kwargs.get('nans'):
+            nans = _np.where(_np.isnan(var))[::-1]
+            ax.plot(*nans, 'r.')
+
+        if self.cfg.prb and kwargs.get('probes'):
+            prbs = [(self.x[ix], self.y[iy]) for ix, iy in self.cfg.prb]
+            for prb in prbs:
+                ax.plot(*prb, 'ro')
+
+        return fig, im
+
+    def _fields3d(self, var, norm, slices, **kwargs):
+        """ Show 3d results. """
+
+        fig, ax_xy, ax_xz, ax_zy, ax_bar = self._frame3d(cbar=True, **kwargs)
 
         ims = []
 
-        fig, ax_xy = _plt.subplots(figsize=figsize, tight_layout=True)
+        # Fill figure
+        ims.append(ax_xy.pcolorfast(self.x, self.y, var[:-1, :-1, self.i_xy].T, cmap=cmap, norm=norm))
+        ax_xy.plot(self.x[[0, -1]], self.y[[self.i_xz, self.i_xz]], color='gold', linewidth=1)
+        ax_xy.plot(self.x[[self.i_zy, self.i_zy]], self.y[[0, -1]], color='green', linewidth=1)
 
-        # Sizes
-        width, height = fig.get_size_inches()
-        size_x = self.msh.x[-self.msh.nbz if self.msh.bc[1] == 'A' else -1] - self.msh.x[0 if self.msh.bc[0] == 'A' else 0]
-        size_y = self.msh.y[-self.msh.nbz if self.msh.bc[3] == 'A' else -1] - self.msh.y[0 if self.msh.bc[2] == 'A' else 0]
-        size_z = self.msh.z[-self.msh.nbz if self.msh.bc[5] == 'A' else -1] - self.msh.z[0 if self.msh.bc[4] == 'A' else 0]
+        ims.append(ax_xz.pcolorfast(self.x, self.z, var[:-1, self.i_xz, :-1].T, cmap=cmap, norm=norm))
+        ax_xz.plot(self.x[[0, -1]], self.z[[self.i_xy, self.i_xy]], color='gold', linewidth=1)
 
-        # xy plot:
-        ims.append(ax_xy.pcolorfast(self.msh.x, self.msh.y, var[:-1, :-1, self.i_xy].T, cmap=cmap, norm=norm))
-        ax_xy.plot(self.msh.x[[0, -1]], self.msh.y[[self.i_xz, self.i_xz]], color='gold', linewidth=1)
-        ax_xy.plot(self.msh.x[[self.i_zy, self.i_zy]], self.msh.y[[0, -1]], color='green', linewidth=1)
-        ax_xy.set_xlabel(r'$x$ [m]')
-        ax_xy.set_ylabel(r'$y$ [m]')
+        ims.append(ax_zy.pcolorfast(self.z, self.y, var[self.i_zy, :-1, :-1], cmap=cmap, norm=norm))
+        ax_zy.plot(self.z[[self.i_xy, self.i_xy]], self.y[[0, -1]], color='green', linewidth=1)
 
-        # position, size, pad
-        divider = make_axes_locatable(ax_xy)
-        ax_xz = divider.append_axes("top", height * size_z / (size_y + size_z), pad=0., sharex=ax_xy)
-        ax_zy = divider.append_axes("right", 0.95 * width * size_z / (size_x + size_z), pad=0., sharey=ax_xy)
-
-        # xz and zy plots
-        ims.append(ax_xz.pcolorfast(self.msh.x, self.msh.z, var[:-1, self.i_xz, :-1].T, cmap=cmap, norm=norm))
-        ax_xz.plot(self.msh.x[[0, -1]], self.msh.z[[self.i_xy, self.i_xy]], color='gold', linewidth=1)
-        ax_xz.xaxis.set_tick_params(labelbottom=False)
-        ax_xz.set_ylabel(r'$z$ [m]')
-
-        ims.append(ax_zy.pcolorfast(self.msh.z, self.msh.y, var[self.i_zy, :-1, :-1], cmap=cmap, norm=norm))
-        ax_zy.plot(self.msh.z[[self.i_xy, self.i_xy]], self.msh.y[[0, -1]], color='green', linewidth=1)
-        ax_zy.yaxis.set_tick_params(labelleft=False)
-        ax_zy.set_xlabel(r'$z$ [m]')
-
-        for ax in fig.get_axes():
-            ax.set_aspect(1.)
-
-        ax_bar = divider.append_axes("right", size="5%", pad=0.)
+        # Colorbar
+        midpoint = _np.nanmean(var) if norm.vmin > 0 and norm.vmax > 0 else 0
+        if abs(norm.vmin - midpoint) / norm.vmax > 0.33:
+            ticks = [norm.vmin, midpoint, norm.vmax]
+        else:
+            ticks = [midpoint, norm.vmax]
         fig.colorbar(ims[0], cax=ax_bar, ticks=ticks)
-        #ax_bar.xaxis.set_ticks_position("top")
 
         # Probes
-        if self.cfg.prb and show_prb:
-            prbs = [(self.msh.x[ix], self.msh.y[iy], self.msh.z[iz]) for ix, iy, iz in self.cfg.prb]
+        if self.cfg.prb and kwargs.get('probes'):
+            prbs = [(self.x[ix], self.y[iy], self.z[iz]) for ix, iy, iz in self.cfg.prb]
             for prb in prbs:
-                color = 'r' if self.msh.z[self.i_xy] == prb[2] else 'grey'
+                color = 'r' if self.z[self.i_xy] == prb[2] else 'grey'
                 ax_xy.plot(*(c for c in prb[:2]), marker='o', color=color)
 
-                color = 'r' if self.msh.y[self.i_xz] == prb[1] else 'grey'
+                color = 'r' if self.y[self.i_xz] == prb[1] else 'grey'
                 ax_xz.plot(*(c for i, c in enumerate(prb) if i != 1), marker='o', color=color)
 
-                color = 'r' if self.msh.x[self.i_zy] == prb[0] else 'grey'
+                color = 'r' if self.x[self.i_zy] == prb[0] else 'grey'
                 ax_zy.plot(*(c for c in prb[1:][::-1]), marker='o', color=color)
-
-        # Buffer zones
-        bc = [self.msh.nbz if bc == 'A' else 0 for bc in self.msh.bc]
-        origin, extrema = (bc[0], bc[2], bc[4]), (bc[1], bc[3], bc[5])
-        size = [s - o - e for s, o, e in zip(self.msh.shape, origin, extrema)]
-        size = [self.msh.axis[i][o + s - 1] - self.msh.axis[i][o]
-                for i, (o, s) in enumerate(zip(origin, size))]
-        origin = [self.msh.axis[i][j] for i, j in enumerate(origin)]
-
-        edges = _patches.Rectangle((origin[0], origin[1]), size[0], size[1], **foreground)
-        ax_xy.add_patch(edges)
-
-        edges = _patches.Rectangle((origin[0], origin[2]), size[0], size[2], **foreground)
-        ax_xz.add_patch(edges)
-
-        edges = _patches.Rectangle((origin[2], origin[1]), size[2], size[1], **foreground)
-        ax_zy.add_patch(edges)
-
-        if not show_bz:
-            ax_xy.set_xlim(origin[0], origin[0] + size[0])
-            ax_xy.set_ylim(origin[1], origin[1] + size[1])
-
-            ax_xz.set_xlim(origin[0], origin[0] + size[0])
-            ax_xz.set_ylim(origin[2], origin[2] + size[2])
-
-            ax_zy.set_xlim(origin[2], origin[2] + size[2])
-            ax_zy.set_ylim(origin[1], origin[1] + size[1])
-
-        # Obstacles
-        for obs in self.msh.obstacles:
-
-            origin = [self.msh.axis[i][j] for i, j in enumerate(obs.origin)]
-            size = [self.msh.axis[i][o + s - 1] - self.msh.axis[i][o]
-                    for i, (o, s) in enumerate(zip(obs.origin, obs.size))]
-
-            kwargs = foreground if self.i_xy in obs.rz else background
-            edges = _patches.Rectangle((origin[0], origin[1]), size[0], size[1], **kwargs)
-            ax_xy.add_patch(edges)
-
-            kwargs = foreground if self.i_xz in obs.ry else background
-            edges = _patches.Rectangle((origin[0], origin[2]), size[0], size[2], **kwargs)
-            ax_xz.add_patch(edges)
-
-            kwargs = foreground if self.i_zy in obs.rx else background
-            edges = _patches.Rectangle((origin[2], origin[1]), size[2], size[1], **kwargs)
-            ax_zy.add_patch(edges)
 
         return fig, ims
 
@@ -330,11 +433,11 @@ class MPLViewer:
 
         return metadata
 
-    def movie(self, view='p', nt=None, ref=None, figsize=(9, 9),
-              show_nans=False, show_bz=False, show_prb=False,
-              xlim=None, ylim=None, zlim=None,
-              slices=None, dpi=100, fps=24):
+    def movie(self, view='p', nt=None, ref=None, xlim=None, ylim=None, zlim=None,
+              slices=None, **kwargs):
         """ Make movie. """
+
+        kwargs = dict_update(self.dkwargs, kwargs)
 
         if not isinstance(self.data, DataExtractor):
             print('movie method only available for DataExtractor')
@@ -349,26 +452,24 @@ class MPLViewer:
         vmin, vmax = self.data.reference(view=view, ref=ref)
         norm = MidPointNorm(vmin=vmin, vmax=vmax, midpoint=0)
         i, var = next(data)
-        fig, im = self.frame(var, norm,
-                             show_nans=show_nans, show_bz=show_bz, show_prb=show_prb,
-                             slices=slices, iteration=i, figsize=figsize)
+        fig, im = self.frame(var, norm, slices=slices, iteration=i, **kwargs)
 
         # Movie parameters
         metadata = self._init_movie(view)
-        writer = _ani.FFMpegWriter(fps=fps, metadata=metadata, bitrate=-1, codec="libx264")
-        with writer.saving(fig, self.cfg.savepath / metadata['filename'], dpi=dpi):
+        writer = _ani.FFMpegWriter(fps=kwargs.get('fps'), metadata=metadata, bitrate=-1, codec="libx264")
+        with writer.saving(fig, self.cfg.savepath / metadata['filename'], dpi=kwargs.get('dpi')):
 
             writer.grab_frame()
 
             for i, var in track(data, description='Making movie...', disable=self.cfg.quiet):
                 axes = fig.get_axes()
-                if self.volumic:
-                    im[0].set_data(self.msh.x, self.msh.y, var[:-1, :-1, self.i_xy].T)
-                    im[1].set_data(self.msh.x, self.msh.z, var[:-1, self.i_xz, :-1].T)
-                    im[2].set_data(self.msh.z, self.msh.y, var[self.i_zy, :-1, :-1])
+                if self.msh.volumic:
+                    im[0].set_data(self.x, self.y, var[:-1, :-1, self.i_xy].T)
+                    im[1].set_data(self.x, self.z, var[:-1, self.i_xz, :-1].T)
+                    im[2].set_data(self.z, self.y, var[self.i_zy, :-1, :-1])
                     axes[1].set_title(metadata['var'] + f' (n={i})')
                 else:
-                    im.set_data(self.msh.x, self.msh.y, var[:-1, :-1])
+                    im.set_data(self.x, self.y, var[:-1, :-1])
                     axes[0].set_title(metadata['var'] + f' (n={i})')
 
                 writer.grab_frame()

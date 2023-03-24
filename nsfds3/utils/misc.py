@@ -33,6 +33,27 @@ import datetime as _datetime
 import itertools as _it
 import numpy as _np
 from libfds.cutils import yconsecutives, zconsecutives
+import collections.abc
+from copy import deepcopy
+
+
+def sign(x):
+    """ Returns sign of x. """
+    return -1 if x < 0 else (1 if x > 0 else 0)
+
+def bc2nbz(bc, nbz):
+    """ From bc, returns a list of indices corresponding to the limits of the buffer zone. """
+    return [[sign(0.5 - j) * nbz if v == "A" else -j for j, v in enumerate(bc[i:i+2])] 
+             for i in range(0, len(bc), 2)]
+
+def dict_update(d1, d2):
+    out1 = deepcopy(d1)
+    out2 = deepcopy(d2)
+    if all((isinstance(d, collections.abc.Mapping) for d in (out1, out2))):
+        for k, v in out2.items():
+            out1[k] = dict_update(out1.get(k), v)
+        return out1
+    return out2
 
 
 class GeoMeta:

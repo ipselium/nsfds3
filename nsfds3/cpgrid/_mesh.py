@@ -33,9 +33,12 @@ Module `mesh` provides three classes to build meshes:
 
 import re as _re
 import numpy as _np
+import warnings
 from ._cdomain import ComputationDomains
 from ._geometry import ObstacleSet
 import nsfds3.graphics as _graphics
+from nsfds3.utils.misc import bc2nbz
+from libfds.cmaths import curvilinear_trans2d, curvilinear_trans3d
 
 
 def build(*args, **kwargs):
@@ -45,6 +48,10 @@ def build(*args, **kwargs):
 
 class GridError(Exception):
     """ Exception raised when grid parameters are wrong. """
+
+
+class InvariantWarning(UserWarning):
+    """ Warn when invariants are not zero. """
 
 
 class CartesianGrid:
@@ -82,7 +89,6 @@ class CartesianGrid:
     --------
     :py:class:`CurvilinearMesh`,
     :py:mod:`cpgrid.templates`
-
     """
 
     def __init__(self, shape, steps=None, origin=None, bc=None, obstacles=None,
@@ -109,6 +115,9 @@ class CartesianGrid:
         self.make_grid()
         self._set_axis_flags()
         self._find_subdomains()
+
+        self.domain_limits = [(axe.min(), axe.max()) for axe in self.axis]
+        self.buffer_limits = [(axe[m], axe[p]) for axe, (m, p) in zip(self.axis, bc2nbz(self.bc, self.nbz))]
 
     def _check_arguments_dims(self):
         """ Check input arguments. """
@@ -239,18 +248,21 @@ class CartesianGrid:
             self.z *= self.dz
             self.z -= self.z[self.origin[2]]
 
-    def show(self, dpi=800, obstacles=True, domains=False, bounds=True, only_mesh=False):
+    def show(self, backend='mpl', **kwargs):
         """ Plot grid.
 
         todo :
-            - BC profiles, figsize, buffer zones, probes, filename
-            - Take one division over N(=4)
-            - evolution of the (dx, dy, dz) steps
+            - BC profiles
         """
 
-        viewer = _graphics.CDViewer(self)
-        viewer.show(dpi=dpi, obstacles=obstacles, domains=domains, bounds=bounds,
-                    only_mesh=only_mesh)
+        if backend == 'plotly':
+            viewer = _graphics.CDViewer(self)
+        elif backend == 'mpl':
+            viewer = _graphics.MeshViewer(self)
+        else:
+            raise ValueError("backend must be in ('mpl', 'plotly', )")
+
+        viewer.show(**kwargs)
 
     def __str__(self):
         s = f"Cartesian {'x'.join(str(n) for n in self.shape)} points grid "
@@ -270,7 +282,84 @@ class CartesianGrid:
 
 
 class CurvilinearGrid(CartesianGrid):
-    pass
+    """ Build cartesian grid
+
+    Parameters
+    ----------
+    shape : tuple
+        Size of the domain. Must be a tuple with 2 or 3 int objects.
+    steps : tuple, optional
+        Spatial steps. Must be a tuple with 2 or 3 float objects.
+    origin : tuple, optional
+        Origin of the grid. Must be a tuple with 2 or 3 int objects.
+    bc : {'[APW][APW][APW][APW][[APW][APW]]'}, optional
+        Boundary conditions. Must be a 4 or 6 characters string corresponding to
+        left, right, front, back, bottom, and top boundaries, respectively.
+        A stands for non reflecting boundary, W for non slip condition, and P for 
+        periodic boundary.
+    obstacles : :py:class:`fdgrid.domains.Domain`, optional
+        Obstacles in the computation domain.
+    curvilinear_func : func
+        Function to operate curvilinear transformation
+    nbz : int, optional
+        Number of points of the absorbing area (only if 'A' in `bc`).
+    stretch_factor : float, optional
+        Factor reach at the end of the stretching zone
+    stretch_order : float, optional
+        Order of the streching function
+    stencil : int, optional
+        Size of the finite difference stencil (used by :py:mod:`nsfds2`).
+
+    See also
+    --------
+    :py:class:`CartesianMesh`,
+    :py:mod:`cpgrid.templates`
+    """
+
+    def __init__(self, shape, steps=None, origin=None, bc=None, obstacles=None,
+                 curvilinear_func=None, nbz=20, 
+                 stretch_factor=2, stretch_order=3, stencil=11):
+
+        if curvilinear_func:
+            self.curvilinear_func = curvilinear_func
+        else:
+            self.curvilinear_func = self._curvilinear_func
+
+        super().__init__(shape, steps=steps, origin=origin, bc=bc, obstacles=obstacles,
+                         nbz=nbz, stretch_factor=stretch_factor, stretch_order=stretch_order,
+                         stencil=stencil)
+
+    @staticmethod
+    def _curvilinear_func(*args):
+        return tuple([v.copy() for v in args])
+
+    def make_grid(self):
+        """ Make curvilinear grid.
+
+        Note
+        ----
+
+        (x, y, z) define numerical grid
+        (u, v, w) define physical grid
+        """
+
+        super().make_grid()
+
+        # Pysical coordinates & Jacobian
+        if self.volumic:
+            x, y, z = _np.meshgrid(self.x, self.y, self.z, indexing='ij')
+            self.xp, self.yp, self.zp = self.curvilinear_func(x, y, z)
+            valid, (self.J, *J) = curvilinear_trans3d(self.xp, self.yp, self.zp, x, y, z)
+            self.dx_du, self.dx_dv, self.dx_dw, self.dy_du, self.dy_dv, self.dy_dw, self.dz_du, self.dz_dv, self.dz_dw = J
+        else:
+            x, y = _np.meshgrid(self.x, self.y, indexing='ij')
+            self.xp, self.yp = self.curvilinear_func(x, y)
+            valid, (self.J, *J) = curvilinear_trans2d(self.xp, self.yp, x, y)
+            self.dx_du, self.dx_dv, self.dy_du, self.dy_dv = J
+
+        # Check if invariant metrics are 0
+        if not valid:
+            warnings.warn('Metric invariants not equal to 0', InvariantWarning)
 
 
 if __name__ == "__main__":
