@@ -41,10 +41,30 @@ def sign(x):
     """ Returns sign of x. """
     return -1 if x < 0 else (1 if x > 0 else 0)
 
-def bc2nbz(bc, nbz):
+
+def buffer_bounds(bc, nbz):
     """ From bc, returns a list of indices corresponding to the limits of the buffer zone. """
-    return [[sign(0.5 - j) * nbz if v == "A" else -j for j, v in enumerate(bc[i:i+2])] 
+    return [[sign(0.5 - j) * nbz if v == "A" else -j for j, v in enumerate(bc[i:i+2])]
              for i in range(0, len(bc), 2)]
+
+
+def buffer_kwargs(bc, nbz, shape):
+    """ Returns a dict containing origin, size and bc of the buffer zone.
+
+    Parameters
+    ----------
+    bc : int
+        Boundary conditions
+    nbz : int
+        size of the buffer zone
+    shape : tuple
+        size of the domain
+    """
+    bounds = buffer_bounds(bc, nbz)
+    origin = [c[0] for c in bounds]
+    size = [n + c[1] - o + 1 for n, c, o in zip(shape, bounds, origin)]
+    return dict(origin=origin, size=size, bc=bc)
+
 
 def dict_update(d1, d2):
     out1 = deepcopy(d1)

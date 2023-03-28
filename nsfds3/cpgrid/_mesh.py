@@ -37,7 +37,7 @@ import warnings
 from ._cdomain import ComputationDomains
 from ._geometry import ObstacleSet
 import nsfds3.graphics as _graphics
-from nsfds3.utils.misc import bc2nbz
+from nsfds3.utils.misc import buffer_bounds
 from libfds.cmaths import curvilinear_trans2d, curvilinear_trans3d
 
 
@@ -68,7 +68,7 @@ class CartesianGrid:
     bc : {'[APW][APW][APW][APW][[APW][APW]]'}, optional
         Boundary conditions. Must be a 4 or 6 characters string corresponding to
         left, right, front, back, bottom, and top boundaries, respectively.
-        A stands for non reflecting boundary, W for non slip condition, and P for 
+        A stands for non reflecting boundary, W for non slip condition, and P for
         periodic boundary.
     obstacles : :py:class:`fdgrid.domains.Domain`, optional
         Obstacles in the computation domain.
@@ -90,6 +90,8 @@ class CartesianGrid:
     :py:class:`CurvilinearMesh`,
     :py:mod:`cpgrid.templates`
     """
+
+    mesh_type = "Cartesian"
 
     def __init__(self, shape, steps=None, origin=None, bc=None, obstacles=None,
                  nbz=20, stretch_factor=2, stretch_order=3, stencil=11):
@@ -117,7 +119,7 @@ class CartesianGrid:
         self._find_subdomains()
 
         self.domain_limits = [(axe.min(), axe.max()) for axe in self.axis]
-        self.buffer_limits = [(axe[m], axe[p]) for axe, (m, p) in zip(self.axis, bc2nbz(self.bc, self.nbz))]
+        self.buffer_limits = [(axe[m], axe[p]) for axe, (m, p) in zip(self.axis, buffer_bounds(self.bc, self.nbz))]
 
     def _check_arguments_dims(self):
         """ Check input arguments. """
@@ -184,10 +186,12 @@ class CartesianGrid:
         """ Divide the computation domain into subdomains. """
 
         self._computation_domains = ComputationDomains(self.shape, self.obstacles,
-                                                       self.bc, self.stencil)
+                                                       self.bc, self.nbz, self.stencil)
 
         self.bounds = self._computation_domains.bounds
+        self.buffer = self._computation_domains.buffer
         self.domains = self._computation_domains.domains
+
 
     @property
     def stretched_axis(self):
@@ -265,7 +269,7 @@ class CartesianGrid:
         viewer.show(**kwargs)
 
     def __str__(self):
-        s = f"Cartesian {'x'.join(str(n) for n in self.shape)} points grid "
+        s = f"{self.mesh_type} {'x'.join(str(n) for n in self.shape)} points grid "
         s += f'with {self.bc} boundary conditions:\n\n'
         s += f"\t* Spatial step : ({', '.join(str(n) for n in self.steps)})\n"
         s += f"\t* Origin       : ({', '.join(str(n) for n in self.origin)})\n"
@@ -295,7 +299,7 @@ class CurvilinearGrid(CartesianGrid):
     bc : {'[APW][APW][APW][APW][[APW][APW]]'}, optional
         Boundary conditions. Must be a 4 or 6 characters string corresponding to
         left, right, front, back, bottom, and top boundaries, respectively.
-        A stands for non reflecting boundary, W for non slip condition, and P for 
+        A stands for non reflecting boundary, W for non slip condition, and P for
         periodic boundary.
     obstacles : :py:class:`fdgrid.domains.Domain`, optional
         Obstacles in the computation domain.
@@ -316,8 +320,10 @@ class CurvilinearGrid(CartesianGrid):
     :py:mod:`cpgrid.templates`
     """
 
+    mesh_type = "Curvilinear"
+
     def __init__(self, shape, steps=None, origin=None, bc=None, obstacles=None,
-                 curvilinear_func=None, nbz=20, 
+                 curvilinear_func=None, nbz=20,
                  stretch_factor=2, stretch_order=3, stencil=11):
 
         if curvilinear_func:
@@ -332,6 +338,12 @@ class CurvilinearGrid(CartesianGrid):
     @staticmethod
     def _curvilinear_func(*args):
         return tuple([v.copy() for v in args])
+
+    @property
+    def paxis(self):
+        if self.volumic:
+            return self.xp, self.yp, self.zp
+        return self.xp, self.yp
 
     def make_grid(self):
         """ Make curvilinear grid.

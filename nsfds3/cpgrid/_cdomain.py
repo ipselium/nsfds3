@@ -32,7 +32,7 @@ import itertools as _it
 import numpy as _np
 import rich.progress as _rp
 from ._geometry import ObstacleSet, DomainSet, Domain
-from nsfds3.utils.misc import locations_to_cuboids, unique, Schemes, scheme_to_str
+from nsfds3.utils.misc import locations_to_cuboids, unique, Schemes, scheme_to_str, buffer_kwargs
 import nsfds3.graphics as _graphics
 from libfds.cutils import nonzeros, where
 
@@ -68,9 +68,10 @@ class ComputationDomains:
     _BC_C = ['P', ]
 
 
-    def __init__(self, shape, obstacles=None, bc='WWWWWW', stencil=11, free=True):
+    def __init__(self, shape, obstacles=None, bc='WWWWWW', nbz=20, stencil=11, free=True):
         self.shape = shape
         self.bc = bc.upper()
+        self.nbz = nbz
         self.stencil = stencil
         self._midstencil = int((stencil - 1) / 2)
         self.volumic = len(shape) == 3
@@ -81,6 +82,7 @@ class ComputationDomains:
             self.obstacles = ObstacleSet(shape, obstacles, stencil=stencil)
 
         self.bounds = Domain(origin=(0, ) * len(shape), size=shape, bc=self.bc).faces
+        self.buffer = Domain(**buffer_kwargs(self.bc, self.nbz, self.shape))
 
         # Init listing of domains
         self.domains = []

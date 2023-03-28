@@ -34,7 +34,7 @@ import numpy as _np
 from scipy import signal as _signal
 
 import matplotlib.pyplot as _plt
-from matplotlib import patches as _patches
+from matplotlib import patches as _patches, path as _path
 import matplotlib.animation as _ani
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 
@@ -46,7 +46,7 @@ from rich.progress import track
 
 from mplutils import modified_jet, MidPointNorm, set_figsize, get_subplot_shape
 from nsfds3.utils.data import DataExtractor, FieldExtractor, DataIterator, nearest_index
-from nsfds3.utils.misc import dict_update, bc2nbz
+from nsfds3.utils.misc import dict_update
 
 from libfds.fields import Fields2d, Fields3d
 
@@ -87,11 +87,20 @@ class MeshViewer:
                    slices = None,
                    kwargs_grid=dict(),
                    kwargs_obstacles=dict(facecolor='k', alpha=0.2, fill=True, hatch='x'),
-                   kwargs_domains=dict(facecolor='y'),)
+                   kwargs_domains=dict(facecolor='y'),
+                   kwargs_buffer=dict(linewidth=3, edgecolor='k', fill=False))
 
     def __init__(self, msh):
 
         self.msh = msh
+        if hasattr(self.msh, 'J'):
+            self.grid = self.curvilinear_grid
+            self.objects = self.curvilinear_objects
+            self.axis = self.msh.paxis
+        else:
+            self.grid = self.cartesian_grid
+            self.objects = self.cartesian_objects
+            self.axis = self.msh.axis
 
     def show(self, **kwargs):
 
@@ -106,7 +115,7 @@ class MeshViewer:
 
     def _frame3d(self, cbar=False, **kwargs):
 
-        self._get_slices(kwargs.get('slices'))
+        slices = self._get_slices(kwargs.get('slices'))
 
         fig, ax_xy = _plt.subplots(figsize=kwargs.get('figsize'), dpi=kwargs.get('dpi'), tight_layout=True)
 
@@ -155,13 +164,25 @@ class MeshViewer:
                   [obs for obs in self.msh.obstacles if self.i_zy not in obs.rx])
 
         for ax, indices, obs in zip([ax_xy, ax_xz, ax_zy], [(0, 1), (0, 2), (2, 1)], [obs_xy, obs_xz, obs_zy]):
-            args = ax, self.msh.axis, indices
-            self.buffer_zone(*args, self.msh.buffer_limits, extend=kwargs.get('buffer'))
+
+            if self.msh.mesh_type == 'Curvilinear':
+                s = [slice(None) if i in indices else s for i, s in enumerate(slices)]
+                args = ax, [v[tuple(s)] for v in self.axis], indices
+            else:
+                args = ax, self.axis, indices
+
             if kwargs.get('grid'):
-                self.cartesian_grid(*args, N=kwargs.get('N'), **kwargs.get('kwargs_grid'))
+                self.grid(*args, N=kwargs.get('N'), **kwargs.get('kwargs_grid'))
+
             if kwargs.get('obstacles'):
-                self.cartesian_objects(*args, obs[0], **kwargs.get('kwargs_obstacles'))
-                self.cartesian_objects(*args, obs[1], alpha=0.1, facecolor='k')
+                self.objects(*args, obs[0], **kwargs.get('kwargs_obstacles'))
+                self.objects(*args, obs[1], alpha=0.1, facecolor='k')
+
+            if kwargs.get('buffer'):
+                self.objects(*args, self.msh.buffer, **kwargs.get('kwargs_buffer'))
+            else:
+                ax.set_xlim(self.msh.buffer_limits[indices[0]])
+                ax.set_ylim(self.msh.buffer_limits[indices[1]])
 
         return fig, ax_xy, ax_xz, ax_zy, ax_bar
 
@@ -174,18 +195,22 @@ class MeshViewer:
         else:
             ax_bar = None
 
-        args = ax, self.msh.axis, (0, 1)
+        args = ax, self.axis, (0, 1)
 
         if kwargs.get('grid'):
-            self.cartesian_grid(*args, N=kwargs.get('N'), **kwargs.get('kwargs_grid'))
+            self.grid(*args, N=kwargs.get('N'), **kwargs.get('kwargs_grid'))
 
         if kwargs.get('obstacles'):
-            self.cartesian_objects(*args, self.msh.obstacles, **kwargs.get('kwargs_obstacles'))
+            self.objects(*args, self.msh.obstacles, **kwargs.get('kwargs_obstacles'))
 
         if kwargs.get('domains'):
-            self.cartesian_objects(*args, self.msh.domains, **kwargs.get('kwargs_domains'))
+            self.objects(*args, self.msh.domains, **kwargs.get('kwargs_domains'))
 
-        self.buffer_zone(*args, self.msh.buffer_limits, extend=kwargs.get('buffer'))
+        if kwargs.get('buffer'):
+            self.objects(*args, self.msh.buffer, **kwargs.get('kwargs_buffer'))
+        else:
+            ax.set_xlim(self.msh.buffer_limits[0])
+            ax.set_ylim(self.msh.buffer_limits[1])
 
         ax.set_xlabel(r'$x$ [m]')
         ax.set_ylabel(r'$y$ [m]')
@@ -196,12 +221,14 @@ class MeshViewer:
     def _get_slices(self, slices):
 
         if slices:
-            if all([a < b for a, b in zip(slices[::-1], self.msh.shape)]):
+            if all([a < b for a, b in zip(slices, self.msh.shape[::-1])]):
                 self.i_xy, self.i_xz, self.i_zy = slices
             else:
                 raise IndexError('Slices out of bounds')
         else:
-            self.i_xy, self.i_xz, self.i_zy = [int(n/2) for n in self.msh.shape]
+            self.i_xy, self.i_xz, self.i_zy = [int(n/2) for n in self.msh.shape[::-1]]
+
+        return self.i_xy, self.i_xz, self.i_zy
 
     @staticmethod
     def cartesian_objects(ax, axes, indices, obj, **kwargs):
@@ -221,14 +248,62 @@ class MeshViewer:
             Keyword Arguments of matplotlib.patches.Rectangle
         """
         dkwargs = dict(linewidth=3, edgecolor='k', facecolor=None, alpha=1., fill=False, hatch=None)
-        dkwargs.update(kwargs)
+        kwargs = dict_update(dkwargs, kwargs)
+
+        if hasattr(obj, 'sid'):
+            obj = (obj, )
 
         for obs in obj:
-            origin = [axes[i][j] for i, j in zip(indices, obs.origin)]
+            sub_origin = [obs.origin[i] for i in indices]
+            sub_size = [obs.size[i] for i in indices]
+            origin = [axes[i][j] for i, j in zip(indices, sub_origin)]
             size = [axes[i][o + s - 1] - axes[i][o]
-                    for i, o, s in zip(indices, obs.origin, obs.size)]
-            edges = _patches.Rectangle(origin, *size, **dkwargs)
+                    for i, o, s in zip(indices, sub_origin, sub_size)]
+            edges = _patches.Rectangle(origin, *size, **kwargs)
             ax.add_patch(edges)
+
+    @staticmethod
+    def curvilinear_objects(ax, axes, indices, obj, **kwargs):
+        """ Plot curvilinear objects on ax.
+
+        Parameters
+        ----------
+        ax : matplotlib.axes._subplots.AxesSubplot
+            Axis where to draw the grid
+        axes : tuple of np.ndarray
+            Grid axes (x, y [, z])
+        indices : tuple of int
+            Indices of the axes to use
+        obj : sequence
+            Sequence of objects that must be drawn
+        **kwargs : dict
+            Keyword Arguments of matplotlib.patches.Rectangle
+        """
+        dkwargs = dict(linewidth=3, edgecolor='k', facecolor=None, alpha=1., fill=False, hatch=None)
+        kwargs = dict_update(dkwargs, kwargs)
+
+        if hasattr(obj, 'sid'):
+            obj = (obj, )
+
+        # Fix for when indices is (2, 1)
+        if sorted(indices) == list(indices):
+            u, v = axes[indices[0]], axes[indices[1]]
+        else:
+            u, v = axes[indices[0]].T, axes[indices[1]].T
+
+        for sub in obj:
+            b = [(u[i, sub.coords[indices[1]][0]], v[i, sub.coords[indices[1]][0]]) for i in sub.ranges[indices[0]]][::-1]
+            l = [(u[sub.coords[indices[0]][0], i], v[sub.coords[indices[0]][0], i]) for i in sub.ranges[indices[1]]]
+            t = [(u[i, sub.coords[indices[1]][1]], v[i, sub.coords[indices[1]][1]]) for i in sub.ranges[indices[0]]]
+            r = [(u[sub.coords[indices[0]][1], i], v[sub.coords[indices[0]][1], i]) for i in sub.ranges[indices[1]]]
+
+            verts = b + l + t + r
+            codes = [_path.Path.MOVETO] + \
+                    (len(verts)-2)*[_path.Path.LINETO] + \
+                    [_path.Path.CLOSEPOLY]
+            path = _path.Path(verts, codes)
+            patch = _patches.PathPatch(path, **kwargs)
+            ax.add_patch(patch)
 
     @staticmethod
     def cartesian_grid(ax, axes, indices, N, **kwargs):
@@ -249,17 +324,17 @@ class MeshViewer:
         """
 
         dkwargs = dict(color='k', linewidth=0.1)
-        dkwargs.update(kwargs)
+        kwargs = dict_update(dkwargs, kwargs)
 
         for i in _np.append(axes[indices[0]][::N], axes[indices[0]][-1]):
-            ax.vlines(i, axes[indices[1]].min(), axes[indices[1]].max(), **dkwargs)
+            ax.vlines(i, axes[indices[1]].min(), axes[indices[1]].max(), **kwargs)
 
         for i in _np.append(axes[indices[1]][::N], axes[indices[1]][-1]):
-            ax.hlines(i, axes[indices[0]].min(), axes[indices[0]].max(), **dkwargs)
+            ax.hlines(i, axes[indices[0]].min(), axes[indices[0]].max(), **kwargs)
 
     @staticmethod
-    def buffer_zone(ax, axes, indices, buffer_limits, extend=True):
-        """ Plot buffer zone.
+    def curvilinear_grid(ax, axes, indices, N, **kwargs):
+        """ Plot curvilinear grid on ax.
 
         Parameters
         ----------
@@ -269,20 +344,29 @@ class MeshViewer:
             Grid axes (x, y [, z])
         indices : tuple of int
             Indices of the axes to use
-        buffer_limits : tuple
-            Limits of the buffer zone ((xmin, xmax), (ymin, ymax), ...)
-        extend : bool, optional
-            Whether to display buffer zone or not&ia=web
+        N : int
+            Plot a grid line every N points
+        **kwargs : dict
+            Keyword Arguments of ax.vlines/ax.hlines
         """
-        origin = [buffer_limits[i][0] for i in indices]
-        size = [buffer_limits[i][1] - buffer_limits[i][0] for i in indices]
 
-        if extend:
-            edges = _patches.Rectangle(origin, *size, linewidth=3, fill=None)
-            ax.add_patch(edges)
+        dkwargs = dict(color='k', linewidth=0.1)
+        kwargs = dict_update(dkwargs, kwargs)
+
+        # Fix for when indices is (2, 1)
+        if sorted(indices) == list(indices):
+            u, v = axes[indices[0]], axes[indices[1]]
         else:
-            ax.set_xlim(origin[0], origin[0] + size[0])
-            ax.set_ylim(origin[1], origin[1] + size[1])
+            u, v = axes[indices[0]].T, axes[indices[1]].T
+
+        for i in _np.arange(0, v.shape[1], N):
+            ax.plot(u[:, i], v[:, i], **kwargs)
+
+        for i in _np.arange(0, u.shape[0], N):
+            ax.plot(u[i, :], v[i, :], **kwargs)
+
+        ax.plot(u[:, -1], v[:, -1], **kwargs)
+        ax.plot(u[-1, :], v[-1, :], **kwargs)
 
 
 class MPLViewer(MeshViewer):
@@ -495,7 +579,7 @@ class MPLViewer(MeshViewer):
                 p0 = self.cfg.p0 / self.msh.J[c[0], c[1]]
             else:
                 p0 = self.data.get_attr('p0')
-            ax.plot(t, p[i, :] - p0, label=f'@{tuple([self.msh.axis[i][j] for i, j in enumerate(c)])}')
+            ax.plot(t, p[i, :] - p0, label=f'@{tuple([self.axis[i][j] for i, j in enumerate(c)])}')
         ax.set_xlim(t.min(), t.max())
         ax.set_xlabel('Time [s]')
         ax.set_ylabel('Pressure [Pa]')
