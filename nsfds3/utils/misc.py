@@ -37,9 +37,15 @@ import collections.abc
 from copy import deepcopy
 
 
+def extend_range(a, b, percent=5):
+    """ Extends the numerical range (a, b) by percent. """
+    value = (b - a) * percent / 100
+    return a - value, b + value
+
+
 def sign(x):
     """ Returns sign of x. """
-    return -1 if x < 0 else (1 if x > 0 else 0)
+    return -1 if x < 0 else 1
 
 
 def buffer_bounds(bc, nbz):

@@ -139,10 +139,10 @@ class FDTD:
                                     disable=self.quiet):
                 self.eulerian_fluxes()
                 self.viscous_fluxes()
-                self.toggle_system()
+                #self.toggle_system()
                 self.selective_filter()
                 self.shock_capture()
-                self.toggle_system()
+                #self.toggle_system()
                 self.vorticity()
                 self.update_probes()
                 if not self.cfg.it % self.cfg.ns:
@@ -304,11 +304,10 @@ class FDTD:
                 self.sfile.create_dataset('zn', data=self.msh.yn, compression=self.cfg.comp)
                 self.sfile.create_dataset('zp', data=self.msh.yp, compression=self.cfg.comp)
 
-    def show(self, view='p', vmin=None, vmax=None, show_nans=False, slices=None, show_bz=False):
+    def show(self, view='p', vmin=None, vmax=None, **kwargs):
         """ Show results. """
         viewer = MPLViewer(self.cfg, self.msh, self.fld)
-        viewer.show(view=view, vmin=vmin, vmax=vmax,
-                    show_nans=show_nans, show_bz=show_bz, slices=slices)
+        viewer.show(view=view, vmin=vmin, vmax=vmax, **kwargs)
 
 
 if __name__ == '__main__':

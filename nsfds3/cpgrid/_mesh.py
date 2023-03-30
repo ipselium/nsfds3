@@ -24,7 +24,7 @@
 
 Module `mesh` provides three classes to build meshes:
 
-    * :py:function:`build`: Factory function to build a mesh
+    * :py:function:`build`: Factory function to build a mesh grid
     * :py:class:`CartesianGrid`: Build cartesian grid
     * :py:class:`CurvilinearGrid`: Build curvilinear grid
 
@@ -42,8 +42,9 @@ from libfds.cmaths import curvilinear_trans2d, curvilinear_trans3d
 
 
 def build(*args, **kwargs):
-
-    return CartesianGrid(*args, **kwargs)
+    if kwargs.get('curvilinear_func', None):
+        return CartesianGrid(*args, **kwargs)
+    return CurvilinearGrid(*args, **kwargs)
 
 
 class GridError(Exception):
@@ -118,8 +119,8 @@ class CartesianGrid:
         self._set_axis_flags()
         self._find_subdomains()
 
-        self.domain_limits = [(axe.min(), axe.max()) for axe in self.axis]
-        self.buffer_limits = [(axe[m], axe[p]) for axe, (m, p) in zip(self.axis, buffer_bounds(self.bc, self.nbz))]
+        self.domain_limits = [(axe.min(), axe.max()) for axe in self.paxis]
+        self.buffer_limits = [(axe[m], axe[p]) for axe, (m, p) in zip(self.paxis, buffer_bounds(self.bc, self.nbz))]
 
     def _check_arguments_dims(self):
         """ Check input arguments. """
@@ -192,7 +193,6 @@ class CartesianGrid:
         self.buffer = self._computation_domains.buffer
         self.domains = self._computation_domains.domains
 
-
     @property
     def stretched_axis(self):
         s = ''
@@ -204,6 +204,12 @@ class CartesianGrid:
             if self.flag_z == 'v':
                 s += 'z'
         return ' & '.join(list(s))
+
+    @property
+    def paxis(self):
+        if self.volumic:
+            return _np.meshgrid(self.x, self.y, self.z, indexing='ij')
+        return _np.meshgrid(self.x, self.y, indexing='ij')
 
     @property
     def axis(self):
@@ -335,8 +341,7 @@ class CurvilinearGrid(CartesianGrid):
                          nbz=nbz, stretch_factor=stretch_factor, stretch_order=stretch_order,
                          stencil=stencil)
 
-    @staticmethod
-    def _curvilinear_func(*args):
+    def _curvilinear_func(self, *args):
         return tuple([v.copy() for v in args])
 
     @property
@@ -361,18 +366,25 @@ class CurvilinearGrid(CartesianGrid):
         if self.volumic:
             x, y, z = _np.meshgrid(self.x, self.y, self.z, indexing='ij')
             self.xp, self.yp, self.zp = self.curvilinear_func(x, y, z)
-            valid, (self.J, *J) = curvilinear_trans3d(self.xp, self.yp, self.zp, x, y, z)
-            self.dx_du, self.dx_dv, self.dx_dw, self.dy_du, self.dy_dv, self.dy_dw, self.dz_du, self.dz_dv, self.dz_dw = J
+            valid, J = curvilinear_trans3d(self.xp, self.yp, self.zp, x, y, z)
+            J = [_np.array(m) for m in J]
+            self.J, self.dx_du, self.dx_dv, self.dx_dw, self.dy_du, self.dy_dv, self.dy_dw, self.dz_du, self.dz_dv, self.dz_dw = J
         else:
             x, y = _np.meshgrid(self.x, self.y, indexing='ij')
             self.xp, self.yp = self.curvilinear_func(x, y)
-            valid, (self.J, *J) = curvilinear_trans2d(self.xp, self.yp, x, y)
-            self.dx_du, self.dx_dv, self.dy_du, self.dy_dv = J
+            valid, J = curvilinear_trans2d(self.xp, self.yp, x, y)
+            J = [_np.array(m) for m in J]
+            self.J, self.dx_du, self.dx_dv, self.dy_du, self.dy_dv = J
 
         # Check if invariant metrics are 0
         if not valid:
             warnings.warn('Metric invariants not equal to 0', InvariantWarning)
 
+    def __getstate__(self):
+        attributes = self.__dict__.copy()
+        # can't picke external function, so delete it from instance...
+        del attributes['curvilinear_func']
+        return attributes
 
 if __name__ == "__main__":
 

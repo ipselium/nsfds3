@@ -35,6 +35,7 @@ from scipy import signal as _signal
 
 import matplotlib.pyplot as _plt
 from matplotlib import patches as _patches, path as _path
+from matplotlib.image import PcolorImage
 import matplotlib.animation as _ani
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 
@@ -46,7 +47,7 @@ from rich.progress import track
 
 from mplutils import modified_jet, MidPointNorm, set_figsize, get_subplot_shape
 from nsfds3.utils.data import DataExtractor, FieldExtractor, DataIterator, nearest_index
-from nsfds3.utils.misc import dict_update
+from nsfds3.utils.misc import dict_update, extend_range
 
 from libfds.fields import Fields2d, Fields3d
 
@@ -85,22 +86,18 @@ class MeshViewer:
     dkwargs = dict(figsize=(10, 10), dpi=100,
                    grid=True, buffer=True, obstacles=True, domains=False, N=1,
                    slices = None,
-                   kwargs_grid=dict(),
-                   kwargs_obstacles=dict(facecolor='k', alpha=0.2, fill=True, hatch='x'),
-                   kwargs_domains=dict(facecolor='y'),
-                   kwargs_buffer=dict(linewidth=3, edgecolor='k', fill=False))
+                   kwargs_grid=dict(zorder=1),
+                   kwargs_obstacles=dict(facecolor='k', alpha=0.2, fill=True, hatch='x', zorder=100),
+                   kwargs_domains=dict(facecolor='y', zorder=100),
+                   kwargs_buffer=dict(linewidth=3, edgecolor='k', fill=False, zorder=100))
 
     def __init__(self, msh):
 
         self.msh = msh
-        if hasattr(self.msh, 'J'):
-            self.grid = self.curvilinear_grid
-            self.objects = self.curvilinear_objects
-            self.axis = self.msh.paxis
-        else:
-            self.grid = self.cartesian_grid
-            self.objects = self.cartesian_objects
-            self.axis = self.msh.axis
+        self.axis = self.msh.paxis
+
+        for name, ax in zip(('x', 'y', 'z'), self.axis):
+            setattr(self, name, ax)
 
     def show(self, **kwargs):
 
@@ -150,10 +147,10 @@ class MeshViewer:
         ax_zy.set_xlabel(r'$z$ [m]')
 
         # Cross section lines
-        ax_xy.plot(self.msh.x[[0, -1]], self.msh.y[[self.i_xz, self.i_xz]], color='gold', linewidth=1)
-        ax_xy.plot(self.msh.x[[self.i_zy, self.i_zy]], self.msh.y[[0, -1]], color='green', linewidth=1)
-        ax_xz.plot(self.msh.x[[0, -1]], self.msh.z[[self.i_xy, self.i_xy]], color='gold', linewidth=1)
-        ax_zy.plot(self.msh.z[[self.i_xy, self.i_xy]], self.msh.y[[0, -1]], color='green', linewidth=1)
+        ax_xy.plot(self.x[:, self.i_xz, self.i_xy], self.y[:, self.i_xz, self.i_xy], color='gold', linewidth=1)
+        ax_xy.plot(self.x[self.i_zy, :, self.i_xy], self.y[self.i_zy, :, self.i_xy], color='green', linewidth=1)
+        ax_xz.plot(self.x[:, self.i_xz, self.i_xy], self.z[:, self.i_xz, self.i_xy], color='gold', linewidth=1)
+        ax_zy.plot(self.z[self.i_zy, :, self.i_xy], self.y[self.i_zy, :, self.i_xy], color='green', linewidth=1)
 
         # Grid, Buffer zones, Obstacles, and domains
         obs_xy = ([obs for obs in self.msh.obstacles if self.i_xy in obs.rz],
@@ -165,11 +162,8 @@ class MeshViewer:
 
         for ax, indices, obs in zip([ax_xy, ax_xz, ax_zy], [(0, 1), (0, 2), (2, 1)], [obs_xy, obs_xz, obs_zy]):
 
-            if self.msh.mesh_type == 'Curvilinear':
-                s = [slice(None) if i in indices else s for i, s in enumerate(slices)]
-                args = ax, [v[tuple(s)] for v in self.axis], indices
-            else:
-                args = ax, self.axis, indices
+            s = [slice(None) if i in indices else s for i, s in enumerate(slices)]
+            args = ax, [v[tuple(s)] for v in self.axis], indices
 
             if kwargs.get('grid'):
                 self.grid(*args, N=kwargs.get('N'), **kwargs.get('kwargs_grid'))
@@ -178,9 +172,8 @@ class MeshViewer:
                 self.objects(*args, obs[0], **kwargs.get('kwargs_obstacles'))
                 self.objects(*args, obs[1], alpha=0.1, facecolor='k')
 
-            if kwargs.get('buffer'):
-                self.objects(*args, self.msh.buffer, **kwargs.get('kwargs_buffer'))
-            else:
+            self.objects(*args, self.msh.buffer, **kwargs.get('kwargs_buffer'))
+            if not kwargs.get('buffer'):
                 ax.set_xlim(self.msh.buffer_limits[indices[0]])
                 ax.set_ylim(self.msh.buffer_limits[indices[1]])
 
@@ -206,9 +199,8 @@ class MeshViewer:
         if kwargs.get('domains'):
             self.objects(*args, self.msh.domains, **kwargs.get('kwargs_domains'))
 
-        if kwargs.get('buffer'):
-            self.objects(*args, self.msh.buffer, **kwargs.get('kwargs_buffer'))
-        else:
+        self.objects(*args, self.msh.buffer, **kwargs.get('kwargs_buffer'))
+        if not kwargs.get('buffer'):
             ax.set_xlim(self.msh.buffer_limits[0])
             ax.set_ylim(self.msh.buffer_limits[1])
 
@@ -231,40 +223,8 @@ class MeshViewer:
         return self.i_xy, self.i_xz, self.i_zy
 
     @staticmethod
-    def cartesian_objects(ax, axes, indices, obj, **kwargs):
-        """ Plot cartesian objects on ax.
-
-        Parameters
-        ----------
-        ax : matplotlib.axes._subplots.AxesSubplot
-            Axis where to draw the grid
-        axes : tuple of np.ndarray
-            Grid axes (x, y [, z])
-        indices : tuple of int
-            Indices of the axes to use
-        obj : sequence
-            Sequence of objects that must be drawn
-        **kwargs : dict
-            Keyword Arguments of matplotlib.patches.Rectangle
-        """
-        dkwargs = dict(linewidth=3, edgecolor='k', facecolor=None, alpha=1., fill=False, hatch=None)
-        kwargs = dict_update(dkwargs, kwargs)
-
-        if hasattr(obj, 'sid'):
-            obj = (obj, )
-
-        for obs in obj:
-            sub_origin = [obs.origin[i] for i in indices]
-            sub_size = [obs.size[i] for i in indices]
-            origin = [axes[i][j] for i, j in zip(indices, sub_origin)]
-            size = [axes[i][o + s - 1] - axes[i][o]
-                    for i, o, s in zip(indices, sub_origin, sub_size)]
-            edges = _patches.Rectangle(origin, *size, **kwargs)
-            ax.add_patch(edges)
-
-    @staticmethod
-    def curvilinear_objects(ax, axes, indices, obj, **kwargs):
-        """ Plot curvilinear objects on ax.
+    def objects(ax, axes, indices, obj, **kwargs):
+        """ Plot objects on ax.
 
         Parameters
         ----------
@@ -306,35 +266,8 @@ class MeshViewer:
             ax.add_patch(patch)
 
     @staticmethod
-    def cartesian_grid(ax, axes, indices, N, **kwargs):
-        """ Plot cartesian grid on ax.
-
-        Parameters
-        ----------
-        ax : matplotlib.axes._subplots.AxesSubplot
-            Axis where to draw the grid
-        axes : tuple of np.ndarray
-            Grid axes (x, y [, z])
-        indices : tuple of int
-            Indices of the axes to use
-        N : int
-            Plot a grid line every N points
-        **kwargs : dict
-            Keyword Arguments of ax.vlines/ax.hlines
-        """
-
-        dkwargs = dict(color='k', linewidth=0.1)
-        kwargs = dict_update(dkwargs, kwargs)
-
-        for i in _np.append(axes[indices[0]][::N], axes[indices[0]][-1]):
-            ax.vlines(i, axes[indices[1]].min(), axes[indices[1]].max(), **kwargs)
-
-        for i in _np.append(axes[indices[1]][::N], axes[indices[1]][-1]):
-            ax.hlines(i, axes[indices[0]].min(), axes[indices[0]].max(), **kwargs)
-
-    @staticmethod
-    def curvilinear_grid(ax, axes, indices, N, **kwargs):
-        """ Plot curvilinear grid on ax.
+    def grid(ax, axes, indices, N, **kwargs):
+        """ Plot grid on ax.
 
         Parameters
         ----------
@@ -375,12 +308,13 @@ class MPLViewer(MeshViewer):
 
     """
 
-    dkwargs = dict(figsize=(9, 9), dpi=100, fps=24,
-                   grid=False, buffer=True, obstacles=True, domains=False,
-                   probes=True, nans=False,
-                   kwargs_grid=dict(),
-                   kwargs_obstacles=dict(),
-                   kwargs_domains=dict(facecolor='r', alpha=0.1), )
+    dkwargs = dict(figsize=(10, 10), dpi=100, fps=24,
+                   grid=False, buffer=True, obstacles=True, domains=False, N=1,
+                   slices = None,
+                   kwargs_grid=dict(zorder=1),
+                   kwargs_obstacles=dict(facecolor='k', alpha=0.2, fill=False, zorder=100),
+                   kwargs_domains=dict(facecolor='y', zorder=100),
+                   kwargs_buffer=dict(linewidth=3, edgecolor='k', fill=False, zorder=100))
 
     def __init__(self, cfg, msh, data):
 
@@ -396,10 +330,7 @@ class MPLViewer(MeshViewer):
         else:
             raise ValueError('fld can be Fields2d, Fields3d, DataExtractor, or path to hdf5 file')
 
-        for name, ax in zip(('x', 'y', 'z'), msh.axis):
-            setattr(self, name, ax)
-
-    def show(self, view='p', vmin=None, vmax=None,  iteration=0, slices=None, **kwargs):
+    def show(self, view='p', vmin=None, vmax=None,  iteration=0, **kwargs):
 
 
         kwargs = dict_update(self.dkwargs, kwargs)
@@ -413,16 +344,16 @@ class MPLViewer(MeshViewer):
 
         norm = MidPointNorm(vmin=vmin, vmax=vmax, midpoint=0)
 
-        fig, ax = self.frame(var, norm, slices=slices, **kwargs)
+        fig, ax = self.frame(var, norm, **kwargs)
 
         _plt.show()
 
-    def frame(self, var, norm, slices=None, **kwargs):
+    def frame(self, var, norm, **kwargs):
 
         kwargs = dict_update(self.dkwargs, kwargs)
 
         if len(self.msh.shape) == 3:
-            return self._fields3d(var, norm, slices, **kwargs)
+            return self._fields3d(var, norm, **kwargs)
         else:
             return self._fields2d(var, norm, **kwargs)
 
@@ -431,8 +362,8 @@ class MPLViewer(MeshViewer):
 
         fig, ax, ax_bar = self._frame2d(cbar=True, **kwargs)
 
-        # Fill figure
-        im = ax.pcolorfast(self.x, self.y, var[:-1, :-1], cmap=cmap, norm=norm)
+        # Fill figure (im : matplotlib.image.QuadMesh)
+        im = ax.pcolorfast(self.x, self.y, var[:-1, :-1].T, cmap=cmap, norm=norm)
 
         # Colorbar
         midpoint = _np.nanmean(var) if norm.vmin > 0 and norm.vmax > 0 else 0
@@ -448,13 +379,13 @@ class MPLViewer(MeshViewer):
             ax.plot(*nans, 'r.')
 
         if self.cfg.prb and kwargs.get('probes'):
-            prbs = [(self.x[ix], self.y[iy]) for ix, iy in self.cfg.prb]
+            prbs = [(self.x[ix, iy], self.y[ix, iy]) for ix, iy in self.cfg.prb]
             for prb in prbs:
                 ax.plot(*prb, 'ro')
 
         return fig, im
 
-    def _fields3d(self, var, norm, slices, **kwargs):
+    def _fields3d(self, var, norm, **kwargs):
         """ Show 3d results. """
 
         fig, ax_xy, ax_xz, ax_zy, ax_bar = self._frame3d(cbar=True, **kwargs)
@@ -517,8 +448,7 @@ class MPLViewer(MeshViewer):
 
         return metadata
 
-    def movie(self, view='p', nt=None, ref=None, xlim=None, ylim=None, zlim=None,
-              slices=None, **kwargs):
+    def movie(self, view='p', nt=None, ref=None, xlim=None, ylim=None, zlim=None, **kwargs):
         """ Make movie. """
 
         kwargs = dict_update(self.dkwargs, kwargs)
@@ -536,7 +466,7 @@ class MPLViewer(MeshViewer):
         vmin, vmax = self.data.reference(view=view, ref=ref)
         norm = MidPointNorm(vmin=vmin, vmax=vmax, midpoint=0)
         i, var = next(data)
-        fig, im = self.frame(var, norm, slices=slices, iteration=i, **kwargs)
+        fig, im = self.frame(var, norm, iteration=i, **kwargs)
 
         # Movie parameters
         metadata = self._init_movie(view)
@@ -548,12 +478,17 @@ class MPLViewer(MeshViewer):
             for i, var in track(data, description='Making movie...', disable=self.cfg.quiet):
                 axes = fig.get_axes()
                 if self.msh.volumic:
-                    im[0].set_data(self.x, self.y, var[:-1, :-1, self.i_xy].T)
-                    im[1].set_data(self.x, self.z, var[:-1, self.i_xz, :-1].T)
-                    im[2].set_data(self.z, self.y, var[self.i_zy, :-1, :-1])
+                    if isinstance(im[0], PcolorImage):    # Pcolorimage object if non-rectangle mesh elements
+                        im[0].set_data(self.x, self.y, var[:-1, :-1, self.i_xy].T)
+                        im[1].set_data(self.x, self.z, var[:-1, self.i_xz, :-1].T)
+                        im[2].set_data(self.z, self.y, var[self.i_zy, :-1, :-1])
+                    else:                                 # AxesImage otherwise
+                        im[0].set_data(var[:-1, :-1, self.i_xy].T)
+                        im[1].set_data(var[:-1, self.i_xz, :-1].T)
+                        im[2].set_data(var[self.i_zy, :-1, :-1])
                     axes[1].set_title(metadata['var'] + f' (n={i})')
                 else:
-                    im.set_data(self.x, self.y, var[:-1, :-1])
+                    im.set_array(var[:-1, :-1].T)
                     axes[0].set_title(metadata['var'] + f' (n={i})')
 
                 writer.grab_frame()
