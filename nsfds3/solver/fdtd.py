@@ -87,9 +87,6 @@ class FDTD:
         if self.cfg.vrt:
             self.wxyz = Vorticity(self.fld)
 
-        # Curvilinear stuff
-        self._physical = False
-
         # Initialize save
         self._init_save()
 
@@ -139,10 +136,8 @@ class FDTD:
                                     disable=self.quiet):
                 self.eulerian_fluxes()
                 self.viscous_fluxes()
-                #self.toggle_system()
                 self.selective_filter()
                 self.shock_capture()
-                #self.toggle_system()
                 self.vorticity()
                 self.update_probes()
                 if not self.cfg.it % self.cfg.ns:
@@ -183,16 +178,6 @@ class FDTD:
         """ Apply shock capture procedure. """
         if self.cfg.cpt:
             self.scapture.apply()
-
-    @timer
-    def toggle_system(self):
-        """ Convert curvilinear coordinates : from physical to numeric or reverse. """
-        if self.cfg.mesh == 'curvilinear':
-            if self._physical:
-                self.fld.phys2num()
-            else:
-                self.fld.num2phys()
-            self._physical = not self._physical
 
     @timer
     def vorticity(self):

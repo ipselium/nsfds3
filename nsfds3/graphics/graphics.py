@@ -86,7 +86,7 @@ class MeshViewer:
     dkwargs = dict(figsize=(10, 10), dpi=100,
                    grid=True, buffer=True, obstacles=True, domains=False, N=1,
                    slices = None,
-                   kwargs_grid=dict(zorder=1),
+                   kwargs_grid=dict(zorder=5),
                    kwargs_obstacles=dict(facecolor='k', alpha=0.2, fill=True, hatch='x', zorder=100),
                    kwargs_domains=dict(facecolor='y', zorder=100),
                    kwargs_buffer=dict(linewidth=3, edgecolor='k', fill=False, zorder=100))
@@ -311,7 +311,7 @@ class MPLViewer(MeshViewer):
     dkwargs = dict(figsize=(10, 10), dpi=100, fps=24,
                    grid=False, buffer=True, obstacles=True, domains=False, N=1,
                    slices = None,
-                   kwargs_grid=dict(zorder=1),
+                   kwargs_grid=dict(zorder=5),
                    kwargs_obstacles=dict(facecolor='k', alpha=0.2, fill=False, zorder=100),
                    kwargs_domains=dict(facecolor='y', zorder=100),
                    kwargs_buffer=dict(linewidth=3, edgecolor='k', fill=False, zorder=100))
@@ -510,17 +510,13 @@ class MPLViewer(MeshViewer):
 
         _, ax = _plt.subplots(figsize=figsize)
         for i, c in enumerate(probes):
-            if self.cfg.mesh == 'curvilinear':
-                p0 = self.cfg.p0 / self.msh.J[c[0], c[1]]
-            else:
-                p0 = self.data.get_attr('p0')
-            ax.plot(t, p[i, :] - p0, label=f'@{tuple([self.axis[i][j] for i, j in enumerate(c)])}')
+            ax.plot(t, p[i, :] - self.cfg.p0, 
+                    label=f'@{tuple([self.axis[i][tuple(c)] for i in range(len(p.shape))])}')
         ax.set_xlim(t.min(), t.max())
         ax.set_xlabel('Time [s]')
         ax.set_ylabel('Pressure [Pa]')
         ax.legend()
         ax.grid()
-
         _plt.show()
 
         return None
@@ -544,15 +540,10 @@ class MPLViewer(MeshViewer):
 
         p = self.data.get_dataset('probe_values')
 
-        fig, ax = _plt.subplots(p.shape[0], figsize=figsize)
+        fig, ax = _plt.subplots(p.shape[0], figsize=figsize, tight_layout=True)
         for i, c in enumerate(probes):
 
-            if self.cfg.mesh == 'curvilinear':
-                p0 = self.cfg.p0 / self.mesh.J[c[0], c[1]]
-            else:
-                p0 = self.cfg.p0
-
-            freqs, times, Sx = _signal.spectrogram(p[i, :] - p0,
+            freqs, times, Sx = _signal.spectrogram(p[i, :] - self.cfg.p0,
                                                    nperseg=M,
                                                    fs=1 / self.cfg.dt,
                                                    scaling='spectrum')
@@ -566,8 +557,6 @@ class MPLViewer(MeshViewer):
 
         ax[-1].set_xlabel('Time [s]')
         ax[0].set_title('Square spectrum magitude')
-        _plt.tight_layout()
-
         _plt.show()
 
         return None

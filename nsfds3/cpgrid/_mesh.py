@@ -33,12 +33,15 @@ Module `mesh` provides three classes to build meshes:
 
 import re as _re
 import numpy as _np
-import warnings
+from rich.console import Console
 from ._cdomain import ComputationDomains
 from ._geometry import ObstacleSet
 import nsfds3.graphics as _graphics
 from nsfds3.utils.misc import buffer_bounds
-from libfds.cmaths import curvilinear_trans2d, curvilinear_trans3d
+from libfds.cmaths import curvilinear2d_trans, curvilinear3d_trans
+from libfds.cmaths import curvilinear2d_metrics, curvilinear3d_metrics
+
+console = Console()
 
 
 def build(*args, **kwargs):
@@ -49,10 +52,6 @@ def build(*args, **kwargs):
 
 class GridError(Exception):
     """ Exception raised when grid parameters are wrong. """
-
-
-class InvariantWarning(UserWarning):
-    """ Warn when invariants are not zero. """
 
 
 class CartesianGrid:
@@ -341,7 +340,10 @@ class CurvilinearGrid(CartesianGrid):
                          nbz=nbz, stretch_factor=stretch_factor, stretch_order=stretch_order,
                          stencil=stencil)
 
-    def _curvilinear_func(self, *args):
+        self.check_metrics()
+
+    @staticmethod
+    def _curvilinear_func(*args):
         return tuple([v.copy() for v in args])
 
     @property
@@ -366,25 +368,40 @@ class CurvilinearGrid(CartesianGrid):
         if self.volumic:
             x, y, z = _np.meshgrid(self.x, self.y, self.z, indexing='ij')
             self.xp, self.yp, self.zp = self.curvilinear_func(x, y, z)
-            valid, J = curvilinear_trans3d(self.xp, self.yp, self.zp, x, y, z)
-            J = [_np.array(m) for m in J]
+            J = curvilinear3d_trans(self.xp, self.yp, self.zp, x, y, z)
+            J = [_np.array(v) for v in J]
             self.J, self.dx_du, self.dx_dv, self.dx_dw, self.dy_du, self.dy_dv, self.dy_dw, self.dz_du, self.dz_dv, self.dz_dw = J
         else:
             x, y = _np.meshgrid(self.x, self.y, indexing='ij')
             self.xp, self.yp = self.curvilinear_func(x, y)
-            valid, J = curvilinear_trans2d(self.xp, self.yp, x, y)
-            J = [_np.array(m) for m in J]
+            J = curvilinear2d_trans(self.xp, self.yp, x, y)
+            J = [_np.array(v) for v in J]
             self.J, self.dx_du, self.dx_dv, self.dy_du, self.dy_dv = J
 
-        # Check if invariant metrics are 0
-        if not valid:
-            warnings.warn('Metric invariants not equal to 0', InvariantWarning)
+    def check_metrics(self, rtol=1e-8):
+        """ Check metrics. """
+        msg = f'Warning : Metric invariants > {rtol}\n'
+
+        if self.volumic:
+            invariants = curvilinear3d_metrics(self.J, self.dx_du, self.dx_dv, self.dx_dw,
+                                                       self.dy_du, self.dy_dv, self.dy_dw,
+                                                       self.dz_du, self.dz_dv, self.dz_dw)
+        else:
+            invariants = curvilinear2d_metrics(self.J, self.dx_du, self.dx_dv,
+                                                 self.dy_du, self.dy_dv)
+
+        self.invariants = [_np.max(_np.abs(inv[self.buffer.slices])) for inv in invariants]
+        if not _np.allclose(_np.array(self.invariants), 0., rtol=rtol):
+            inv = [f'Max {ax}-invariant {inv}\n' for ax, inv in zip(('x', 'y', 'z'), self.invariants)]
+            msg += ''.join(inv)
+            console.print(msg)
 
     def __getstate__(self):
         attributes = self.__dict__.copy()
         # can't picke external function, so delete it from instance...
         del attributes['curvilinear_func']
         return attributes
+
 
 if __name__ == "__main__":
 
