@@ -118,8 +118,13 @@ class CartesianGrid:
         self._set_axis_flags()
         self._find_subdomains()
 
+        def bounds(i, ax, bound):
+            b1 = [bound[0] if i == s else slice(None) for s in range(len(ax.shape))]
+            b2 = [bound[1] if i == s else slice(None) for s in range(len(ax.shape))]
+            return ax[tuple(b1)].min(), ax[tuple(b2)].max()
+
         self.domain_limits = [(axe.min(), axe.max()) for axe in self.paxis]
-        self.buffer_limits = [(axe[m], axe[p]) for axe, (m, p) in zip(self.paxis, buffer_bounds(self.bc, self.nbz))]
+        self.buffer_limits = [bounds(i, ax, bound) for i, (ax, bound) in enumerate(zip(self.paxis, buffer_bounds(self.bc, self.nbz)))]
 
     def _check_arguments_dims(self):
         """ Check input arguments. """

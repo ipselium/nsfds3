@@ -393,15 +393,9 @@ class MPLViewer(MeshViewer):
         ims = []
 
         # Fill figure
-        ims.append(ax_xy.pcolorfast(self.x, self.y, var[:-1, :-1, self.i_xy].T, cmap=cmap, norm=norm))
-        ax_xy.plot(self.x[[0, -1]], self.y[[self.i_xz, self.i_xz]], color='gold', linewidth=1)
-        ax_xy.plot(self.x[[self.i_zy, self.i_zy]], self.y[[0, -1]], color='green', linewidth=1)
-
-        ims.append(ax_xz.pcolorfast(self.x, self.z, var[:-1, self.i_xz, :-1].T, cmap=cmap, norm=norm))
-        ax_xz.plot(self.x[[0, -1]], self.z[[self.i_xy, self.i_xy]], color='gold', linewidth=1)
-
-        ims.append(ax_zy.pcolorfast(self.z, self.y, var[self.i_zy, :-1, :-1], cmap=cmap, norm=norm))
-        ax_zy.plot(self.z[[self.i_xy, self.i_xy]], self.y[[0, -1]], color='green', linewidth=1)
+        ims.append(ax_xy.pcolorfast(self.x[:, :, self.i_xy], self.y[:, :, self.i_xy], var[:-1, :-1, self.i_xy], cmap=cmap, norm=norm))
+        ims.append(ax_xz.pcolorfast(self.x[:, self.i_xz, :], self.z[:, self.i_xz, :], var[:-1, self.i_xz, :-1], cmap=cmap, norm=norm))
+        ims.append(ax_zy.pcolorfast(self.z[self.i_zy, :, :], self.y[self.i_zy, :, :], var[self.i_zy, :-1, :-1], cmap=cmap, norm=norm))
 
         # Colorbar
         midpoint = _np.nanmean(var) if norm.vmin > 0 and norm.vmax > 0 else 0
@@ -413,15 +407,15 @@ class MPLViewer(MeshViewer):
 
         # Probes
         if self.cfg.prb and kwargs.get('probes'):
-            prbs = [(self.x[ix], self.y[iy], self.z[iz]) for ix, iy, iz in self.cfg.prb]
-            for prb in prbs:
-                color = 'r' if self.z[self.i_xy] == prb[2] else 'grey'
+            prbs = [(self.x[ix, iy, iz], self.y[ix, iy, iz], self.z[ix, iy, iz]) for ix, iy, iz in self.cfg.prb]
+            for c_prb, prb in zip(self.cfg.prb, prbs):
+                color = 'r' if self.i_xy == c_prb[2] else 'grey'
                 ax_xy.plot(*(c for c in prb[:2]), marker='o', color=color)
 
-                color = 'r' if self.y[self.i_xz] == prb[1] else 'grey'
+                color = 'r' if self.i_xz == c_prb[1] else 'grey'
                 ax_xz.plot(*(c for i, c in enumerate(prb) if i != 1), marker='o', color=color)
 
-                color = 'r' if self.x[self.i_zy] == prb[0] else 'grey'
+                color = 'r' if self.i_zy == c_prb[0] else 'grey'
                 ax_zy.plot(*(c for c in prb[1:][::-1]), marker='o', color=color)
 
         return fig, ims
@@ -479,13 +473,13 @@ class MPLViewer(MeshViewer):
                 axes = fig.get_axes()
                 if self.msh.volumic:
                     if isinstance(im[0], PcolorImage):    # Pcolorimage object if non-rectangle mesh elements
-                        im[0].set_data(self.x, self.y, var[:-1, :-1, self.i_xy].T)
-                        im[1].set_data(self.x, self.z, var[:-1, self.i_xz, :-1].T)
+                        im[0].set_data(self.x, self.y, var[:-1, :-1, self.i_xy])
+                        im[1].set_data(self.x, self.z, var[:-1, self.i_xz, :-1])
                         im[2].set_data(self.z, self.y, var[self.i_zy, :-1, :-1])
                     else:                                 # AxesImage otherwise
-                        im[0].set_data(var[:-1, :-1, self.i_xy].T)
-                        im[1].set_data(var[:-1, self.i_xz, :-1].T)
-                        im[2].set_data(var[self.i_zy, :-1, :-1])
+                        im[0].set_array(var[:-1, :-1, self.i_xy])
+                        im[1].set_array(var[:-1, self.i_xz, :-1])
+                        im[2].set_array(var[self.i_zy, :-1, :-1])
                     axes[1].set_title(metadata['var'] + f' (n={i})')
                 else:
                     im.set_array(var[:-1, :-1].T)
