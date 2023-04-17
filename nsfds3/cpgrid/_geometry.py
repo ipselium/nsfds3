@@ -48,7 +48,7 @@ class BasicGeo(GeoMeta):
     def __init__(self, origin, size, bc=None, tag=None):
 
         if len(origin) != len(size):
-            raise ValueError('origin and size must have the same size')
+            raise ValueError('origin and size must have the same dimension')
 
         self.origin = origin
         self.size = size
@@ -246,6 +246,7 @@ class BasicGeo(GeoMeta):
 
     def flatten(self, axis):
         """ Return flat version of the object. """
+
         cls = globals()[f"{self.cls}"]
 
         if not self.volumic:
@@ -371,7 +372,7 @@ class Face(BasicGeo):
         self.bc = bc
         self.opposite = self.opposites[side]
         self.axis, self.normal, self.index_n = self.sides[self.side]
-        self.not_axis = tuple({0, 1, 2}.difference((self.axis, )))
+        self.not_axis = tuple(set(range(len(self.origin))).difference((self.axis, )))
         if inner:
             self.normal = - self.normal
 
@@ -431,7 +432,7 @@ class Face(BasicGeo):
             chars += "free"
 
         s = f"origin={self.origin}, size={self.size}, "
-        s += f"side={self.side}, sid={self.sid}, [{chars}]"
+        s += f"bc={self.bc}, side={self.side}, sid={self.sid}, [{chars}]"
 
         return s
 

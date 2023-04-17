@@ -31,15 +31,16 @@ Module `mesh` provides three classes to build meshes:
 -----------
 """
 
-import re as _re
-import numpy as _np
+import re
+import numpy as np
 from rich.console import Console
 from ._cdomain import ComputationDomains
 from ._geometry import ObstacleSet
-import nsfds3.graphics as _graphics
+import nsfds3.graphics as graphics
 from nsfds3.utils.misc import buffer_bounds
 from libfds.cmaths import curvilinear2d_trans, curvilinear3d_trans
 from libfds.cmaths import curvilinear2d_metrics, curvilinear3d_metrics
+
 
 console = Console()
 
@@ -106,17 +107,17 @@ class CartesianGrid:
         self.stretch_order = stretch_order
         self.stencil = stencil
 
-        self._check_arguments_dims()
-        self._set_attributes(('nx', 'ny', 'nz'), self.shape)
-        self._set_attributes(('dx', 'dy', 'dz'), self.steps)
+        self.check_arguments_dims()
+        self.set_attributes(('nx', 'ny', 'nz'), self.shape)
+        self.set_attributes(('dx', 'dy', 'dz'), self.steps)
 
         self.obstacles = ObstacleSet(self.shape, self.obstacles, stencil=self.stencil)
 
-        self._check_bc()
-        self._check_grid()
+        self.check_bc()
+        self.check_grid()
         self.make_grid()
-        self._set_axis_flags()
-        self._find_subdomains()
+        self.set_axis_flags()
+        self.find_subdomains()
 
         def bounds(i, ax, bound):
             b1 = [bound[0] if i == s else slice(None) for s in range(len(ax.shape))]
@@ -126,8 +127,8 @@ class CartesianGrid:
         self.domain_limits = [(axe.min(), axe.max()) for axe in self.paxis]
         self.buffer_limits = [bounds(i, ax, bound) for i, (ax, bound) in enumerate(zip(self.paxis, buffer_bounds(self.bc, self.nbz)))]
 
-    def _check_arguments_dims(self):
-        """ Check input arguments. """
+    def check_arguments_dims(self):
+        """ Check dimensions of input arguments. """
 
         if len(self.shape) not in [2, 3]:
             raise ValueError('Shape must be of dim 2 or 3')
@@ -151,20 +152,20 @@ class CartesianGrid:
         if not self.obstacles:
             self.obstacles = []
 
-    def _set_attributes(self, names, values):
+    def set_attributes(self, names, values):
         """ Helper method to set attributes. """
         _ = [setattr(self, attr, val) for attr, val in zip(names, values)]
 
-    def _check_bc(self):
-
+    def check_bc(self):
+        """ Check that boundary condition are well declared. """
         regex = [r'[^P]P..', r'P[^P]..', r'[^P]P....', r'P[^P]....',
                  r'..[^P]P', r'..P[^P]', r'..[^P]P..', r'..P[^P]..',
                  r'....[^P]P', r'....P[^P]',]
 
-        if not _re.match(r'^[APW]*$', self.bc):
+        if not re.match(r'^[APW]*$', self.bc):
             raise ValueError(f"bc must be combination of {2 * len(self.shape)} chars among 'APW'!")
 
-        if any(_re.match(r, self.bc) for r in regex):
+        if any(re.match(r, self.bc) for r in regex):
             msg = "periodic condition must be on both sides of the domain,"
             msg += " i.e. '(PP....)'|'(..PP..)'|'(....PP)'"
             raise ValueError(msg)
@@ -172,22 +173,22 @@ class CartesianGrid:
         if not all([n - self.nbz * (self.bc[2*i:2*i + 2].count('A')) > 11 for i, n in enumerate(self.shape)]):
             raise GridError('One of the dimension is too small to setup a buffer zone.')
 
-    def _check_grid(self):
-
-        if any(s > _np.iinfo(_np.int16).max for s in self.shape):
-            raise GridError(f'At least 1 dimension of the mesh exceeds {_np.iinfo(_np.int16)}')
+    def check_grid(self):
+        """ Check that grid is well declared. """
+        if any(s > np.iinfo(np.int16).max for s in self.shape):
+            raise GridError(f'At least 1 dimension of the mesh exceeds {np.iinfo(np.int16)}')
 
         if any(i0 >= N for i0, N in zip(self.origin, self.shape)):
             raise GridError("Origin of the domain must be in the domain")
 
-    def _set_axis_flags(self):
+    def set_axis_flags(self):
         """ Set flag to specify if axis has regular (s) or irregular (v) spacing. """
-        self.flag_x = 's' if _np.allclose(_np.diff(self.x), self.dx) else 'v'
-        self.flag_y = 's' if _np.allclose(_np.diff(self.y), self.dy) else 'v'
+        self.flag_x = 's' if np.allclose(np.diff(self.x), self.dx) else 'v'
+        self.flag_y = 's' if np.allclose(np.diff(self.y), self.dy) else 'v'
         if self.volumic:
-            self.flag_z = 's' if _np.allclose(_np.diff(self.z), self.dz) else 'v'
+            self.flag_z = 's' if np.allclose(np.diff(self.z), self.dz) else 'v'
 
-    def _find_subdomains(self):
+    def find_subdomains(self):
         """ Divide the computation domain into subdomains. """
 
         self._computation_domains = ComputationDomains(self.shape, self.obstacles,
@@ -199,6 +200,7 @@ class CartesianGrid:
 
     @property
     def stretched_axis(self):
+        """ Return a string specifying the axis that are not regular. """
         s = ''
         if self.flag_x == 'v':
             s += 'x'
@@ -211,12 +213,14 @@ class CartesianGrid:
 
     @property
     def paxis(self):
+        """ Physical axis. """
         if self.volumic:
-            return _np.meshgrid(self.x, self.y, self.z, indexing='ij')
-        return _np.meshgrid(self.x, self.y, indexing='ij')
+            return np.meshgrid(self.x, self.y, self.z, indexing='ij')
+        return np.meshgrid(self.x, self.y, indexing='ij')
 
     @property
     def axis(self):
+        """ Numerical axis. """
         if self.volumic:
             return self.x, self.y, self.z
         return self.x, self.y
@@ -231,11 +235,11 @@ class CartesianGrid:
         return [o.coords for o in self.obstacles]
 
     def make_grid(self):
+        """ Build grid. """
+        stretch = 1 + max(self.stretch_factor - 1, 0)  * np.linspace(0, 1, self.nbz) ** self.stretch_order
 
-        stretch = 1 + max(self.stretch_factor - 1, 0)  * _np.linspace(0, 1, self.nbz) ** self.stretch_order
-
-        self.x = _np.arange(self.nx, dtype=float) - int(self.nx/2)
-        self.y = _np.arange(self.ny, dtype=float) - int(self.ny/2)
+        self.x = np.arange(self.nx, dtype=float) - int(self.nx/2)
+        self.y = np.arange(self.ny, dtype=float) - int(self.ny/2)
 
         if self.bc[0] == 'A':
             self.x[:self.nbz] *= stretch[::-1]
@@ -254,7 +258,7 @@ class CartesianGrid:
         self.y -= self.y[self.origin[1]]
 
         if self.volumic:
-            self.z = _np.arange(self.nz, dtype=float) - int(self.nz/2)
+            self.z = np.arange(self.nz, dtype=float) - int(self.nz/2)
             if self.bc[4] == 'A':
                 self.z[:self.nbz] *= stretch[::-1]
             if self.bc[5] == 'A':
@@ -270,9 +274,9 @@ class CartesianGrid:
         """
 
         if backend == 'plotly':
-            viewer = _graphics.CDViewer(self)
+            viewer = graphics.CDViewer(self)
         elif backend == 'mpl':
-            viewer = _graphics.MeshViewer(self)
+            viewer = graphics.MeshViewer(self)
         else:
             raise ValueError("backend must be in ('mpl', 'plotly', )")
 
@@ -371,16 +375,16 @@ class CurvilinearGrid(CartesianGrid):
 
         # Pysical coordinates & Jacobian
         if self.volumic:
-            x, y, z = _np.meshgrid(self.x, self.y, self.z, indexing='ij')
+            x, y, z = np.meshgrid(self.x, self.y, self.z, indexing='ij')
             self.xp, self.yp, self.zp = self.curvilinear_func(x, y, z)
             J = curvilinear3d_trans(self.xp, self.yp, self.zp, x, y, z)
-            J = [_np.array(v) for v in J]
+            J = [np.array(v) for v in J]
             self.J, self.dx_du, self.dx_dv, self.dx_dw, self.dy_du, self.dy_dv, self.dy_dw, self.dz_du, self.dz_dv, self.dz_dw = J
         else:
-            x, y = _np.meshgrid(self.x, self.y, indexing='ij')
+            x, y = np.meshgrid(self.x, self.y, indexing='ij')
             self.xp, self.yp = self.curvilinear_func(x, y)
             J = curvilinear2d_trans(self.xp, self.yp, x, y)
-            J = [_np.array(v) for v in J]
+            J = [np.array(v) for v in J]
             self.J, self.dx_du, self.dx_dv, self.dy_du, self.dy_dv = J
 
     def check_metrics(self, rtol=1e-8):
@@ -395,8 +399,8 @@ class CurvilinearGrid(CartesianGrid):
             invariants = curvilinear2d_metrics(self.J, self.dx_du, self.dx_dv,
                                                  self.dy_du, self.dy_dv)
 
-        self.invariants = [_np.max(_np.abs(inv[self.buffer.slices])) for inv in invariants]
-        if not _np.allclose(_np.array(self.invariants), 0., rtol=rtol):
+        self.invariants = [np.max(np.abs(inv[self.buffer.slices])) for inv in invariants]
+        if not np.allclose(np.array(self.invariants), 0., rtol=rtol):
             inv = [f'Max {ax}-invariant {inv}\n' for ax, inv in zip(('x', 'y', 'z'), self.invariants)]
             msg += ''.join(inv)
             console.print(msg)

@@ -1,7 +1,7 @@
 #! /usr/bin/env python3
 # -*- coding: utf-8 -*-
 #
-# Copyright © 2016-2019 Cyril Desjouy <cyril.desjouy@univ-lemans.fr>
+# Copyright © 2016-2023 Cyril Desjouy <cyril.desjouy@univ-lemans.fr>
 #
 # This file is part of nsfds3
 #
@@ -18,22 +18,12 @@
 # You should have received a copy of the GNU General Public License
 # along with nsfds3. If not, see <http://www.gnu.org/licenses/>.
 #
-#
-# Creation Date : 2019-03-07 - 23:02:29
+# Creation Date : 2023-04-06 - 09:49:32
 """
-------------
-Init package
-------------
+-----------
+DOCSTRING
+
+-----------
 """
-import sys
-import nsfds3.solver
-import nsfds3.cpgrid
-import nsfds3.utils
-import nsfds3.graphics
 
-if sys.platform == 'darwin':
-    import matplotlib
-    matplotlib.use("TkAgg")
 
-__version__ = "0.1.0"
-__all__ = ['solver', 'cpgrid', 'utils', 'graphics', 'cpgrid2']

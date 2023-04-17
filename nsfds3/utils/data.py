@@ -3,25 +3,26 @@
 #
 # Copyright © 2016-2020 Cyril Desjouy <cyril.desjouy@univ-lemans.fr>
 #
-# This file is part of {name}
+# This file is part of nsfds3
 #
-# {name} is free software: you can redistribute it and/or modify
+# nsfds3 is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
-# {name} is distributed in the hope that it will be useful,
+# nsfds3 is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with {name}. If not, see <http://www.gnu.org/licenses/>.
+# along with nsfds3. If not, see <http://www.gnu.org/licenses/>.
 #
 # Creation Date : 2022-07-21 - 09:00:24
 """
 -----------
-DOCSTRING
+
+nsfds3.utils.data provides some helper class or function to retrieve data from nsfds3 simulations
 
 -----------
 """
@@ -31,7 +32,7 @@ import sys
 import pathlib
 import h5py
 import numpy as _np
-from libfds import fields as _fld
+from libfds import fields
 
 
 def nearest_index(n, ns, nt):
@@ -164,9 +165,6 @@ class DataExtractor:
         else:
             self.T = (1, 0)
 
-        if self.get_attr('mesh') == 'curvilinear':
-            self.J = self.get_dataset('J')
-
     def __enter__(self):
         return self
 
@@ -253,9 +251,9 @@ class DataExtractor:
             p = _np.empty_like(r)
             if self.volumic:
                 rw = self.data[f"rw_it{iteration}"][...]
-                _fld.update_p3d(p, r, ru, rv, rw, re, self.gamma)
+                fields.update_p3d(p, r, ru, rv, rw, re, self.gamma)
             else:
-                _fld.update_p2d(p, r, ru, rv, re, self.gamma)
+                fields.update_p2d(p, r, ru, rv, re, self.gamma)
 
             return p.transpose(self.T) - self.p0
 
@@ -288,7 +286,6 @@ class DataExtractor:
             print(msg.format(var3d))
         else:
             print(msg.format(var2d))
-
         sys.exit(1)
 
 
@@ -298,10 +295,10 @@ class FieldExtractor:
 
         self.fld = fld
 
-        if isinstance(fld, _fld.Fields2d):
+        if isinstance(fld, fields.Fields2d):
             self.volumic = False
             self.T = (1, 0)
-        elif isinstance(fld, _fld.Fields3d):
+        elif isinstance(fld, fields.Fields3d):
             self.volumic = True
             self.T = (0, 1, 2)
         else:
@@ -343,6 +340,7 @@ class FieldExtractor:
         msg = 'view must be : {}' + (vortis if self.vorticity else '')
         var3d = 'p|r|rho|r|ru|rv|rw|re|vx|vy|vz|e'
         var2d = 'p|r|rho|r|ru|rv|re|vx|vy|e'
+
         if self.volumic:
             print(msg.format(var3d))
         else:
