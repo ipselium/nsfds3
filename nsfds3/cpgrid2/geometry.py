@@ -49,8 +49,7 @@ class Box:
         self._set_cn()
         self._set_rin()
 
-        self.indices = tuple(_it.product(*[list(r) for r in self.rn]))
-
+        self.indices = set(_it.product(*[list(r) for r in self.rn]))
         self.vertices = self._get_vertices()
 
     def _get_vertices(self):
@@ -114,7 +113,11 @@ class Box:
         """ Return indices. inner points except along axis (int)"""
         rn = list(self.rin)
         rn[ax] = self.rn[ax]
-        return tuple(_it.product(*[list(r) for r in rn]))
+        return set(_it.product(*[list(r) for r in rn]))
+
+    def edges_indices(self, ax):
+        """ Return indices of the edges following all axis except ax. """
+        return self.indices.difference(self.inner_indices(ax))
 
     def intersection(self, other):
         """ Return intersection (point coordinate) between self and other."""
@@ -251,15 +254,15 @@ class Cuboid(Box):
         self.__class__.count += 1
 
         # Faces
-        if self.ndim == 3:
-            self._set_faces_volumic()
-        else:
-            self._set_faces_flat()
+        getattr(self, f'_set_faces_{self.ndim}d')()
 
     @property
     def description(self):
-        # Note : clamped and covered are the same ... Maybe different when P bc...
-        attributes = dict(clamped='C', bounded='b',
+        """ Return a brief description of the object.
+
+        Note : clamped and covered are the same ... Maybe different when P bc...
+        """
+        attributes = dict(clamped='c', bounded='b',
                           free='f', colinear='I',
                           overlapped='o', covered='0')
 
@@ -281,9 +284,8 @@ class Cuboid(Box):
 
         for face in self.faces:
             face.env = tuple(value)
-            face.update_indices_u()
 
-    def _set_faces_volumic(self):
+    def _set_faces_3d(self):
         """ Set faces for cuboid. """
         self.face_left = Face(origin=(self.cx[0], self.cy[0], self.cz[0]),
                               size=(1, self.size[1], self.size[2]),
@@ -320,7 +322,7 @@ class Cuboid(Box):
                       self.face_front, self.face_back,
                       self.face_bottom, self.face_top)
 
-    def _set_faces_flat(self):
+    def _set_faces_2d(self):
         """ Set edges forrectangle. """
         self.face_left = Face(origin=(self.cx[0], self.cy[0]),
                               size=(1, self.size[1]),
@@ -344,6 +346,18 @@ class Cuboid(Box):
 
         self.faces = (self.face_left, self.face_right,
                       self.face_front, self.face_back)
+
+    def get_same_face(self, face):
+        """ Return the same face as the input argument face."""
+        if not isinstance(face, Face):
+            raise TypeError('other must be a Face')
+        return getattr(self, f'face_{face.side}')
+
+    def get_opposite_face(self, face):
+        """ Return the opposite face to the input argument face."""
+        if not isinstance(face, Face):
+            raise TypeError('other must be a Face')
+        return getattr(self, f'face_{face.opposite}')
 
     def __iter__(self):
         return iter(self.faces)
@@ -386,17 +400,10 @@ class Face(Box):
 
         self.clamped = False
         self.bounded = False
-        self.overlapped = False
         self.covered = False
-        self.colinear = False
-        self.update_indices_u()
-
-    def update_indices_u(self):
-        """ Update indices of the uncentered areas."""
-        if self.clamped and not self.inner:
-            self.indices_u = ()
-        else:
-            self.indices_u = self.box().indices
+        self.colinear = []
+        self.overlapped = []
+        self.uncentered = set()
 
     @property
     def free(self):
@@ -451,6 +458,10 @@ class BoxSet:
         self.subs = subs
         self.stencil = stencil
 
+        # Update enveloppe (global domain) of each sub
+        for s in self.subs:
+            s.env = self.shape
+
     def __getitem__(self, n):
         return self.subs[n]
 
@@ -483,6 +494,10 @@ class BoxSet:
         return s
 
 
+class DomainSet(BoxSet):
+    """ Collection of Domains objects. """
+
+
 class ObstacleSet(BoxSet):
     """ Collection of Obstacle objects. """
 
@@ -494,28 +509,26 @@ class ObstacleSet(BoxSet):
         self.bounds = Obstacle(origin=(0, ) * len(shape), size=shape, bc=self.bc, env=shape, inner=True).faces
         self.obstacles = {o.sid:o for o in self.subs}
 
-        # Update enveloppe (global domain) of each obstacle
-        for obs in self.subs:
-            obs.env = self.shape
-
         self.update_face_description()
 
     @property
     def faces_vs_subs(self):
         return [(f, o) for f, o in _it.product(self.faces, self.subs) if f.sid != o.sid]
 
+    @property
+    def bounds_vs_subs(self):
+        return [(f, o) for f, o in _it.product(self.bounds, self.subs)]
+
     def update_face_description(self):
 
-        # Faces not clamped to global domain
+        # Faces clamped to global domain
         for f in self.faces:
             if f.loc in [0, self.shape[f.axis] - 1]:
                 f.clamped = True
 
-        # Face is fully covered by an obtacle
-        self.covered = tuple((f, o) for f, o in self.faces_vs_subs if f.issubset(o))
-        for f in self.faces:
-            if f in _it.chain(*self.covered):
-                f.covered = True
+        # Face fully covered by an obtacle
+        for f in [f for f, o in self.faces_vs_subs if f.issubset(o)]:
+            f.covered = True
 
         # Faces bounded by global domain
         for f in self.faces:
@@ -524,34 +537,29 @@ class ObstacleSet(BoxSet):
             if any(_it.chain(*bounded)):
                 f.bounded = True
 
+        # Face Overlapped or covered by another obstacle, and "colinear"
+        for f, o in self.faces_vs_subs:
+            if not f.clamped and not f.covered and f.intersects(o):
+                if f.intersects(o.faces[2*f.axis + max(0, f.normal)]):
+                    f.colinear.append(o)
+                else:
+                    f.overlapped.append(o)
+
         self.bounded = tuple(f for f in self.faces if f.bounded)
-
-        # Overlapped or covered by another obstacle, and "colinear"
-        self.overlapped = tuple((f, o) for f, o in self.faces_vs_subs
-                                 if not f.clamped and not f.covered and f.intersects(o))
-        self.colinear = tuple((f, o) for f, o in self.overlapped
-                               if f.intersects(o.faces[2*f.axis + max(0, f.normal)]))
-        self.overlapped = tuple(it for it in self.overlapped if it not in self.colinear)
-
-        for f in self.faces:
-            if f in _it.chain(*self.overlapped):
-                f.overlapped = True
-            if f in _it.chain(*self.colinear):
-                f.colinear = True
-
-        # Overlapped bounds
-        self.overlapped_bounds = tuple((f, o) for f, o in _it.product(self.bounds, self.subs)
-                                        if f.intersects(o))
-
+        self.colinear = tuple(f for f in self.faces if f.colinear)
+        self.overlapped = tuple(f for f in self.faces if f.overlapped or f.bounded)
         self.free = tuple(f for f in self.faces if f.free)
-        self.not_clamped = tuple(f for f in self.faces if not f.clamped and not f.covered)
+        self.uncentered = tuple(f for f in self.faces if not f.clamped and not f.covered)
 
         # Combination of all faces
-        combs = _it.combinations(self.bounds + self.not_clamped, r=2)
+        combs = _it.combinations(self.bounds + self.uncentered, r=2)
         self.face_combination = tuple((f1, f2) for f1, f2 in combs
                                        if f1.sid != f2.sid and f1.axis == f2.axis)
 
-
+        # Bounds covered by an obstacle
+        for f, o in self.bounds_vs_subs:
+            if f.intersects(o):
+                f.overlapped.append(o)
 
 
 if __name__ == "__main__":
