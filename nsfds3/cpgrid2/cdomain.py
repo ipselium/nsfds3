@@ -120,11 +120,12 @@ class ComputationDomains:
             if f.intersects(o.get_opposite_face(f)):
                 fix -= edges & o.edges_indices(f.axis)
 
-        for b in self.bounds:
-            exceptions = set()
-            for o in f.overlapped:
-                exceptions |= edges & o.indices
-            fix |= (edges - exceptions) & b.indices
+        if not f.periodic:
+            for b in self.bounds:
+                exceptions = set()
+                for o in f.overlapped:
+                    exceptions |= edges & o.indices
+                fix |= (edges - exceptions) & b.indices
 
         return fix
 
@@ -133,7 +134,7 @@ class ComputationDomains:
 
         Procedure :
 
-            * Initialize indices for all obstacle faces and inner indices for free faces
+            * Initialize indices for all obstacles
             * For overlapped face, take care about surrounding obstacles and bounds
             * For face that are colinear, take care about the connection and bounds
         """
@@ -150,7 +151,6 @@ class ComputationDomains:
             for o in f.overlapped:
                 f.uncentered -= o.inner_indices(f.axis)
 
-
         for f in [b for b in self.bounds if b.bc in self._BC_U]:
 
             f.uncentered = f.box(self._midstencil).indices
@@ -158,6 +158,7 @@ class ComputationDomains:
             for o in f.overlapped:
                 f.uncentered -= o.inner_indices(f.axis)
 
+            # Take care of overlapped areas in the bounds
             exception = [o1.indices & o2.indices for (o1, o2) in _it.combinations(f.overlapped, r=2)]
             f.uncentered -= set(_it.chain(*exception))
 
@@ -190,7 +191,7 @@ class ComputationDomains:
 
         if not hasattr(self, '_umask'):
             print('Free must be False')
-            return 
+            return
 
         import matplotlib.pyplot as plt
         from matplotlib.patches import Rectangle

@@ -49,7 +49,8 @@ class Box:
         self._set_cn()
         self._set_rin()
 
-        self.indices = set(_it.product(*[list(r) for r in self.rn]))
+        self.indices = [[i if i < rmax else i - rmax for i in r] for r, rmax in zip(self.rn, self.env)]
+        self.indices = set(_it.product(*self.indices))
         self.vertices = self._get_vertices()
 
     def _get_vertices(self):
@@ -111,9 +112,12 @@ class Box:
 
     def inner_indices(self, ax):
         """ Return indices. inner points except along axis (int)"""
-        rn = list(self.rin)
-        rn[ax] = self.rn[ax]
-        return set(_it.product(*[list(r) for r in rn]))
+        rn = [[i if i < rmax else i - rmax for i in r] for r, rmax in zip(self.rin, self.env)]
+        rn[ax] = [i if i < self.env[ax] else i - self.env[ax] for i in self.rn[ax]]
+        return set(_it.product(*rn))
+        #rn = list(self.rin)
+        #rn[ax] = self.rn[ax]
+        #return set(_it.product(*[list(r) for r in rn]))
 
     def edges_indices(self, ax):
         """ Return indices of the edges following all axis except ax. """
@@ -264,7 +268,8 @@ class Cuboid(Box):
         """
         attributes = dict(clamped='c', bounded='b',
                           free='f', colinear='I',
-                          overlapped='o', covered='0')
+                          overlapped='o', covered='0', 
+                          periodic='p')
 
         chars = [''.join([attributes[c] for c in attributes.keys() if getattr(f, c)])
                  for f in self.faces]
@@ -384,7 +389,7 @@ class Face(Box):
                   'back': 'front', 'front': 'back',
                   'top': 'bottom', 'bottom': 'top'}
 
-    _attributes = ['clamped', 'bounded', 'free', 'colinear', 'overlapped', 'covered']
+    _attributes = ['clamped', 'bounded', 'free', 'colinear', 'overlapped', 'covered', 'periodic']
 
     def __init__(self, origin, size, bc, side, sid, env=None, inner=False):
         super().__init__(origin, size, bc=bc, env=env, inner=inner)
@@ -399,6 +404,7 @@ class Face(Box):
             self.normal = - self.normal
 
         self.clamped = False
+        self.periodic = False
         self.bounded = False
         self.covered = False
         self.colinear = []
@@ -429,8 +435,13 @@ class Face(Box):
     def box(self, N=5):
         """ Return a box extending N points ahead of the object."""
 
+        if self.periodic:
+            rmin = - N + 1
+        else:
+            rmin = 0
+
         if self.normal == -1:
-            origin = tuple(max(0, r.start - N + 1) if self.axis == i else r.start
+            origin = tuple(max(rmin, r.start - N + 1) if self.axis == i else r.start
                            for i, r in enumerate(self.rn))
         else:
             origin = self.origin
@@ -521,10 +532,13 @@ class ObstacleSet(BoxSet):
 
     def update_face_description(self):
 
-        # Faces clamped to global domain
+        # Faces clamped to global domain (handle periodic condition)
         for f in self.faces:
-            if f.loc in [0, self.shape[f.axis] - 1]:
-                f.clamped = True
+            for b in self.bounds:
+                if f in b and b.bc != 'P':
+                    f.clamped = b
+                elif f in b and b.bc == 'P':
+                    f.periodic = b
 
         # Face fully covered by an obtacle
         for f in [f for f, o in self.faces_vs_subs if f.issubset(o)]:
@@ -545,6 +559,8 @@ class ObstacleSet(BoxSet):
                 else:
                     f.overlapped.append(o)
 
+        self.clamped = tuple(f for f in self.faces if f.clamped)
+        self.periodic = tuple(f for f in self.faces if f.periodic)
         self.bounded = tuple(f for f in self.faces if f.bounded)
         self.colinear = tuple(f for f in self.faces if f.colinear)
         self.overlapped = tuple(f for f in self.faces if f.overlapped or f.bounded)

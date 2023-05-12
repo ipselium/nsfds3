@@ -30,7 +30,6 @@ from datetime import datetime as _dt
 import platform as _pf
 import sys as _sys
 import numpy as _np
-import ofdlib2 as _ofd
 import plotly as _ply
 import matplotlib as _plt
 import rich.box as _box
@@ -66,7 +65,6 @@ def versions():
     table.add_row('numpy', _np.__version__)
     table.add_row('plotly', _ply.__version__)
     table.add_row('maplotlib', _plt.__version__)
-    table.add_row('ofdlib2', _ofd.__version__)
     console.print(table)
 
 
