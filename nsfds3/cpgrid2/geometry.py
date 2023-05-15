@@ -49,9 +49,14 @@ class Box:
         self._set_cn()
         self._set_rin()
 
-        self.indices = [[i if i < rmax else i - rmax for i in r] for r, rmax in zip(self.rn, self.env)]
+        self.indices = [self.make_span(r, rmax) for r, rmax in zip(self.rn, self.env)]
         self.indices = set(_it.product(*self.indices))
         self.vertices = self._get_vertices()
+
+    @staticmethod
+    def make_span(r, rmax):
+        """ Return the periodic range of values, rmax being the size of the domain and r the initial range. """
+        return [i if 0 <= i < rmax else i - rmax if i >= rmax else rmax + i for i in r]
 
     def _get_vertices(self):
 
@@ -112,8 +117,8 @@ class Box:
 
     def inner_indices(self, ax):
         """ Return indices. inner points except along axis (int)"""
-        rn = [[i if i < rmax else i - rmax for i in r] for r, rmax in zip(self.rin, self.env)]
-        rn[ax] = [i if i < self.env[ax] else i - self.env[ax] for i in self.rn[ax]]
+        rn = [self.make_span(r, rmax) for r, rmax in zip(self.rin, self.env)]
+        rn[ax] = self.make_span(self.rn[ax], self.env[ax])
         return set(_it.product(*rn))
         #rn = list(self.rin)
         #rn[ax] = self.rn[ax]
@@ -465,6 +470,7 @@ class BoxSet:
     def __init__(self, shape, bc, subs=None, stencil=11):
 
         self.shape = shape
+        self.ndim = len(shape)
         self.bc = bc
         self.subs = subs
         self.stencil = stencil
@@ -521,6 +527,11 @@ class ObstacleSet(BoxSet):
         self.obstacles = {o.sid:o for o in self.subs}
 
         self.update_face_description()
+
+    def get_obstacle(self, f):
+        for o in self:
+            if o.sid == f.sid:
+                return o
 
     @property
     def faces_vs_subs(self):

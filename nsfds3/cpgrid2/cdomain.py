@@ -31,7 +31,7 @@ grid into subdomains corresponding to different geometric configurations.
 import itertools as _it
 import numpy as _np
 import rich.progress as _rp
-from .geometry import ObstacleSet, DomainSet, Domain
+from .geometry import ObstacleSet, DomainSet, Domain, Box
 from nsfds3.utils.misc import locations_to_cuboids, unique, Schemes, scheme_to_str, buffer_kwargs
 import nsfds3.graphics as _graphics
 from libfds.cutils import nonzeros, where
@@ -70,6 +70,7 @@ class ComputationDomains:
     def __init__(self, shape, obstacles=None, bc='WWWWWW', nbz=20, stencil=11, free=True):
 
         self.shape = shape
+        self.ndim = len(shape)
         self.obstacles = obstacles
         self.bc = bc
         self.nbz = nbz
@@ -139,6 +140,7 @@ class ComputationDomains:
             * For face that are colinear, take care about the connection and bounds
         """
 
+        # Obstacles
         for f in self.obstacles.uncentered:
 
             # Inner indice of a box ahead of the object for all faces
@@ -147,10 +149,22 @@ class ComputationDomains:
             # Add missing edges and boundaries
             f.uncentered |= self._fix_edges(f)
 
+            # Complete box when fix does not give a full box: check in 3d if it's ok !
+            if f.overlapped:
+                coords = list(zip(*[(min(c), max(c) - min(c) + 1) for c in zip(*f.uncentered)]))
+                box = Box(origin=(coords[0]), size=(coords[1])).indices
+                f.uncentered |= box.difference(f.uncentered)
+
+            # Fix face to face clamped obstacles when periodic
+            if f.periodic:
+                for _f in [_f for _f in self.obstacles.periodic if f.sid != _f.sid]:
+                    f.uncentered -= self.obstacles.get_obstacle(_f).inner_indices(f.axis)
+
             # Remove overlapped areas
             for o in f.overlapped:
                 f.uncentered -= o.inner_indices(f.axis)
 
+        # Bounds
         for f in [b for b in self.bounds if b.bc in self._BC_U]:
 
             f.uncentered = f.box(self._midstencil).indices
@@ -186,6 +200,15 @@ class ComputationDomains:
             if sn:
                 self._umask[sn + (f.axis, )] = f.normal * self.stencil
                 self._cmask[sn] = False
+
+        # Fix face to face obstacles when periodic
+        duo = [(f1, f2) for f1, f2 in _it.permutations(self.obstacles.periodic, r=2) if f1.side == f2.opposite]
+        for f1, f2 in duo:
+            fix = [c for c in f1.inner_indices(f1.axis)
+                    if _np.array(c)[f1.not_axis] in _np.array([*f2.inner_indices(f1.axis)])[:, f1.not_axis]]
+            if fix:
+                self._umask[tuple(zip(*fix)) + (f1.axis, )] = 1
+                self._cmask[tuple(zip(*fix))] = False
 
     def raw_show(self):
 
