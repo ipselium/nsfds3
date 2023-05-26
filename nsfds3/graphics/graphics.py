@@ -608,7 +608,7 @@ class CDViewer:
             for obs in obj:
                 ix, iy = obs.vertices
                 traces.append(_go.Scatter(x=ax1[ix, ], y=ax2[iy, ],
-                                          name=f'obs{obs.sid}',
+                                          name=f'n{obs.sid} [{obs.tag}]',
                                           **kwargs
                                           ))
         elif side:

@@ -69,7 +69,7 @@ def buffer_kwargs(bc, nbz, shape):
     bounds = buffer_bounds(bc, nbz)
     origin = [c[0] for c in bounds]
     size = [n + c[1] - o + 1 for n, c, o in zip(shape, bounds, origin)]
-    return dict(origin=origin, size=size, bc=bc)
+    return dict(origin=origin, size=size, env=shape, bc=bc)
 
 
 def dict_update(d1, d2):

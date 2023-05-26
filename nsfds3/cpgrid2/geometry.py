@@ -27,19 +27,23 @@ DOCSTRING
 """
 
 import itertools as _it
+import functools
 import numpy as _np
+import time
+
 
 class Box:
-
+    """ Elementary object to describe Cuboids or Faces. """
     _axnames = 'x', 'y', 'z'
 
-    def __init__(self, origin, size, bc=None, env=None, inner=False):
+    def __init__(self, origin, size, env, bc=None, inner=False, tag=None):
 
         self.origin = origin
         self.size = size
         self.bc = bc
-        self._env = env
+        self.env = env
         self.inner = inner
+        self.tag = tag
         self.ndim = len(origin)
 
         self._set_bc()
@@ -48,10 +52,28 @@ class Box:
         self._set_sn()
         self._set_cn()
         self._set_rin()
+        self._set_sin()
 
-        self.indices = [self.make_span(r, rmax) for r, rmax in zip(self.rn, self.env)]
-        self.indices = set(_it.product(*self.indices))
         self.vertices = self._get_vertices()
+
+    def periodic_slice(self, stencil=11):
+        mid = int((stencil - 1) / 2)
+        sn = []
+        for i, (s, n) in enumerate(zip(self.sn, self.env)):
+            if s.start >= 0 and s.stop < n:
+                sn.append(s)
+            else:
+                P = _np.array(list(range(n - mid, n)) +
+                            list(range(n)) +
+                            list(range(mid)))
+                sn.append(tuple(P[s.start + mid:s.stop + mid]))
+        return tuple(sn)
+
+    @property
+    @functools.lru_cache()
+    def indices(self):
+        indices = [self.make_span(r, rmax) for r, rmax in zip(self.rn, self.env)]
+        return set(_it.product(*indices))
 
     @staticmethod
     def make_span(r, rmax):
@@ -102,31 +124,19 @@ class Box:
                                     for i, v in enumerate(values[axis])]
         return values
 
-    @property
-    def env(self):
-        """ Return enveloppe of the object."""
-        if not self._env:
-            self._env = tuple(o + s + 5 for o, s in zip(self.origin, self.size))
-        return self._env
+    def inner_slices(self, ax=None):
+        """ Return inner slices except along axis (int). """
+        sn = list(self.sin)
+        if ax is not None:
+            sn[ax] = self.sn[ax]
+        return tuple(sn)
 
-    @env.setter
-    def env(self, value):
-        if len(value) != len(self.origin):
-            raise ValueError('env must be of the same dimension as origin')
-        self._env = tuple(value)
-
-    def inner_indices(self, ax):
+    def inner_indices(self, ax=None):
         """ Return indices. inner points except along axis (int)"""
         rn = [self.make_span(r, rmax) for r, rmax in zip(self.rin, self.env)]
-        rn[ax] = self.make_span(self.rn[ax], self.env[ax])
+        if ax is not None:
+            rn[ax] = self.make_span(self.rn[ax], self.env[ax])
         return set(_it.product(*rn))
-        #rn = list(self.rin)
-        #rn[ax] = self.rn[ax]
-        #return set(_it.product(*[list(r) for r in rn]))
-
-    def edges_indices(self, ax):
-        """ Return indices of the edges following all axis except ax. """
-        return self.indices.difference(self.inner_indices(ax))
 
     def intersection(self, other):
         """ Return intersection (point coordinate) between self and other."""
@@ -168,7 +178,7 @@ class Box:
         origin = tuple(c[0] for c in out)
         size = tuple(s[1] - s[0] for s in out)
 
-        return Box(origin=origin, size=size, bc='X' * 2 * len(self.origin), env=self.env)
+        return Box(origin=origin, size=size, env=self.env, bc='X' * 2 * len(self.origin))
 
     def flatten(self, axis):
         """ Return flat version of the object."""
@@ -222,6 +232,16 @@ class Box:
             setattr(self, f's{n}', slice(self.origin[i], self.origin[i] + self.size[i]))
             self.sn += (getattr(self, f's{n}'), )
 
+    def _set_sin(self):
+        """ Set inner slices (six, siy [, siz])."""
+        self.sin = ()
+        for n, i in zip(self._axnames, range(self.ndim)):
+            if self.size[i] <= 1:
+                setattr(self, f'si{n}', slice(self.origin[i], self.origin[i] + self.size[i]))
+            else:
+                setattr(self, f'si{n}', slice(self.origin[i] + 1, self.origin[i] + self.size[i] - 1))
+            self.sin += (getattr(self, f'si{n}'), )
+
     def _set_cn(self):
         """ Set coordinates (cx, cy [, cz])."""
         self.cn = ()
@@ -255,8 +275,9 @@ class Cuboid(Box):
         """ Reset the count. """
         cls.count = 0
 
-    def __init__(self, origin, size, bc=None, env=None, inner=False):
-        super().__init__(origin, size, bc=bc, env=env, inner=inner)
+    def __init__(self, origin, size, env, bc=None, inner=False, tag=None):
+
+        super().__init__(origin, size, env, bc=bc, inner=inner, tag=tag)
 
         # Object id
         self.sid = self.__class__.count
@@ -273,58 +294,49 @@ class Cuboid(Box):
         """
         attributes = dict(clamped='c', bounded='b',
                           free='f', colinear='I',
-                          overlapped='o', covered='0', 
+                          overlapped='o', covered='0',
                           periodic='p')
 
         chars = [''.join([attributes[c] for c in attributes.keys() if getattr(f, c)])
                  for f in self.faces]
         return '/'.join(chars)
 
-    @property
-    def env(self):
-        return super().env
-
-    @env.setter
-    def env(self, value):
-
-        if len(value) != len(self.origin):
-            raise ValueError('env must be of the same dimension as origin')
-
-        self._env = tuple(value)
-
-        for face in self.faces:
-            face.env = tuple(value)
-
     def _set_faces_3d(self):
         """ Set faces for cuboid. """
         self.face_left = Face(origin=(self.cx[0], self.cy[0], self.cz[0]),
                               size=(1, self.size[1], self.size[2]),
+                              env=self.env,
                               side='left', bc=self.bc[0],
                               sid=self.sid, inner=self.inner)
 
         self.face_right = Face(origin=(self.cx[1], self.cy[0], self.cz[0]),
                                size=(1, self.size[1], self.size[2]),
+                               env=self.env,
                                side='right', bc=self.bc[1],
                                sid=self.sid, inner=self.inner)
 
 
         self.face_front = Face(origin=(self.cx[0], self.cy[0], self.cz[0]),
                                size=(self.size[0], 1, self.size[2]),
+                               env=self.env,
                                side='front', bc=self.bc[2],
                                sid=self.sid, inner=self.inner)
 
         self.face_back = Face(origin=(self.cx[0], self.cy[1], self.cz[0]),
                               size=(self.size[0], 1, self.size[2]),
+                              env=self.env,
                               side='back', bc=self.bc[3],
                               sid=self.sid, inner=self.inner)
 
         self.face_bottom = Face(origin=(self.cx[0], self.cy[0], self.cz[0]),
                                 size=(self.size[0], self.size[1], 1),
+                                env=self.env,
                                 side='bottom', bc=self.bc[4],
                                 sid=self.sid, inner=self.inner)
 
         self.face_top = Face(origin=(self.cx[0], self.cy[0], self.cz[1]),
                              size=(self.size[0], self.size[1], 1),
+                             env=self.env,
                              side='top', bc=self.bc[5],
                              sid=self.sid, inner=self.inner)
 
@@ -336,38 +348,30 @@ class Cuboid(Box):
         """ Set edges forrectangle. """
         self.face_left = Face(origin=(self.cx[0], self.cy[0]),
                               size=(1, self.size[1]),
+                              env=self.env,
                               side='left', bc=self.bc[0],
                               sid=self.sid, inner=self.inner)
 
         self.face_right = Face(origin=(self.cx[1], self.cy[0]),
                                size=(1, self.size[1]),
-                               side='right',bc=self.bc[1],
+                               env=self.env,
+                               side='right', bc=self.bc[1],
                                sid=self.sid, inner=self.inner)
 
         self.face_front = Face(origin=(self.cx[0], self.cy[0]),
                                size=(self.size[0], 1),
+                               env=self.env,
                                side='front', bc=self.bc[2],
                                sid=self.sid, inner=self.inner)
 
         self.face_back = Face(origin=(self.cx[0], self.cy[1]),
                               size=(self.size[0], 1),
+                              env=self.env,
                               side='back', bc=self.bc[3],
                               sid=self.sid, inner=self.inner)
 
         self.faces = (self.face_left, self.face_right,
                       self.face_front, self.face_back)
-
-    def get_same_face(self, face):
-        """ Return the same face as the input argument face."""
-        if not isinstance(face, Face):
-            raise TypeError('other must be a Face')
-        return getattr(self, f'face_{face.side}')
-
-    def get_opposite_face(self, face):
-        """ Return the opposite face to the input argument face."""
-        if not isinstance(face, Face):
-            raise TypeError('other must be a Face')
-        return getattr(self, f'face_{face.opposite}')
 
     def __iter__(self):
         return iter(self.faces)
@@ -396,8 +400,8 @@ class Face(Box):
 
     _attributes = ['clamped', 'bounded', 'free', 'colinear', 'overlapped', 'covered', 'periodic']
 
-    def __init__(self, origin, size, bc, side, sid, env=None, inner=False):
-        super().__init__(origin, size, bc=bc, env=env, inner=inner)
+    def __init__(self, origin, size, env, side, bc, sid, inner=False):
+        super().__init__(origin, size, env, bc=bc, inner=inner)
 
         self.sid = sid
         self.side = side
@@ -411,7 +415,7 @@ class Face(Box):
         self.clamped = False
         self.periodic = False
         self.bounded = False
-        self.covered = False
+        self.covered = []
         self.colinear = []
         self.overlapped = []
         self.uncentered = set()
@@ -437,6 +441,12 @@ class Face(Box):
         if any(s == 0 for s in self.size):
             raise ValueError('Size of the object must be at least 1')
 
+    @property
+    @functools.lru_cache()
+    def base_slice(self):
+        return tuple(slice(s.start - self.normal, s.stop - self.normal) if i == self.axis 
+                    else s for i, s in enumerate(self.sn))
+
     def box(self, N=5):
         """ Return a box extending N points ahead of the object."""
 
@@ -455,7 +465,7 @@ class Face(Box):
         bc = ['X'] * len(self.origin) * 2
         bc[2*self.axis + max(0, self.normal)] = self.bc
 
-        return Box(origin=origin, size=size, bc=''.join(bc), env=self.env)
+        return Box(origin=origin, size=size, env=self.env, bc=''.join(bc))
 
     def __fargs__(self):
 
@@ -475,9 +485,16 @@ class BoxSet:
         self.subs = subs
         self.stencil = stencil
 
-        # Update enveloppe (global domain) of each sub
-        for s in self.subs:
-            s.env = self.shape
+    def check_boxes(self):
+        """ Check that :
+            - all boxes have same dimension and envelop,
+            - there is not collistion between obstacles  <---------- TODO
+        """
+        if not set([s.env for s in self]) == 1:
+            raise ValueError('All boxes must have same envelop')
+
+        if not set([s.ndim for s in self]) == 1:
+            raise ValueError('All boxes must have same dimension')
 
     def __getitem__(self, n):
         return self.subs[n]
@@ -523,25 +540,33 @@ class ObstacleSet(BoxSet):
         super().__init__(shape, bc=bc, subs=subs, stencil=stencil)
 
         self.faces = tuple(_it.chain(*[sub.faces for sub in subs]))
-        self.bounds = Obstacle(origin=(0, ) * len(shape), size=shape, bc=self.bc, env=shape, inner=True).faces
+        self.bounds = Obstacle(origin=(0, ) * len(shape), size=shape, env=shape, bc=self.bc, inner=True).faces
         self.obstacles = {o.sid:o for o in self.subs}
 
-        self.update_face_description()
+        self._update_face_description()
 
-    def get_obstacle(self, f):
+        self.clamped = tuple(f for f in self.faces if f.clamped)
+        self.covered = tuple(f for f in self.faces if f.covered)
+        self.periodic = tuple(f for f in self.faces if f.periodic)
+        self.bounded = tuple(f for f in self.faces if f.bounded)
+        self.colinear = tuple(f for f in self.faces if f.colinear)
+        self.overlapped = tuple(f for f in self.faces if f.overlapped)
+        self.free = tuple(f for f in self.faces if f.free)
+        self.uncentered = tuple(f for f in self.faces if not f.clamped and not f.covered)
+
+    def get_obstacle_by_face(self, f):
         for o in self:
             if o.sid == f.sid:
                 return o
 
-    @property
-    def faces_vs_subs(self):
-        return [(f, o) for f, o in _it.product(self.faces, self.subs) if f.sid != o.sid]
+    def get_obstacle_by_sid(self, sid):
+        for o in self:
+            if o.sid == sid:
+                return o
 
-    @property
-    def bounds_vs_subs(self):
-        return [(f, o) for f, o in _it.product(self.bounds, self.subs)]
+    def _update_face_description(self):
 
-    def update_face_description(self):
+        faces_vs_subs = [(f, o) for f, o in _it.product(self.faces, self.subs) if f.sid != o.sid]
 
         # Faces clamped to global domain (handle periodic condition)
         for f in self.faces:
@@ -552,8 +577,9 @@ class ObstacleSet(BoxSet):
                     f.periodic = b
 
         # Face fully covered by an obtacle
-        for f in [f for f, o in self.faces_vs_subs if f.issubset(o)]:
-            f.covered = True
+        for f, o in faces_vs_subs:
+            if f.issubset(o):
+                f.covered.append(o)
 
         # Faces bounded by global domain
         for f in self.faces:
@@ -563,28 +589,15 @@ class ObstacleSet(BoxSet):
                 f.bounded = True
 
         # Face Overlapped or covered by another obstacle, and "colinear"
-        for f, o in self.faces_vs_subs:
+        for f, o in faces_vs_subs:
             if not f.clamped and not f.covered and f.intersects(o):
                 if f.intersects(o.faces[2*f.axis + max(0, f.normal)]):
                     f.colinear.append(o)
                 else:
                     f.overlapped.append(o)
 
-        self.clamped = tuple(f for f in self.faces if f.clamped)
-        self.periodic = tuple(f for f in self.faces if f.periodic)
-        self.bounded = tuple(f for f in self.faces if f.bounded)
-        self.colinear = tuple(f for f in self.faces if f.colinear)
-        self.overlapped = tuple(f for f in self.faces if f.overlapped or f.bounded)
-        self.free = tuple(f for f in self.faces if f.free)
-        self.uncentered = tuple(f for f in self.faces if not f.clamped and not f.covered)
-
-        # Combination of all faces
-        combs = _it.combinations(self.bounds + self.uncentered, r=2)
-        self.face_combination = tuple((f1, f2) for f1, f2 in combs
-                                       if f1.sid != f2.sid and f1.axis == f2.axis)
-
         # Bounds covered by an obstacle
-        for f, o in self.bounds_vs_subs:
+        for f, o in _it.product(self.bounds, self.subs):
             if f.intersects(o):
                 f.overlapped.append(o)
 

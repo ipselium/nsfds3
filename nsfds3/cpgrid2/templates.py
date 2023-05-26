@@ -37,82 +37,83 @@ def base(shape=(200, 150)):
     subs = []
 
     # Two overlapped with one at bound location
-    subs.append(Obstacle(origin=(0, 80), size=(15, 20)))
-    subs.append(Obstacle(origin=(9, 95), size=(15, 15)))
+    subs.append(Obstacle(origin=(0, 80), size=(15, 20), env=shape))
+    subs.append(Obstacle(origin=(9, 95), size=(15, 15), env=shape))
 
     # Two overlapped
-    subs.append(Obstacle(origin=(11, 50), size=(15, 20)))
-    subs.append(Obstacle(origin=(20, 65), size=(15, 15)))
+    subs.append(Obstacle(origin=(11, 50), size=(15, 20), env=shape))
+    subs.append(Obstacle(origin=(20, 65), size=(15, 15), env=shape))
 
     # Two side to side with one at bound location
-    subs.append(Obstacle(origin=(0, 11), size=(11, 20)))
-    subs.append(Obstacle(origin=(10, 24), size=(11, 15)))
+    subs.append(Obstacle(origin=(0, 11), size=(11, 20), env=shape))
+    subs.append(Obstacle(origin=(10, 24), size=(11, 15), env=shape))
 
     # U (1)
-    subs.append(Obstacle(origin=(46, 20), size=(11, 11)))
-    subs.append(Obstacle(origin=(46, 11), size=(25, 10)))
-    subs.append(Obstacle(origin=(70, 11), size=(11, 20)))
+    subs.append(Obstacle(origin=(46, 20), size=(11, 11), env=shape))
+    subs.append(Obstacle(origin=(46, 11), size=(25, 10), env=shape))
+    subs.append(Obstacle(origin=(70, 11), size=(11, 20), env=shape))
 
     # U (2)
-    subs.append(Obstacle(origin=(46, 50), size=(11, 11)))
-    subs.append(Obstacle(origin=(46, 41), size=(35, 10)))
-    subs.append(Obstacle(origin=(70, 50), size=(11, 11)))
+    subs.append(Obstacle(origin=(46, 50), size=(11, 11), env=shape))
+    subs.append(Obstacle(origin=(46, 41), size=(35, 10), env=shape))
+    subs.append(Obstacle(origin=(70, 50), size=(11, 11), env=shape))
 
     # U (3)
-    subs.append(Obstacle(origin=(46, 73), size=(11, 20)))
-    subs.append(Obstacle(origin=(56, 73), size=(15, 11)))
-    subs.append(Obstacle(origin=(70, 73), size=(11, 20)))
+    subs.append(Obstacle(origin=(46, 73), size=(11, 20), env=shape))
+    subs.append(Obstacle(origin=(56, 73), size=(15, 11), env=shape))
+    subs.append(Obstacle(origin=(70, 73), size=(11, 20), env=shape))
 
     # U (4 - with edges)
-    subs.append(Obstacle(origin=(47, 113), size=(11, 11)))
-    subs.append(Obstacle(origin=(46, 104), size=(35, 10)))
-    subs.append(Obstacle(origin=(69, 113), size=(11, 11)))
+    subs.append(Obstacle(origin=(47, 113), size=(11, 11), env=shape))
+    subs.append(Obstacle(origin=(46, 104), size=(35, 10), env=shape))
+    subs.append(Obstacle(origin=(69, 113), size=(11, 11), env=shape))
 
     # L
-    subs.append(Obstacle(origin=(92, 99), size=(11, 11)))
-    subs.append(Obstacle(origin=(92, 90), size=(25, 10)))
+    subs.append(Obstacle(origin=(92, 99), size=(11, 11), env=shape))
+    subs.append(Obstacle(origin=(92, 90), size=(25, 10), env=shape))
 
     # F (1)
-    subs.append(Obstacle(origin=(92, 50), size=(11, 11)))
-    subs.append(Obstacle(origin=(92, 60), size=(21, 5)))
-    subs.append(Obstacle(origin=(92, 64), size=(11, 11)))
-    subs.append(Obstacle(origin=(92, 74), size=(21, 5)))
+    subs.append(Obstacle(origin=(92, 50), size=(11, 11), env=shape))
+    subs.append(Obstacle(origin=(92, 60), size=(21, 5), env=shape))
+    subs.append(Obstacle(origin=(92, 64), size=(11, 11), env=shape))
+    subs.append(Obstacle(origin=(92, 74), size=(21, 5), env=shape))
 
     # F (2)
-    subs.append(Obstacle(origin=(92, 11), size=(11, 30)))
-    subs.append(Obstacle(origin=(102, 22), size=(11, 5)))
-    subs.append(Obstacle(origin=(102, 36), size=(11, 5)))
+    subs.append(Obstacle(origin=(92, 11), size=(11, 30), env=shape))
+    subs.append(Obstacle(origin=(102, 22), size=(11, 5), env=shape))
+    subs.append(Obstacle(origin=(102, 36), size=(11, 5), env=shape))
 
 
     # Cruz
-    subs.append(Obstacle(origin=(125, 100), size=(30, 11)))
-    subs.append(Obstacle(origin=(134, 90), size=(11, 25)))
+    subs.append(Obstacle(origin=(125, 100), size=(30, 11), env=shape))
+    subs.append(Obstacle(origin=(134, 90), size=(11, 25), env=shape))
 
     # T
-    subs.append(Obstacle(origin=(125, 70), size=(25, 10)))
-    subs.append(Obstacle(origin=(132, 56), size=(11, 15)))
+    subs.append(Obstacle(origin=(125, 70), size=(25, 10), env=shape))
+    subs.append(Obstacle(origin=(132, 56), size=(11, 15), env=shape))
 
     # Test
-    subs.append(Obstacle(origin=(128, 11), size=(30, 30)))
-    subs.append(Obstacle(origin=(140, 40), size=(7, 7)))
+    subs.append(Obstacle(origin=(128, 11), size=(30, 30), env=shape))
+    subs.append(Obstacle(origin=(140, 40), size=(7, 7), env=shape))
 
     # O
-    subs.append(Obstacle(origin=(shape[0] - 35, 59), size=(11, 11)))
-    subs.append(Obstacle(origin=(shape[0] - 35, 50), size=(25, 10)))
-    subs.append(Obstacle(origin=(shape[0] - 11, 50), size=(11, 20)))
-    subs.append(Obstacle(origin=(shape[0] - 35, 69), size=(35, 10)))
+    subs.append(Obstacle(origin=(shape[0] - 35, 59), size=(11, 11), env=shape))
+    subs.append(Obstacle(origin=(shape[0] - 35, 50), size=(25, 10), env=shape))
+    subs.append(Obstacle(origin=(shape[0] - 11, 50), size=(11, 20), env=shape))
+    subs.append(Obstacle(origin=(shape[0] - 35, 69), size=(35, 10), env=shape))
 
     # I (overlapped)
-    subs.append(Obstacle(origin=(175, 0), size=(11, 20)))
-    subs.append(Obstacle(origin=(175, 10), size=(11, 20)))
-    subs.append(Obstacle(origin=(175, 20), size=(11, 20)))
+    subs.append(Obstacle(origin=(175, 0), size=(11, 20), env=shape))
+    subs.append(Obstacle(origin=(175, 10), size=(11, 20), env=shape))
+    subs.append(Obstacle(origin=(175, 20), size=(11, 20), env=shape))
 
     # I (side to side)
-    subs.append(Obstacle(origin=(175, shape[1] - 40), size=(11, 20)))
-    subs.append(Obstacle(origin=(175, shape[1] - 30), size=(11, 20)))
-    subs.append(Obstacle(origin=(175, shape[1] - 20), size=(11, 20)))
+    subs.append(Obstacle(origin=(175, shape[1] - 40), size=(11, 20), env=shape))
+    subs.append(Obstacle(origin=(175, shape[1] - 30), size=(11, 20), env=shape))
+    subs.append(Obstacle(origin=(175, shape[1] - 20), size=(11, 20), env=shape))
 
     return subs
+
 
 class TestCases:
     """ Collection of test cases for obstacle arrangements. """
