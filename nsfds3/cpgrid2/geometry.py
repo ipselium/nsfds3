@@ -56,6 +56,12 @@ class Box:
 
         self.vertices = self._get_vertices()
 
+    @classmethod
+    def from_slices(cls, slices, env, bc=None, inner=False, tag=None):
+        origin = tuple(s.start for s in slices)
+        size = tuple(s.stop - s.start for s in slices)
+        return cls(origin=origin, size=size, env=env, bc=bc, inner=inner, tag=tag)
+
     def periodic_slice(self, stencil=11):
         mid = int((stencil - 1) / 2)
         sn = []
@@ -133,14 +139,17 @@ class Box:
 
     def inner_indices(self, ax=None):
         """ Return indices. inner points except along axis (int)"""
-        rn = [self.make_span(r, rmax) for r, rmax in zip(self.rin, self.env)]
+        #rn = [self.make_span(r, rmax) for r, rmax in zip(self.rin, self.env)]
+        rn = list(self.rin)
         if ax is not None:
-            rn[ax] = self.make_span(self.rn[ax], self.env[ax])
+            #rn[ax] = self.make_span(self.rn[ax], self.env[ax])
+            rn[ax] = self.rn[ax]
         return set(_it.product(*rn))
 
     def intersection(self, other):
         """ Return intersection (point coordinate) between self and other."""
-        return tuple(set(self.indices).intersection(other.indices))
+        c = [set(rs).intersection(ro) for rs, ro in zip(self.rn, other.rn)]
+        return tuple(_it.product(*c))
 
     def intersects(self, other):
         """ Report whether self intersects other."""
@@ -167,19 +176,6 @@ class Box:
             out.append(set(s).issuperset(o))
         return all(tuple(out))
 
-    def box(self, N=5):
-        """ Returns a Box extending N points around the object."""
-
-        out = []
-        for r, s in zip(self.rn, self.env):
-            # Pour periodic, start peut aller dans le négatif et stop, revenir vers 0, 1, 2... !
-            out.append([max(0, r.start - N), min(s, r.stop + N)])
-
-        origin = tuple(c[0] for c in out)
-        size = tuple(s[1] - s[0] for s in out)
-
-        return Box(origin=origin, size=size, env=self.env, bc='X' * 2 * len(self.origin))
-
     def flatten(self, axis):
         """ Return flat version of the object."""
         cls = type(self)
@@ -190,7 +186,7 @@ class Box:
         size = tuple(s for i, s in enumerate(self.size) if i != axis)
         bc = ''.join([v for i, v in enumerate(self.bc) if i not in [2*axis, 2*axis + 1]])
 
-        return cls(origin, size, bc=bc)
+        return cls(origin, size, env=self.env, bc=bc)
 
     def _check_args(self):
         """ Check input arguments."""
@@ -390,9 +386,9 @@ class Domain(Cuboid):
 
 class Face(Box):
 
-    _sides = {'right': (0, 1), 'left': (0, -1),    # (axis, normal)
-              'back': (1, 1), 'front': (1, -1),
-              'top': (2, 1), 'bottom': (2, -1)}
+    _sides = {'right': (0, 1, 1), 'left': (0, -1, 0),    # (axis, normal, idx)
+              'back': (1, 1, 3), 'front': (1, -1, 2),
+              'top': (2, 1, 5), 'bottom': (2, -1, 4)}
 
     _opposites = {'right': 'left', 'left': 'right',
                   'back': 'front', 'front': 'back',
@@ -406,7 +402,7 @@ class Face(Box):
         self.sid = sid
         self.side = side
         self.opposite = self._opposites[side]
-        self.axis, self.normal = self._sides[self.side]
+        self.axis, self.normal, self.index = self._sides[self.side]
         self.not_axis = tuple(set(range(self.ndim)).difference((self.axis, )))
         self.loc = self.cn[self.axis][0]
         if inner:
@@ -450,20 +446,22 @@ class Face(Box):
     def box(self, N=5):
         """ Return a box extending N points ahead of the object."""
 
-        if self.periodic:
-            rmin = - N + 1
-        else:
-            rmin = 0
-
         if self.normal == -1:
-            origin = tuple(max(rmin, r.start - N + 1) if self.axis == i else r.start
-                           for i, r in enumerate(self.rn))
+            origin = [r.start - N + 1 if self.axis == i else r.start
+                            for i, r in enumerate(self.rn)]
         else:
-            origin = self.origin
+            origin = list(self.origin)
 
+        if self.periodic:
+            if self.normal == - 1:
+                origin[self.axis] = self.env[self.axis] - N
+            elif self.normal == 1:
+                origin[self.axis] = 0
+
+        origin = tuple(origin)
         size = tuple(N if i == self.axis else s for i, s in enumerate(self.size))
         bc = ['X'] * len(self.origin) * 2
-        bc[2*self.axis + max(0, self.normal)] = self.bc
+        bc[self._sides[self.opposite][2]] = self.bc   # <--------------------------------------------------- BC Wrong 
 
         return Box(origin=origin, size=size, env=self.env, bc=''.join(bc))
 
@@ -484,17 +482,6 @@ class BoxSet:
         self.bc = bc
         self.subs = subs
         self.stencil = stencil
-
-    def check_boxes(self):
-        """ Check that :
-            - all boxes have same dimension and envelop,
-            - there is not collistion between obstacles  <---------- TODO
-        """
-        if not set([s.env for s in self]) == 1:
-            raise ValueError('All boxes must have same envelop')
-
-        if not set([s.ndim for s in self]) == 1:
-            raise ValueError('All boxes must have same dimension')
 
     def __getitem__(self, n):
         return self.subs[n]
@@ -541,7 +528,7 @@ class ObstacleSet(BoxSet):
 
         self.faces = tuple(_it.chain(*[sub.faces for sub in subs]))
         self.bounds = Obstacle(origin=(0, ) * len(shape), size=shape, env=shape, bc=self.bc, inner=True).faces
-        self.obstacles = {o.sid:o for o in self.subs}
+        self.sids = {o.sid:o for o in self.subs}
 
         self._update_face_description()
 
@@ -553,6 +540,45 @@ class ObstacleSet(BoxSet):
         self.overlapped = tuple(f for f in self.faces if f.overlapped)
         self.free = tuple(f for f in self.faces if f.free)
         self.uncentered = tuple(f for f in self.faces if not f.clamped and not f.covered)
+
+        self.check_boxes()
+
+    def check_boxes(self):
+        """ Check that :
+            - all boxes have same dimension and envelop,
+            - there is not collistion between obstacles and bounds
+        """
+        if not len(set([s.env for s in self])) == 1:
+            raise ValueError('All boxes must have same envelop')
+
+        if not len(set([s.ndim for s in self])) == 1:
+            raise ValueError('All boxes must have same dimension')
+
+        for obs in self:
+            if self.is_out_of_bounds(obs):
+                raise ValueError(f'{obs} is out of bounds')
+
+        faces = self.free + self.overlapped + self.colinear + self.bounded
+        combs = [(f1, f2) for f1, f2 in _it.combinations(faces, r=2)
+                 if f1.sid != f2.sid and f1.side == f2.opposite]
+        combs += [(f1, f2) for f1, f2 in _it.product(faces, self.bounds)
+                 if f1.sid != f2.sid and f1.side == f2.side]
+        for f1, f2 in combs:
+            if self.is_too_close(f1, f2):
+                raise ValueError(f'{f1} and {f2} too close')
+
+    def is_out_of_bounds(self, obs):
+        """Check if subdomain is out of bounds. """
+        return any(s.start < 0 or s.stop - 1 >= n for s, n in zip(obs.sn, self.shape))
+
+    def is_too_close(self, f1, f2):
+        """ Check if f1 and f2 locations are compatible with the stencil. """
+        span = all(set(f1.rn[ax]).intersection(f2.rn[ax]) for ax in f1.not_axis)
+        if f2.normal == 1:
+            loc = f1.loc in range(f2.loc + 1, f2.loc + int((self.stencil - 1) / 2))
+        elif f2.normal == -1:
+            loc = f1.loc in range(f2.loc - int((self.stencil - 1) / 2), f2.loc)
+        return loc and span
 
     def get_obstacle_by_face(self, f):
         for o in self:
@@ -581,14 +607,14 @@ class ObstacleSet(BoxSet):
             if f.issubset(o):
                 f.covered.append(o)
 
-        # Faces bounded by global domain
+        # Faces normally bounded by global domain
         for f in self.faces:
             bounded = [(r.start == 0, r.stop == s) for i, (r, s) in enumerate(zip(f.rn, self.shape))
                         if i != f.axis]
             if any(_it.chain(*bounded)):
                 f.bounded = True
 
-        # Face Overlapped or covered by another obstacle, and "colinear"
+        # Face Overlapped by another obstacle, or colinear to another obstacle
         for f, o in faces_vs_subs:
             if not f.clamped and not f.covered and f.intersects(o):
                 if f.intersects(o.faces[2*f.axis + max(0, f.normal)]):
@@ -600,6 +626,29 @@ class ObstacleSet(BoxSet):
         for f, o in _it.product(self.bounds, self.subs):
             if f.intersects(o):
                 f.overlapped.append(o)
+
+    def flatten(self, axis, index=0):
+        """ Return a flat version of the object. """
+        if not self.volumic:
+            raise TypeError('Already flat')
+
+        obstacles = []
+        for obs in self:
+            if index in obs.ranges[axis]:
+                obstacles.append(obs.flatten(axis))
+
+        shape = tuple(o for i, o in enumerate(self.shape) if i != axis)
+        obsset = ObstacleSet(shape=shape, subs=obstacles, stencil=self.stencil)
+        obsset.__volumic = self
+
+        return obsset
+
+    def unflatten(self):
+        """ Return a volumic version of flattened object. """
+        instance = getattr(self, f'_{type(self).__name__}__volumic', None)
+        if not instance:
+            raise TypeError('The object does not have a volumic version')
+        return instance
 
 
 if __name__ == "__main__":

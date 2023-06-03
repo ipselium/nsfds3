@@ -38,7 +38,7 @@ def base(shape=(200, 150)):
 
     # Two overlapped with one at bound location
     subs.append(Obstacle(origin=(0, 80), size=(15, 20), env=shape))
-    subs.append(Obstacle(origin=(9, 95), size=(15, 15), env=shape))
+    subs.append(Obstacle(origin=(10, 95), size=(15, 15), env=shape))
 
     # Two overlapped
     subs.append(Obstacle(origin=(11, 50), size=(15, 20), env=shape))

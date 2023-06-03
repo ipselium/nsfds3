@@ -270,13 +270,16 @@ def groups(coordinates, only_conf=False):
 
 def locations_to_cuboids(coordinates):
     """ Search location of cuboid in a set of coordinates. """
-    if coordinates.shape[1] == 3:
-        return _locations_to_3d_cuboids(coordinates)
+    if coordinates.any():
+        if coordinates.shape[1] == 3:
+            return _locations_to_3d_cuboids(coordinates)
 
-    if coordinates.shape[1] == 2:
-        return _locations_to_2d_cuboids(coordinates)
+        if coordinates.shape[1] == 2:
+            return _locations_to_2d_cuboids(coordinates)
 
-    raise ValueError('Coordinates must have (x, 2) or (x, 3) shape')
+        raise ValueError('Coordinates must have (x, 2) or (x, 3) shape')
+    else:
+        return []
 
 
 def _locations_to_3d_cuboids(coordinates):

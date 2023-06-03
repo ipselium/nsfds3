@@ -59,8 +59,6 @@ class ComputationDomains:
     TODO
     ----
         - optimizations :
-            - domains.argwhere((0, 0, 0))
-            - _np.unique(domains._mask, axis=3)
             - locations_to_cuboids
     """
 
@@ -71,7 +69,6 @@ class ComputationDomains:
 
         self.shape = shape
         self.ndim = len(shape)
-        self.obstacles = obstacles
         self.bc = bc
         self.nbz = nbz
         self.stencil, self._midstencil = stencil, int((stencil - 1) / 2)
@@ -79,122 +76,148 @@ class ComputationDomains:
         if isinstance(obstacles, ObstacleSet):
             self.obstacles = obstacles
         else:
-            self.obstacles = ObstacleSet(shape, obstacles, stencil=stencil)
+            self.obstacles = ObstacleSet(shape, bc=bc, subs=obstacles, stencil=stencil)
 
         self.bounds = self.obstacles.bounds
         self.buffer = Domain(**buffer_kwargs(self.bc, self.nbz, self.shape))
-        self.domains = []
+        self._domains = [[] for i in range(self.ndim)]
 
-        # Find computation domains based on mask values
         self.find_domains()
 
-        # Free memory
         if free:
             self._free()
 
     def _mask_init(self):
         """
-        Initialize a mask that will contain the following values :
-            - 0 : obstacle
-            - 1 : centered
-            - +11/-11 : uncentered
+        Initialize a mask that will contain 0 at the location of obstacles and 1 elsewhere.
         """
-        self._umask = _np.ones(self.shape + (self.ndim, ), dtype=_np.int8)
+        self._mask = _np.ones(self.shape + (self.ndim, ), dtype=_np.int8)
 
         for obs in self.obstacles:
-            self._umask[obs.sin + (slice(0, self.ndim), )] = 0
+            self._mask[obs.sin + (slice(0, self.ndim), )] = 0
 
-        # Fix covered faces to 1
+        # Fix covered faces
         for f in self.obstacles.covered:
-            self._umask[f.sin + (slice(0, self.ndim), )] = 0
+            self._mask[f.sin + (slice(0, self.ndim), )] = 0
 
-        # Fix junction between objects that overlap face to face
+        # Fix junction between face to face overlapped objects
         combs = [(f1, f2) for f1, f2 in _it.combinations(self.obstacles.faces, r=2) if f1.sid != f2.sid]
         for f1, f2 in combs:
             if f1.intersects(f2) and f1.side == f2.opposite:
                 s = tuple(zip(*f1.inner_indices().intersection(f2.inner_indices())))
-                self._umask[s + (slice(0, self.ndim), )] = 0
+                self._mask[s + (slice(0, self.ndim), )] = 0
 
-        # Fix junction between face to face periodic objects
-        # TODO
+        # Fix periodic faces
+        for f in self.obstacles.periodic:
+            self._mask[f.sin + (slice(0, self.ndim), )] = 0
+            if f.colinear:
+                fix = set()
+                for fc in f.colinear:
+                    fix |= set(f.intersection(fc))
+                self._mask[tuple(zip(*fix)) + (slice(0, self.ndim), )] = 0
 
     def _mask_setup(self):
         """
-        Fill the mask according to finite difference scheme to be applied on each point.
+        Fill a mask according to finite difference scheme to be applied on each point.
+            - Obstacles        : 0
+            - Centered schemes : 1
+            - Forward scheme   : 11
+            - Backward scheme  : -11
         """
 
         self._mask_init()
 
         for f in self.obstacles.uncentered:
             fbox = f.box(self._midstencil)
-            sn = fbox.periodic_slice(self.stencil) if f.periodic else fbox.sn
             base = _np.zeros(fbox.size, dtype=_np.int8)
-            base[(slice(None), ) * self.ndim] = self._umask[f.base_slice + (f.axis, )] == 0
-            base[self._umask[sn + (f.axis, )] == 1] *= f.normal * self.stencil
+            base[(slice(None), ) * self.ndim] = self._mask[f.base_slice + (f.axis, )] == 0
+            base[self._mask[fbox.sn + (f.axis, )] == 1] *= f.normal * self.stencil
             base[base == 0] = 1
-            self._umask[sn + (f.axis, )] *= base
+            self._mask[fbox.sn + (f.axis, )] *= base
+            #print(_np.array((self._mask[f.sn + (f.axis, )] == f.normal * self.stencil).nonzero(), dtype=_np.int16).T)
+            #self._domains[f.axis].append(Domain.from_slices(fbox.sn, env=self.shape))
 
         for f in [b for b in self.bounds if b.bc in self._BC_U]:
             sn = f.box(self._midstencil).sn
-            self._umask[sn + (f.axis, )] = f.normal * self.stencil
+            self._mask[sn + (f.axis, )] = f.normal * self.stencil
 
             for o in f.overlapped:
                 sn = o.inner_slices(f.axis)
-                self._umask[sn + (f.axis, )] = 0
+                self._mask[sn + (f.axis, )] = 0
 
     def find_domains(self):
 
-        # Fill masks
-        ti = time.perf_counter()
         self._mask_setup()
-        print(f'Masks filling     : done in {time.perf_counter() - ti:.4f} s')
+        confs = [1, -11, 11]
 
-        domains = [[] for i in range(self.ndim)]
+        with _rp.Progress(_rp.TextColumn("[bold blue]{task.description:<20}...", justify="right"),
+                          _rp.BarColumn(bar_width=None),
+                          _rp.TextColumn("[progress.percentage]{task.percentage:>3.1f}% •"),
+                          _rp.TimeRemainingColumn(),
+                          _rp.TextColumn("• {task.fields[details]}")) as pbar:
 
-        for n in range(self.ndim):
+            task = pbar.add_task("[red]Building domains...",
+                                 total=len(confs) * self.ndim, details='Starting...')
 
-            for c in [1, self.stencil, -self.stencil]:
+            for ax, n in zip('xyz', range(self.ndim)):
+                for name, c in zip('c+-', confs):
+                    ti = pbar.get_time()
 
-                idx = _np.array((self._umask[:, :, n] == c).nonzero(), dtype=_np.int16).T
-                cuboids = locations_to_cuboids(_np.ascontiguousarray(idx))
-                for cub in cuboids:
-                    domains[n].append(Domain(cub['origin'], cub['size'], self.shape, tag=c))
+                    # To optimize ?
+                    idx = _np.array((self._mask[..., n] == c).nonzero(), dtype=_np.int16).T
+                    cuboids = locations_to_cuboids(_np.ascontiguousarray(idx))
+                    for cub in cuboids:
+                        self._domains[n].append(Domain(cub['origin'], cub['size'], self.shape, tag=c))
 
-        [setattr(self, f'{ax}domains', d) for ax, d in zip('xyz', domains)]
-        self.cdomains = min(domains, key=len)
+                    pbar.update(task, advance=1,
+                                details=f'{ax} / {name} in {pbar.get_time() - ti:.2f} s')
 
-        print(f'Domains searching : done in {time.perf_counter() - ti:.4f} s')
+            pbar.update(task, advance=0,
+                        details=f'Total : {pbar.tasks[0].finished_time:.2f} s')
+            pbar.refresh()
 
+        [setattr(self, f'{ax}domains', d) for ax, d in zip('xyz', self._domains)]
+        self.cdomains = min(self._domains, key=len)
 
-    def raw_show(self, domains=False):
+    def raw_show(self, domains=False, obstacles=False):
 
-        if not hasattr(self, '_umask'):
+        if not hasattr(self, '_mask'):
             print('Free must be False')
             return
 
         import matplotlib.pyplot as plt
         from matplotlib.patches import Rectangle
+        from matplotlib.colors import ListedColormap, BoundaryNorm
+
+        nodes = [-11, 0, 1, 11]
+        colors = ["mistyrose", "black", "white", "paleturquoise"]
+
+        cmap = ListedColormap(colors)
+        norm = BoundaryNorm(nodes, len(colors) - 1)
 
         fig, axs = plt.subplots(1, 2, figsize=(15, 8), tight_layout=True)
-        for i in range(2):
-            axs[i].imshow(self._umask[:, :, i].T, origin='lower', vmin=-2, vmax=2)
-            for obs in self.obstacles:
-                patch = Rectangle(obs.origin, *[s - 1 for s in obs.size], color='r', fill=False, linewidth=3)
-                axs[i].add_patch(patch)
-                rx, ry = patch.get_xy()
-                cx = rx + patch.get_width()/2.0
-                cy = ry + patch.get_height()/2.0
-                msg = f'{obs.sid}\n{obs.description}'
-                axs[i].annotate(msg, (cx, cy), color='k', weight='bold',
-                        fontsize=12, ha='center', va='center')
+        for i in range(self.ndim):
+            axs[i].imshow(self._mask[..., i].T, origin='lower', cmap=cmap, norm=norm)
+            if obstacles:
+                for obs in self.obstacles:
+                    patch = Rectangle(obs.origin, *[s - 1 for s in obs.size], color='r', fill=False, linewidth=3)
+                    axs[i].add_patch(patch)
+                    rx, ry = patch.get_xy()
+                    cx = rx + patch.get_width()/2.0
+                    cy = ry + patch.get_height()/2.0
+                    msg = f'{obs.sid}\n{obs.description}'
+                    axs[i].annotate(msg, (cx, cy), color='white', weight='bold',
+                            fontsize=12, ha='center', va='center')
 
         if domains:
             for obs in self.xdomains:
-                patch = Rectangle(obs.origin, *[s - 1 for s in obs.size], color='k', fill=False, linewidth=3)
+                patch = Rectangle(obs.origin, *[s - 1 for s in obs.size], color='b', fill=False, hatch='/', linewidth=3)
                 axs[0].add_patch(patch)
+                idx = _np.array((self._mask[..., 0] == -11).nonzero(), dtype=_np.int16).T
+                axs[0].plot(*idx.T, 'ro')
 
             for obs in self.ydomains:
-                patch = Rectangle(obs.origin, *[s - 1 for s in obs.size], color='k', fill=False, linewidth=3)
+                patch = Rectangle(obs.origin, *[s - 1 for s in obs.size], color='b', fill=False, hatch='/', linewidth=3)
                 axs[1].add_patch(patch)
 
         plt.show()
@@ -206,7 +229,7 @@ class ComputationDomains:
 
     def _free(self):
         try:
-            del self._umask
+            del self._mask
         except AttributeError:
             pass
 
