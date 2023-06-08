@@ -30,12 +30,16 @@ Some helper classes and functions to represent meshes graphically.
 import os
 import sys
 import pathlib
+import collections.abc
+from copy import deepcopy
+
 import numpy as _np
 from scipy import signal as _signal
 
 import matplotlib.pyplot as _plt
 from matplotlib import patches as _patches, path as _path
 from matplotlib.image import PcolorImage
+from matplotlib.colors import ListedColormap, BoundaryNorm
 import matplotlib.animation as _ani
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 
@@ -47,9 +51,24 @@ from rich.progress import track
 
 from mplutils import modified_jet, MidPointNorm, set_figsize, get_subplot_shape
 from nsfds3.utils.data import DataExtractor, FieldExtractor, DataIterator, nearest_index
-from nsfds3.utils.misc import dict_update, extend_range
 
 from libfds.fields import Fields2d, Fields3d
+
+
+def extend_range(a, b, percent=5):
+    """ Extends the numerical range (a, b) by percent. """
+    value = (b - a) * percent / 100
+    return a - value, b + value
+
+
+def dict_update(d1, d2):
+    out1 = deepcopy(d1)
+    out2 = deepcopy(d2)
+    if all((isinstance(d, collections.abc.Mapping) for d in (out1, out2))):
+        for k, v in out2.items():
+            out1[k] = dict_update(out1.get(k), v)
+        return out1
+    return out2
 
 
 def fig_scale(ax1, ax2, ref=None):
@@ -87,13 +106,14 @@ class MeshViewer:
                    grid=True, buffer=True, obstacles=True, domains=False, N=1,
                    slices = None,
                    kwargs_grid=dict(zorder=5),
-                   kwargs_obstacles=dict(facecolor='k', alpha=0.2, fill=True, hatch='x', zorder=100),
-                   kwargs_domains=dict(facecolor='y', zorder=100),
+                   kwargs_obstacles=dict(facecolor='k', alpha=0.2, fill=True, hatch='x', zorder=100, annotate=True),
+                   kwargs_domains=dict(facecolor='y', zorder=100, annotate=False),
                    kwargs_buffer=dict(linewidth=3, edgecolor='k', fill=False, zorder=100))
 
     def __init__(self, msh):
 
         self.msh = msh
+        self.volumic = self.msh.volumic
         self.axis = self.msh.paxis
 
         for name, ax in zip(('x', 'y', 'z'), self.axis):
@@ -103,7 +123,7 @@ class MeshViewer:
 
         kwargs = dict_update(self.dkwargs, kwargs)
 
-        if self.msh.volumic:
+        if self.volumic:
             fig, *_ = self._frame3d(**kwargs)
         else:
             fig, *_ = self._frame2d(**kwargs)
@@ -241,6 +261,7 @@ class MeshViewer:
         """
         dkwargs = dict(linewidth=3, edgecolor='k', facecolor=None, alpha=1., fill=False, hatch=None)
         kwargs = dict_update(dkwargs, kwargs)
+        annotate = kwargs.pop('annotate')
 
         if hasattr(obj, 'sid'):
             obj = (obj, )
@@ -252,10 +273,10 @@ class MeshViewer:
             u, v = axes[indices[0]].T, axes[indices[1]].T
 
         for sub in obj:
-            b = [(u[i, sub.coords[indices[1]][0]], v[i, sub.coords[indices[1]][0]]) for i in sub.ranges[indices[0]]][::-1]
-            l = [(u[sub.coords[indices[0]][0], i], v[sub.coords[indices[0]][0], i]) for i in sub.ranges[indices[1]]]
-            t = [(u[i, sub.coords[indices[1]][1]], v[i, sub.coords[indices[1]][1]]) for i in sub.ranges[indices[0]]]
-            r = [(u[sub.coords[indices[0]][1], i], v[sub.coords[indices[0]][1], i]) for i in sub.ranges[indices[1]]]
+            b = [(u[i, sub.cn[indices[1]][0]], v[i, sub.cn[indices[1]][0]]) for i in sub.rn[indices[0]]][::-1]
+            l = [(u[sub.cn[indices[0]][0], i], v[sub.cn[indices[0]][0], i]) for i in sub.rn[indices[1]]]
+            t = [(u[i, sub.cn[indices[1]][1]], v[i, sub.cn[indices[1]][1]]) for i in sub.rn[indices[0]]]
+            r = [(u[sub.cn[indices[0]][1], i], v[sub.cn[indices[0]][1], i]) for i in sub.rn[indices[1]]]
 
             verts = b + l + t + r
             codes = [_path.Path.MOVETO] + \
@@ -264,6 +285,10 @@ class MeshViewer:
             path = _path.Path(verts, codes)
             patch = _patches.PathPatch(path, **kwargs)
             ax.add_patch(patch)
+            if annotate:
+                ax.annotate(f'{sub.sid}', sub.center(transform=axes),
+                            ha='center', va='center',
+                            color='gray', weight='bold', style='italic', fontsize=8)
 
     @staticmethod
     def grid(ax, axes, indices, N, **kwargs):
@@ -300,6 +325,60 @@ class MeshViewer:
 
         ax.plot(u[:, -1], v[:, -1], **kwargs)
         ax.plot(u[-1, :], v[-1, :], **kwargs)
+
+
+class CPViewer(MeshViewer):
+
+    def __init__(self, cpdomain):
+
+        if not hasattr(cpdomain, '_mask'):
+            print('Free must be False')
+            return
+
+        self.cpdomain = cpdomain
+        self.ndim = cpdomain.ndim
+        self.obstacles = cpdomain.obstacles
+        self.xdomains = cpdomain.xdomains
+        self.ydomains= cpdomain.ydomains
+        self.mask = cpdomain._mask
+        self.volumic = self.ndim == 3
+        self.axis = tuple(_np.arange(0, n) for n in self.cpdomain.shape)
+        self.axis = _np.meshgrid(*self.axis, indexing='ij')
+        self.cmap, self.norm = self.mask_cmap(cpdomain.stencil)
+
+    @staticmethod
+    def mask_cmap(stencil=11):
+        nodes = [-stencil, 0, 1, stencil]
+        colors = ["mistyrose", "black", "white", "paleturquoise"]
+        return ListedColormap(colors), BoundaryNorm(nodes, len(colors) - 1)
+
+    def _frame2d(self, **kwargs):
+
+        fig, axs = _plt.subplots(1, self.ndim, figsize=(15, 8), tight_layout=True)
+        for i in range(self.ndim):
+            args = axs[i], self.axis, (0, 1)
+
+            axs[i].imshow(self.mask[..., i].T, origin='lower', cmap=self.cmap, norm=self.norm)
+
+            if kwargs.get('grid'):
+                self.grid(*args, N=kwargs.get('N'), **kwargs.get('kwargs_grid'))
+
+            if kwargs.get('obstacles'):
+                self.objects(*args, self.obstacles, **kwargs.get('kwargs_obstacles'))
+
+            if kwargs.get('domains') and i == 0:
+                self.objects(*args, self.xdomains, **kwargs.get('kwargs_domains'))
+
+            if kwargs.get('domains') and i == 1:
+                self.objects(*args, self.ydomains, **kwargs.get('kwargs_domains'))
+
+        return fig, axs
+
+    def _frame3d(self, **kwargs):
+
+        fig, axs = _plt.subplots(1, self.ndim, figsize=(15, 8), tight_layout=True)
+
+        return fig, axs
 
 
 class MPLViewer(MeshViewer):
@@ -504,7 +583,7 @@ class MPLViewer(MeshViewer):
 
         _, ax = _plt.subplots(figsize=figsize)
         for i, c in enumerate(probes):
-            ax.plot(t, p[i, :] - self.cfg.p0, 
+            ax.plot(t, p[i, :] - self.cfg.p0,
                     label=f'@{tuple([self.axis[i][tuple(c)] for i in range(len(p.shape))])}')
         ax.set_xlim(t.min(), t.max())
         ax.set_xlabel('Time [s]')
@@ -563,13 +642,17 @@ class CDViewer:
         self.shape = obj.shape
         self.volumic = len(self.shape) == 3
         self.obstacles = obj.obstacles
-        self.domains = obj.domains
         self.traces = []
 
         self.x = getattr(obj, 'x', _np.arange(self.shape[0]))
         self.y = getattr(obj, 'y', _np.arange(self.shape[1]))
+
+        self.xdomains = obj.xdomains
+        self.ydomains = obj.ydomains
+
         if len(self.shape) == 3:
             self.z = getattr(obj, 'z', _np.arange(self.shape[1]))
+            self.zdomains = obj.zdomains
 
     @staticmethod
     def _grid_traces(ax1, ax2):

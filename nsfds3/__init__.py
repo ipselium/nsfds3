@@ -36,4 +36,4 @@ if sys.platform == 'darwin':
     matplotlib.use("TkAgg")
 
 __version__ = "0.1.0"
-__all__ = ['solver', 'cpgrid', 'utils', 'graphics', 'cpgrid2']
+__all__ = ['solver', 'cpgrid', 'utils', 'graphics']

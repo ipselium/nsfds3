@@ -34,10 +34,11 @@ Module `mesh` provides three classes to build meshes:
 import re
 import numpy as np
 from rich.console import Console
-from ._cdomain import ComputationDomains
-from ._geometry import ObstacleSet
+from .cdomain import ComputationDomains
+from .geometry import ObstacleSet
+from .utils import buffer_bounds
 import nsfds3.graphics as graphics
-from nsfds3.utils.misc import buffer_bounds
+
 from libfds.cmaths import curvilinear2d_trans, curvilinear3d_trans
 from libfds.cmaths import curvilinear2d_metrics, curvilinear3d_metrics
 

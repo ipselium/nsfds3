@@ -29,7 +29,41 @@ setup file for nsfds2
 -----------
 """
 
+import platform
 from setuptools import setup, find_packages
+from setuptools.extension import Extension
+from setuptools.command.build_ext import build_ext as _build_ext
+
+class build_ext(_build_ext):
+    def finalize_options(self):
+        """ https://stackoverflow.com/questions/19919905/how-to-bootstrap-numpy-installation-in-setup-py """
+        _build_ext.finalize_options(self)
+        # Prevent numpy from thinking it is still in its setup process:
+        __builtins__.__NUMPY_SETUP__ = False
+        import numpy
+        self.include_dirs.append(numpy.get_include())
+
+
+if platform.system() == 'Windows':
+#    libraries = ['msvcrt']
+    libraries = []
+    extra_compile_args = ["-O2"]
+    extra_link_args = []
+else:
+    libraries = ['m']
+    extra_compile_args = ["-O2", "-fopenmp"]
+#    extra_compile_args = ["-Ofast", "-fopenmp"]
+    extra_link_args = ['-fopenmp']
+
+extensions = [
+    Extension(
+        'nsfds3.cpgrid.cutils',
+        ["nsfds3/cpgrid/cutils.c"],
+        libraries=libraries,
+        extra_compile_args=extra_compile_args,
+        extra_link_args=extra_link_args,
+    ),
+]
 
 setup(
     name='nsfds3',
@@ -41,6 +75,8 @@ setup(
     url='https://github.com/ipselium/nsfds2',
     author="Cyril Desjouy",
     author_email="cyril.desjouy@univ-lemans.fr",
+    cmdclass={'build_ext': build_ext},
+    ext_modules=extensions,
     packages=find_packages(),
     include_package_data=True,
     install_requires=["numpy", "scipy", "matplotlib",

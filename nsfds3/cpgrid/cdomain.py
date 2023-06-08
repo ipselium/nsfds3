@@ -31,11 +31,11 @@ grid into subdomains corresponding to different geometric configurations.
 import itertools as _it
 import numpy as _np
 import rich.progress as _rp
-from .geometry import ObstacleSet, DomainSet, Domain, Box
-from nsfds3.utils.misc import locations_to_cuboids, unique, Schemes, scheme_to_str, buffer_kwargs
+from .geometry import ObstacleSet, DomainSet, Domain
+from .cutils import get_2d_cuboids, get_3d_cuboids
+from .utils import buffer_kwargs
 import nsfds3.graphics as _graphics
-from libfds.cutils import nonzeros, where
-import time
+
 
 class ComputationDomains:
     """ Divide computation domain in several Subdomains based on obstacles in presence.
@@ -80,7 +80,6 @@ class ComputationDomains:
 
         self.bounds = self.obstacles.bounds
         self.buffer = Domain(**buffer_kwargs(self.bc, self.nbz, self.shape))
-        self._domains = [[] for i in range(self.ndim)]
 
         self.find_domains()
 
@@ -92,29 +91,30 @@ class ComputationDomains:
         Initialize a mask that will contain 0 at the location of obstacles and 1 elsewhere.
         """
         self._mask = _np.ones(self.shape + (self.ndim, ), dtype=_np.int8)
+        sax = (slice(0, self.ndim), )
 
         for obs in self.obstacles:
-            self._mask[obs.sin + (slice(0, self.ndim), )] = 0
+            self._mask[obs.sin + sax] = 0
 
         # Fix covered faces
         for f in self.obstacles.covered:
-            self._mask[f.sin + (slice(0, self.ndim), )] = 0
+            self._mask[f.sin + sax] = 0
 
         # Fix junction between face to face overlapped objects
         combs = [(f1, f2) for f1, f2 in _it.combinations(self.obstacles.faces, r=2) if f1.sid != f2.sid]
         for f1, f2 in combs:
             if f1.intersects(f2) and f1.side == f2.opposite:
                 s = tuple(zip(*f1.inner_indices().intersection(f2.inner_indices())))
-                self._mask[s + (slice(0, self.ndim), )] = 0
+                self._mask[s + sax] = 0
 
-        # Fix periodic faces
-        for f in self.obstacles.periodic:
-            self._mask[f.sin + (slice(0, self.ndim), )] = 0
+        # Fix periodic and clamped faces
+        for f in self.obstacles.periodic + self.obstacles.clamped:
+            self._mask[f.sin + sax] = 0
             if f.colinear:
                 fix = set()
                 for fc in f.colinear:
                     fix |= set(f.intersection(fc))
-                self._mask[tuple(zip(*fix)) + (slice(0, self.ndim), )] = 0
+                self._mask[tuple(zip(*fix)) + sax] = 0
 
     def _mask_setup(self):
         """
@@ -127,28 +127,38 @@ class ComputationDomains:
 
         self._mask_init()
 
-        for f in self.obstacles.uncentered:
+        bounds = tuple(b for b in self.bounds if b.bc in self._BC_U)
+
+        for f in self.obstacles.uncentered + bounds:
             fbox = f.box(self._midstencil)
             base = _np.zeros(fbox.size, dtype=_np.int8)
             base[(slice(None), ) * self.ndim] = self._mask[f.base_slice + (f.axis, )] == 0
-            base[self._mask[fbox.sn + (f.axis, )] == 1] *= f.normal * self.stencil
-            base[base == 0] = 1
+            if f.inner:
+                base[self._mask[fbox.sn + (f.axis, )] == 1] = f.normal * self.stencil
+                base[base == 1] = 0
+            else:
+                base[self._mask[fbox.sn + (f.axis, )] == 1] *= f.normal * self.stencil
+                base[base == 0] = 1
             self._mask[fbox.sn + (f.axis, )] *= base
-            #print(_np.array((self._mask[f.sn + (f.axis, )] == f.normal * self.stencil).nonzero(), dtype=_np.int16).T)
-            #self._domains[f.axis].append(Domain.from_slices(fbox.sn, env=self.shape))
 
-        for f in [b for b in self.bounds if b.bc in self._BC_U]:
-            sn = f.box(self._midstencil).sn
-            self._mask[sn + (f.axis, )] = f.normal * self.stencil
+    def get_cuboids(self, mask, ax=-1, N=-1):
 
-            for o in f.overlapped:
-                sn = o.inner_slices(f.axis)
-                self._mask[sn + (f.axis, )] = 0
+        if mask.ndim == 2:
+            return get_2d_cuboids(mask, ax, N)
+
+        elif mask.ndim == 3:
+            return get_3d_cuboids(mask, ax, N)
+
+        return []
 
     def find_domains(self):
+        """
+        TODO : Fix bc of Domains !!!!!!!!!!!!!!!!!!!
+        """
 
         self._mask_setup()
-        confs = [1, -11, 11]
+        confs = [1, 11, -11]
+        domains = [[] for i in range(self.ndim)]
 
         with _rp.Progress(_rp.TextColumn("[bold blue]{task.description:<20}...", justify="right"),
                           _rp.BarColumn(bar_width=None),
@@ -159,25 +169,36 @@ class ComputationDomains:
             task = pbar.add_task("[red]Building domains...",
                                  total=len(confs) * self.ndim, details='Starting...')
 
-            for ax, n in zip('xyz', range(self.ndim)):
-                for name, c in zip('c+-', confs):
+            for axname, n in zip('xyz', range(self.ndim)):
+                for name, mid, c in zip('cpm', [-1, 5, 5], confs):
                     ti = pbar.get_time()
 
-                    # To optimize ?
-                    idx = _np.array((self._mask[..., n] == c).nonzero(), dtype=_np.int16).T
-                    cuboids = locations_to_cuboids(_np.ascontiguousarray(idx))
+                    m = _np.array((self._mask[..., n] == c), dtype=_np.int8)                     # To optimize ?
+                    cuboids = self.get_cuboids(m, ax=n, N=mid)
                     for cub in cuboids:
-                        self._domains[n].append(Domain(cub['origin'], cub['size'], self.shape, tag=c))
+                        domains[n].append(Domain(cub['origin'], cub['size'], self.shape, tag=(n, name)))
 
                     pbar.update(task, advance=1,
-                                details=f'{ax} / {name} in {pbar.get_time() - ti:.2f} s')
+                                details=f'{axname} / {name} in {pbar.get_time() - ti:.2f} s')
 
             pbar.update(task, advance=0,
                         details=f'Total : {pbar.tasks[0].finished_time:.2f} s')
             pbar.refresh()
 
-        [setattr(self, f'{ax}domains', d) for ax, d in zip('xyz', self._domains)]
-        self.cdomains = min(self._domains, key=len)
+        self.update_domains_bc(domains)
+        _ = [setattr(self, f'{ax}domains', d) for ax, d in zip('xyz', domains)]
+        self.cdomains = min(domains, key=len)
+
+    def update_domains_bc(self, domains):
+
+        for i in range(self.ndim):
+            domains[i] = DomainSet(self.shape, self.bc, domains[i])
+            for f1, f2 in _it.product(domains[i].faces, self.obstacles.faces):
+                if f1.intersects(f2) and f1.side == f2.opposite:
+                    f1.bc = f2.bc
+            for f1, f2 in _it.product(domains[i].faces, self.bounds):
+                if f1.intersects(f2) and f1.side == f2.side:
+                    f1.bc = f2.bc
 
     def raw_show(self, domains=False, obstacles=False):
 
@@ -213,8 +234,6 @@ class ComputationDomains:
             for obs in self.xdomains:
                 patch = Rectangle(obs.origin, *[s - 1 for s in obs.size], color='b', fill=False, hatch='/', linewidth=3)
                 axs[0].add_patch(patch)
-                idx = _np.array((self._mask[..., 0] == -11).nonzero(), dtype=_np.int16).T
-                axs[0].plot(*idx.T, 'ro')
 
             for obs in self.ydomains:
                 patch = Rectangle(obs.origin, *[s - 1 for s in obs.size], color='b', fill=False, hatch='/', linewidth=3)

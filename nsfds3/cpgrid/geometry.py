@@ -29,11 +29,11 @@ DOCSTRING
 import itertools as _it
 import functools
 import numpy as _np
-import time
 
 
 class Box:
     """ Elementary object to describe Cuboids or Faces. """
+
     _axnames = 'x', 'y', 'z'
 
     def __init__(self, origin, size, env, bc=None, inner=False, tag=None):
@@ -62,29 +62,10 @@ class Box:
         size = tuple(s.stop - s.start for s in slices)
         return cls(origin=origin, size=size, env=env, bc=bc, inner=inner, tag=tag)
 
-    def periodic_slice(self, stencil=11):
-        mid = int((stencil - 1) / 2)
-        sn = []
-        for i, (s, n) in enumerate(zip(self.sn, self.env)):
-            if s.start >= 0 and s.stop < n:
-                sn.append(s)
-            else:
-                P = _np.array(list(range(n - mid, n)) +
-                            list(range(n)) +
-                            list(range(mid)))
-                sn.append(tuple(P[s.start + mid:s.stop + mid]))
-        return tuple(sn)
-
     @property
     @functools.lru_cache()
     def indices(self):
-        indices = [self.make_span(r, rmax) for r, rmax in zip(self.rn, self.env)]
-        return set(_it.product(*indices))
-
-    @staticmethod
-    def make_span(r, rmax):
-        """ Return the periodic range of values, rmax being the size of the domain and r the initial range. """
-        return [i if 0 <= i < rmax else i - rmax if i >= rmax else rmax + i for i in r]
+        return set(_it.product(*self.rn))
 
     def _get_vertices(self):
 
@@ -139,12 +120,23 @@ class Box:
 
     def inner_indices(self, ax=None):
         """ Return indices. inner points except along axis (int)"""
-        #rn = [self.make_span(r, rmax) for r, rmax in zip(self.rin, self.env)]
         rn = list(self.rin)
         if ax is not None:
-            #rn[ax] = self.make_span(self.rn[ax], self.env[ax])
             rn[ax] = self.rn[ax]
         return set(_it.product(*rn))
+
+    def center(self, transform=None, ax=None):
+        """ Return physical coordinates of the center of the box (except along ax). """
+
+        if isinstance(transform, tuple):
+            center = tuple((a[c[1]] + a[c[0]]) / 2 for c, a in zip(self.cn, transform))
+        else:
+            center = tuple((c[1] + c[0]) / 2 for c in self.cn)
+
+        if isinstance(ax, int):
+            center = tuple(c for i, c in enumerate(center) if i != ax)
+
+        return center
 
     def intersection(self, other):
         """ Return intersection (point coordinate) between self and other."""
@@ -157,10 +149,6 @@ class Box:
         for s, o in zip(self.rn, other.rn):
             out.append(set(s).intersection(o))
         return all(tuple(out))
-
-    def difference(self, other):
-        """ Return symmetric difference (point coordinates) between self and other."""
-        return tuple(set(self.indices).symmetric_difference(other.indices))
 
     def issubset(self, other):
         """ Report whether other contains self."""
@@ -200,7 +188,7 @@ class Box:
     def _set_bc(self):
         """ Set bc. Will be len(origin) * 'W' by default."""
         if not self.bc:
-            self.bc = 'WWWWWW' if self.ndim == 3 else 'WWWW'
+            self.bc = '..' * self.ndim
         else:
             self.bc = self.bc.upper()
 
@@ -275,12 +263,20 @@ class Cuboid(Box):
 
         super().__init__(origin, size, env, bc=bc, inner=inner, tag=tag)
 
-        # Object id
         self.sid = self.__class__.count
         self.__class__.count += 1
 
-        # Faces
-        getattr(self, f'_set_faces_{self.ndim}d')()
+        self.face_left = Face(self, side='left')
+        self.face_right = Face(self, side='right')
+        self.face_front = Face(self, side='front')
+        self.face_back = Face(self, side='back')
+        self.faces = (self.face_left, self.face_right,
+                      self.face_front, self.face_back)
+
+        if self.ndim == 3:
+            self.face_bottom = Face(self, side='bottom')
+            self.face_top = Face(self, side='top')
+            self.faces += (self.face_bottom, self.face_top)
 
     @property
     def description(self):
@@ -296,78 +292,6 @@ class Cuboid(Box):
         chars = [''.join([attributes[c] for c in attributes.keys() if getattr(f, c)])
                  for f in self.faces]
         return '/'.join(chars)
-
-    def _set_faces_3d(self):
-        """ Set faces for cuboid. """
-        self.face_left = Face(origin=(self.cx[0], self.cy[0], self.cz[0]),
-                              size=(1, self.size[1], self.size[2]),
-                              env=self.env,
-                              side='left', bc=self.bc[0],
-                              sid=self.sid, inner=self.inner)
-
-        self.face_right = Face(origin=(self.cx[1], self.cy[0], self.cz[0]),
-                               size=(1, self.size[1], self.size[2]),
-                               env=self.env,
-                               side='right', bc=self.bc[1],
-                               sid=self.sid, inner=self.inner)
-
-
-        self.face_front = Face(origin=(self.cx[0], self.cy[0], self.cz[0]),
-                               size=(self.size[0], 1, self.size[2]),
-                               env=self.env,
-                               side='front', bc=self.bc[2],
-                               sid=self.sid, inner=self.inner)
-
-        self.face_back = Face(origin=(self.cx[0], self.cy[1], self.cz[0]),
-                              size=(self.size[0], 1, self.size[2]),
-                              env=self.env,
-                              side='back', bc=self.bc[3],
-                              sid=self.sid, inner=self.inner)
-
-        self.face_bottom = Face(origin=(self.cx[0], self.cy[0], self.cz[0]),
-                                size=(self.size[0], self.size[1], 1),
-                                env=self.env,
-                                side='bottom', bc=self.bc[4],
-                                sid=self.sid, inner=self.inner)
-
-        self.face_top = Face(origin=(self.cx[0], self.cy[0], self.cz[1]),
-                             size=(self.size[0], self.size[1], 1),
-                             env=self.env,
-                             side='top', bc=self.bc[5],
-                             sid=self.sid, inner=self.inner)
-
-        self.faces = (self.face_left, self.face_right,
-                      self.face_front, self.face_back,
-                      self.face_bottom, self.face_top)
-
-    def _set_faces_2d(self):
-        """ Set edges forrectangle. """
-        self.face_left = Face(origin=(self.cx[0], self.cy[0]),
-                              size=(1, self.size[1]),
-                              env=self.env,
-                              side='left', bc=self.bc[0],
-                              sid=self.sid, inner=self.inner)
-
-        self.face_right = Face(origin=(self.cx[1], self.cy[0]),
-                               size=(1, self.size[1]),
-                               env=self.env,
-                               side='right', bc=self.bc[1],
-                               sid=self.sid, inner=self.inner)
-
-        self.face_front = Face(origin=(self.cx[0], self.cy[0]),
-                               size=(self.size[0], 1),
-                               env=self.env,
-                               side='front', bc=self.bc[2],
-                               sid=self.sid, inner=self.inner)
-
-        self.face_back = Face(origin=(self.cx[0], self.cy[1]),
-                              size=(self.size[0], 1),
-                              env=self.env,
-                              side='back', bc=self.bc[3],
-                              sid=self.sid, inner=self.inner)
-
-        self.faces = (self.face_left, self.face_right,
-                      self.face_front, self.face_back)
 
     def __iter__(self):
         return iter(self.faces)
@@ -396,16 +320,22 @@ class Face(Box):
 
     _attributes = ['clamped', 'bounded', 'free', 'colinear', 'overlapped', 'covered', 'periodic']
 
-    def __init__(self, origin, size, env, side, bc, sid, inner=False):
-        super().__init__(origin, size, env, bc=bc, inner=inner)
+    def __init__(self, parent, side):
 
-        self.sid = sid
+        self.parent = parent
         self.side = side
         self.opposite = self._opposites[side]
-        self.axis, self.normal, self.index = self._sides[self.side]
-        self.not_axis = tuple(set(range(self.ndim)).difference((self.axis, )))
+        self.axis, self.normal, self.index = self._sides[side]
+        self.not_axis = tuple(set(range(parent.ndim)).difference((self.axis, )))
+
+        origin = tuple(c[1] if i == self.axis and self.normal == 1 else c[0] for i, c in enumerate(parent.cn))
+        size = tuple(1 if i == self.axis else s for i, s in enumerate(parent.size))
+
+        super().__init__(origin, size, parent.env, bc=self.bc, inner=parent.inner)
+
+        self.sid = parent.sid
         self.loc = self.cn[self.axis][0]
-        if inner:
+        if self.inner:
             self.normal = - self.normal
 
         self.clamped = False
@@ -415,6 +345,15 @@ class Face(Box):
         self.colinear = []
         self.overlapped = []
         self.uncentered = set()
+
+    @property
+    def bc(self):
+        return self.parent.bc[self.index]
+
+    @bc.setter
+    def bc(self, value):
+        self.parent.bc = ''.join(value if i == self.index else s
+                                 for i, s in enumerate(self.parent.bc))
 
     @property
     def free(self):
@@ -434,14 +373,16 @@ class Face(Box):
         if len(self.bc) != 1:
             raise ValueError('bc must be a 1-character str')
 
-        if any(s == 0 for s in self.size):
+        if any(s <= 0 for s in self.size):
             raise ValueError('Size of the object must be at least 1')
 
     @property
     @functools.lru_cache()
     def base_slice(self):
+        if self.inner:
+            return self.sn
         return tuple(slice(s.start - self.normal, s.stop - self.normal) if i == self.axis 
-                    else s for i, s in enumerate(self.sn))
+                        else s for i, s in enumerate(self.sn))
 
     def box(self, N=5):
         """ Return a box extending N points ahead of the object."""
@@ -461,7 +402,7 @@ class Face(Box):
         origin = tuple(origin)
         size = tuple(N if i == self.axis else s for i, s in enumerate(self.size))
         bc = ['X'] * len(self.origin) * 2
-        bc[self._sides[self.opposite][2]] = self.bc   # <--------------------------------------------------- BC Wrong 
+        bc[self._sides[self.opposite][2]] = self.bc   #  BC Wrong ?
 
         return Box(origin=origin, size=size, env=self.env, bc=''.join(bc))
 
@@ -483,6 +424,10 @@ class BoxSet:
         self.subs = subs
         self.stencil = stencil
 
+        self.faces = tuple(_it.chain(*[sub.faces for sub in subs]))
+        self.bounds = Obstacle(origin=(0, ) * len(shape), size=shape, env=shape, bc=self.bc, inner=True).faces
+        self.sids = {o.sid:o for o in self.subs}
+
     def __getitem__(self, n):
         return self.subs[n]
 
@@ -491,6 +436,12 @@ class BoxSet:
 
     def __len__(self):
         return len(self.subs)
+
+
+    def __add__(self, other):
+        if self.stencil != other.stencil or self.shape != other.shape or self.bc != other.bc:
+            raise ValueError(f'{type(self)} not compatible')
+        return type(self)(shape=self.shape, bc=self.bc, subs=self.subs + other.subs, stencil=self.stencil)
 
     def __fargs__(self):
         s = f'shape={self.shape} -- {len(self)} elements:'
@@ -525,10 +476,6 @@ class ObstacleSet(BoxSet):
     def __init__(self, shape, bc, subs=None, stencil=11):
 
         super().__init__(shape, bc=bc, subs=subs, stencil=stencil)
-
-        self.faces = tuple(_it.chain(*[sub.faces for sub in subs]))
-        self.bounds = Obstacle(origin=(0, ) * len(shape), size=shape, env=shape, bc=self.bc, inner=True).faces
-        self.sids = {o.sid:o for o in self.subs}
 
         self._update_face_description()
 
@@ -616,7 +563,7 @@ class ObstacleSet(BoxSet):
 
         # Face Overlapped by another obstacle, or colinear to another obstacle
         for f, o in faces_vs_subs:
-            if not f.clamped and not f.covered and f.intersects(o):
+            if not f.covered and f.intersects(o):
                 if f.intersects(o.faces[2*f.axis + max(0, f.normal)]):
                     f.colinear.append(o)
                 else:
