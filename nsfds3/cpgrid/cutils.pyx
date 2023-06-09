@@ -47,6 +47,20 @@ ctypedef fused integer:
     INT8
 
 
+cpdef INT8[:, ::1] is_equal(integer[:, ::1] array, int value):
+
+    cdef Py_ssize_t ix, iy
+    cdef int nx = array.shape[0]
+    cdef int ny = array.shape[1]
+    cdef INT8[:, ::1] out = np.zeros((nx, ny), dtype=np.int8)
+
+    for ix in range(nx):
+        for iy in range(ny):
+            if array[ix, iy] == value:
+                out[ix, iy] = 1
+    return out
+
+
 cpdef list get_2d_cuboids(integer[:, ::1] mask, int ax=-1, int N=-1):
 
     if N > 0 and ax == 0:

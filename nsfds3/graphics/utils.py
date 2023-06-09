@@ -58,6 +58,15 @@ import numpy as np
 
 cmap = modified_jet()
 
+def cmap_exists(name):
+    """Test if a cmap is already registered. """
+    try:
+        cm.get_cmap(name)
+    except ValueError:
+        return False
+    return True
+
+
 def mask():
 
     nodes = [-11, 0, 1, 11]

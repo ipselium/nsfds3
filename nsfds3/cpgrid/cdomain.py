@@ -176,7 +176,7 @@ class ComputationDomains:
                     m = _np.array((self._mask[..., n] == c), dtype=_np.int8)                     # To optimize ?
                     cuboids = self.get_cuboids(m, ax=n, N=mid)
                     for cub in cuboids:
-                        domains[n].append(Domain(cub['origin'], cub['size'], self.shape, tag=(n, name)))
+                        domains[n].append(Domain(cub['origin'], cub['size'], self.shape, tag=name))
 
                     pbar.update(task, advance=1,
                                 details=f'{axname} / {name} in {pbar.get_time() - ti:.2f} s')
@@ -199,52 +199,14 @@ class ComputationDomains:
             for f1, f2 in _it.product(domains[i].faces, self.bounds):
                 if f1.intersects(f2) and f1.side == f2.side:
                     f1.bc = f2.bc
+            for sub in domains[i]:
+                if 'P' in sub.bc[2*i:2*i + 2]:
+                    sub.tag = 'P'
 
-    def raw_show(self, domains=False, obstacles=False):
-
-        if not hasattr(self, '_mask'):
-            print('Free must be False')
-            return
-
-        import matplotlib.pyplot as plt
-        from matplotlib.patches import Rectangle
-        from matplotlib.colors import ListedColormap, BoundaryNorm
-
-        nodes = [-11, 0, 1, 11]
-        colors = ["mistyrose", "black", "white", "paleturquoise"]
-
-        cmap = ListedColormap(colors)
-        norm = BoundaryNorm(nodes, len(colors) - 1)
-
-        fig, axs = plt.subplots(1, 2, figsize=(15, 8), tight_layout=True)
-        for i in range(self.ndim):
-            axs[i].imshow(self._mask[..., i].T, origin='lower', cmap=cmap, norm=norm)
-            if obstacles:
-                for obs in self.obstacles:
-                    patch = Rectangle(obs.origin, *[s - 1 for s in obs.size], color='r', fill=False, linewidth=3)
-                    axs[i].add_patch(patch)
-                    rx, ry = patch.get_xy()
-                    cx = rx + patch.get_width()/2.0
-                    cy = ry + patch.get_height()/2.0
-                    msg = f'{obs.sid}\n{obs.description}'
-                    axs[i].annotate(msg, (cx, cy), color='white', weight='bold',
-                            fontsize=12, ha='center', va='center')
-
-        if domains:
-            for obs in self.xdomains:
-                patch = Rectangle(obs.origin, *[s - 1 for s in obs.size], color='b', fill=False, hatch='/', linewidth=3)
-                axs[0].add_patch(patch)
-
-            for obs in self.ydomains:
-                patch = Rectangle(obs.origin, *[s - 1 for s in obs.size], color='b', fill=False, hatch='/', linewidth=3)
-                axs[1].add_patch(patch)
-
-        plt.show()
-
-    def show(self, obstacles=True, domains=False, bounds=True, only_mesh=True):
+    def show(self, obstacles=True, domains=False, bounds=True, only_mesh=True, **kwargs):
         """ Plot 3d representation of computation domain. """
-        viewer = _graphics.CDViewer(self)
-        viewer.show(obstacles=obstacles, domains=domains, bounds=bounds, only_mesh=only_mesh)
+        viewer = _graphics.CPViewer(self)
+        viewer.show(obstacles=obstacles, domains=domains, bounds=bounds, only_mesh=only_mesh, **kwargs)
 
     def _free(self):
         try:

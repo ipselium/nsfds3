@@ -68,7 +68,6 @@ class Box:
         return set(_it.product(*self.rn))
 
     def _get_vertices(self):
-
         vertices = self.sort_vertices([tuple(i) for i in _it.product(*self.cn)])
         return _np.array(vertices, dtype=_np.int16).T
 
@@ -126,15 +125,15 @@ class Box:
         return set(_it.product(*rn))
 
     def center(self, transform=None, ax=None):
-        """ Return physical coordinates of the center of the box (except along ax). """
-
-        if isinstance(transform, tuple):
-            center = tuple((a[c[1]] + a[c[0]]) / 2 for c, a in zip(self.cn, transform))
+        """ Return physical coordinates of the center of the box along ax. """
+        if isinstance(transform, (tuple, list)) and isinstance(ax, (tuple, list)):
+            start = tuple(c[0] for i, c in enumerate(self.cn) if i in ax)
+            stop = tuple(c[1] for i, c in enumerate(self.cn) if i in ax)
+            center = tuple((a[stop] + a[start]) / 2 for a in transform)
         else:
             center = tuple((c[1] + c[0]) / 2 for c in self.cn)
-
-        if isinstance(ax, int):
-            center = tuple(c for i, c in enumerate(center) if i != ax)
+            if isinstance(ax, (tuple, list)):
+                center = tuple(c for i, c in enumerate(center) if i in ax)
 
         return center
 
@@ -172,13 +171,13 @@ class Box:
 
         origin = tuple(o for i, o in enumerate(self.origin) if i != axis)
         size = tuple(s for i, s in enumerate(self.size) if i != axis)
+        env = tuple(s for i, s in enumerate(self.env) if i != axis)
         bc = ''.join([v for i, v in enumerate(self.bc) if i not in [2*axis, 2*axis + 1]])
 
-        return cls(origin, size, env=self.env, bc=bc)
+        return cls(origin, size, env=env, bc=bc)
 
     def _check_args(self):
         """ Check input arguments."""
-
         if any(len(self.bc) != 2 * len(s) for s in [self.origin, self.size, self.env]):
             raise ValueError('origin, size, env and bc must have coherent dimensions')
 
@@ -488,7 +487,8 @@ class ObstacleSet(BoxSet):
         self.free = tuple(f for f in self.faces if f.free)
         self.uncentered = tuple(f for f in self.faces if not f.clamped and not f.covered)
 
-        self.check_boxes()
+        if self.subs:
+            self.check_boxes()
 
     def check_boxes(self):
         """ Check that :
@@ -576,16 +576,17 @@ class ObstacleSet(BoxSet):
 
     def flatten(self, axis, index=0):
         """ Return a flat version of the object. """
-        if not self.volumic:
+        if self.ndim != 3:
             raise TypeError('Already flat')
 
         obstacles = []
         for obs in self:
-            if index in obs.ranges[axis]:
+            if index in obs.rn[axis]:
                 obstacles.append(obs.flatten(axis))
 
+        bc = ''.join([v for i, v in enumerate(self.bc) if i not in [2*axis, 2*axis + 1]])
         shape = tuple(o for i, o in enumerate(self.shape) if i != axis)
-        obsset = ObstacleSet(shape=shape, subs=obstacles, stencil=self.stencil)
+        obsset = ObstacleSet(shape=shape, bc=bc, subs=obstacles, stencil=self.stencil)
         obsset.__volumic = self
 
         return obsset

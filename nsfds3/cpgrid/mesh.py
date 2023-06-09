@@ -96,23 +96,25 @@ class CartesianGrid:
     mesh_type = "Cartesian"
 
     def __init__(self, shape, steps=None, origin=None, bc=None, obstacles=None,
-                 nbz=20, stretch_factor=2, stretch_order=3, stencil=11):
+                 nbz=20, stretch_factor=2, stretch_order=3, stencil=11, free=True):
 
         self.shape = shape
         self.steps = steps
         self.origin = origin
+        self.ndim = len(shape)
         self.bc = bc
         self.obstacles = obstacles
         self.nbz = nbz
         self.stretch_factor = stretch_factor
         self.stretch_order = stretch_order
         self.stencil = stencil
+        self.free = free
 
         self.check_arguments_dims()
         self.set_attributes(('nx', 'ny', 'nz'), self.shape)
         self.set_attributes(('dx', 'dy', 'dz'), self.steps)
 
-        self.obstacles = ObstacleSet(self.shape, self.obstacles, stencil=self.stencil)
+        self.obstacles = ObstacleSet(self.shape, self.bc, self.obstacles, stencil=self.stencil)
 
         self.check_bc()
         self.check_grid()
@@ -186,18 +188,23 @@ class CartesianGrid:
         """ Set flag to specify if axis has regular (s) or irregular (v) spacing. """
         self.flag_x = 's' if np.allclose(np.diff(self.x), self.dx) else 'v'
         self.flag_y = 's' if np.allclose(np.diff(self.y), self.dy) else 'v'
-        if self.volumic:
+        if self.ndim == 3:
             self.flag_z = 's' if np.allclose(np.diff(self.z), self.dz) else 'v'
 
     def find_subdomains(self):
         """ Divide the computation domain into subdomains. """
 
         self._computation_domains = ComputationDomains(self.shape, self.obstacles,
-                                                       self.bc, self.nbz, self.stencil)
+                                                       self.bc, self.nbz, self.stencil, 
+                                                       free=self.free)
 
         self.bounds = self._computation_domains.bounds
         self.buffer = self._computation_domains.buffer
-        self.domains = self._computation_domains.domains
+        self.cdomains = self._computation_domains.cdomains
+        self.xdomains = self._computation_domains.xdomains
+        self.ydomains = self._computation_domains.ydomains
+        if self.ndim == 3:
+            self.zdomains = self._computation_domains.zdomains
 
     @property
     def stretched_axis(self):
@@ -207,7 +214,7 @@ class CartesianGrid:
             s += 'x'
         if self.flag_y == 'v':
             s += 'y'
-        if self.volumic:
+        if self.ndim == 3:
             if self.flag_z == 'v':
                 s += 'z'
         return ' & '.join(list(s))
@@ -215,25 +222,20 @@ class CartesianGrid:
     @property
     def paxis(self):
         """ Physical axis. """
-        if self.volumic:
+        if self.ndim == 3:
             return np.meshgrid(self.x, self.y, self.z, indexing='ij')
         return np.meshgrid(self.x, self.y, indexing='ij')
 
     @property
     def axis(self):
         """ Numerical axis. """
-        if self.volumic:
+        if self.ndim == 3:
             return self.x, self.y, self.z
         return self.x, self.y
 
-    @property
-    def volumic(self):
-        """ Return True if mesh is 3d. """
-        return len(self.shape) == 3
-
     def get_obstacles(self):
         """ Get obstacles coordinates. """
-        return [o.coords for o in self.obstacles]
+        return [o.cn for o in self.obstacles]
 
     def make_grid(self):
         """ Build grid. """
@@ -258,7 +260,7 @@ class CartesianGrid:
         self.x -= self.x[self.origin[0]]
         self.y -= self.y[self.origin[1]]
 
-        if self.volumic:
+        if self.ndim == 3:
             self.z = np.arange(self.nz, dtype=float) - int(self.nz/2)
             if self.bc[4] == 'A':
                 self.z[:self.nbz] *= stretch[::-1]
@@ -358,7 +360,7 @@ class CurvilinearGrid(CartesianGrid):
 
     @property
     def paxis(self):
-        if self.volumic:
+        if self.ndim == 3:
             return self.xp, self.yp, self.zp
         return self.xp, self.yp
 
@@ -375,7 +377,7 @@ class CurvilinearGrid(CartesianGrid):
         super().make_grid()
 
         # Pysical coordinates & Jacobian
-        if self.volumic:
+        if self.ndim == 3:
             x, y, z = np.meshgrid(self.x, self.y, self.z, indexing='ij')
             self.xp, self.yp, self.zp = self.curvilinear_func(x, y, z)
             J = curvilinear3d_trans(self.xp, self.yp, self.zp, x, y, z)
@@ -392,7 +394,7 @@ class CurvilinearGrid(CartesianGrid):
         """ Check metrics. """
         msg = f'Warning : Metric invariants > {rtol}\n'
 
-        if self.volumic:
+        if self.ndim == 3:
             invariants = curvilinear3d_metrics(self.J, self.dx_du, self.dx_dv, self.dx_dw,
                                                        self.dy_du, self.dy_dv, self.dy_dw,
                                                        self.dz_du, self.dz_dv, self.dz_dw)
@@ -400,7 +402,7 @@ class CurvilinearGrid(CartesianGrid):
             invariants = curvilinear2d_metrics(self.J, self.dx_du, self.dx_dv,
                                                  self.dy_du, self.dy_dv)
 
-        self.invariants = [np.max(np.abs(inv[self.buffer.slices])) for inv in invariants]
+        self.invariants = [np.max(np.abs(inv[self.buffer.sn])) for inv in invariants]
         if not np.allclose(np.array(self.invariants), 0., rtol=rtol):
             inv = [f'Max {ax}-invariant {inv}\n' for ax, inv in zip(('x', 'y', 'z'), self.invariants)]
             msg += ''.join(inv)

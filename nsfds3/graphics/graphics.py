@@ -113,7 +113,7 @@ class MeshViewer:
     def __init__(self, msh):
 
         self.msh = msh
-        self.volumic = self.msh.volumic
+        self.ndim = len(msh.shape)
         self.axis = self.msh.paxis
 
         for name, ax in zip(('x', 'y', 'z'), self.axis):
@@ -123,7 +123,7 @@ class MeshViewer:
 
         kwargs = dict_update(self.dkwargs, kwargs)
 
-        if self.volumic:
+        if self.ndim == 3:
             fig, *_ = self._frame3d(**kwargs)
         else:
             fig, *_ = self._frame2d(**kwargs)
@@ -259,7 +259,7 @@ class MeshViewer:
         **kwargs : dict
             Keyword Arguments of matplotlib.patches.Rectangle
         """
-        dkwargs = dict(linewidth=3, edgecolor='k', facecolor=None, alpha=1., fill=False, hatch=None)
+        dkwargs = dict(linewidth=3, edgecolor='k', facecolor=None, alpha=1., fill=False, hatch=None, annotate=False)
         kwargs = dict_update(dkwargs, kwargs)
         annotate = kwargs.pop('annotate')
 
@@ -286,7 +286,7 @@ class MeshViewer:
             patch = _patches.PathPatch(path, **kwargs)
             ax.add_patch(patch)
             if annotate:
-                ax.annotate(f'{sub.sid}', sub.center(transform=axes),
+                ax.annotate(f'{sub.sid}', sub.center(ax=indices, transform=(u, v)),
                             ha='center', va='center',
                             color='gray', weight='bold', style='italic', fontsize=8)
 
@@ -337,11 +337,14 @@ class CPViewer(MeshViewer):
 
         self.cpdomain = cpdomain
         self.ndim = cpdomain.ndim
+
+        self.mask = cpdomain._mask
         self.obstacles = cpdomain.obstacles
         self.xdomains = cpdomain.xdomains
         self.ydomains= cpdomain.ydomains
-        self.mask = cpdomain._mask
-        self.volumic = self.ndim == 3
+        if self.ndim == 3:
+            self.zdomains = cpdomain.zdomains
+
         self.axis = tuple(_np.arange(0, n) for n in self.cpdomain.shape)
         self.axis = _np.meshgrid(*self.axis, indexing='ij')
         self.cmap, self.norm = self.mask_cmap(cpdomain.stencil)
@@ -376,9 +379,42 @@ class CPViewer(MeshViewer):
 
     def _frame3d(self, **kwargs):
 
-        fig, axs = _plt.subplots(1, self.ndim, figsize=(15, 8), tight_layout=True)
+        domains = self.xdomains + self.ydomains + self.zdomains
+        colorscales = [['blue', 'cyan'], ['red', 'magenta'], ['green', 'yellow']]
 
-        return fig, axs
+        fig = _go.Figure()
+        data = []
+        for sub in self.obstacles:
+            data.append(_go.Mesh3d(x=sub.vertices[0],
+                                y=sub.vertices[1],
+                                z=sub.vertices[2],
+                                colorscale=['black', 'gray'],
+                                intensity=_np.linspace(0, 1, 8, endpoint=True),
+                                name=f'o{sub.sid}',
+                                opacity=1,
+                                alphahull=0,
+                                showscale=False,
+                                flatshading=True   # to hide the triangles
+                                ))
+
+        for sub in [s for s in domains if s.tag[1] in ["p", "m"]]:
+            data.append(_go.Mesh3d(x=sub.vertices[0],
+                                y=sub.vertices[1],
+                                z=sub.vertices[2],
+                                colorscale=colorscales[sub.tag[0]],
+                                intensity=_np.linspace(0, 1, 8, endpoint=True),
+                                name=f'o{sub.sid}',
+                                opacity=1,
+                                alphahull=0,
+                                showscale=False,
+                                flatshading=True   # to hide the triangles
+                                ))
+
+        fig.update_layout(width=800, height=600, font_size=11,  scene_aspectmode="data", 
+                        scene_camera_eye=dict (x=1.45, y=1.45, z=1), template="none")
+        fig.add_traces(data)
+
+        return fig, None
 
 
 class MPLViewer(MeshViewer):
@@ -446,7 +482,9 @@ class MPLViewer(MeshViewer):
 
         # Colorbar
         midpoint = _np.nanmean(var) if norm.vmin > 0 and norm.vmax > 0 else 0
-        if abs(norm.vmin - midpoint) / norm.vmax > 0.33:
+        if norm.vmax == 0:
+            ticks = []
+        elif abs(norm.vmin - midpoint) / norm.vmax > 0.33:
             ticks = [norm.vmin, midpoint, norm.vmax]
         else:
             ticks = [midpoint, norm.vmax]
@@ -550,7 +588,7 @@ class MPLViewer(MeshViewer):
 
             for i, var in track(data, description='Making movie...', disable=self.cfg.quiet):
                 axes = fig.get_axes()
-                if self.msh.volumic:
+                if self.msh.ndim == 3:
                     if isinstance(im[0], PcolorImage):    # Pcolorimage object if non-rectangle mesh elements
                         im[0].set_data(self.x, self.y, var[:-1, :-1, self.i_xy])
                         im[1].set_data(self.x, self.z, var[:-1, self.i_xz, :-1])
@@ -640,7 +678,7 @@ class CDViewer:
 
     def __init__(self, obj):
         self.shape = obj.shape
-        self.volumic = len(self.shape) == 3
+        self.ndim = len(self.shape)
         self.obstacles = obj.obstacles
         self.traces = []
 
@@ -687,7 +725,7 @@ class CDViewer:
                       'fillpattern': {'shape': 'x'},
                       'line': {'color': 'rgba(0, 0, 0)'}}
 
-        if not self.volumic:
+        if self.ndim != 3:
             for obs in obj:
                 ix, iy = obs.vertices
                 traces.append(_go.Scatter(x=ax1[ix, ], y=ax2[iy, ],
@@ -711,7 +749,7 @@ class CDViewer:
             - Take one division over N(=4)
             - evolution of the (dx, dy, dz) steps
         """
-        if self.volumic:
+        if self.ndim == 3:
             fig = self._grid3d(obstacles=obstacles, domains=domains, bounds=bounds,
                                only_mesh=only_mesh)
             width, height = fig_scale((self.x, self.z), (self.y, self.z), ref=dpi)

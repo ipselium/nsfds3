@@ -211,7 +211,7 @@ class FDTD:
             self.sfile.create_dataset(f're_it{self.cfg.it}',
                                       data=self.fld.re,
                                       compression=self.cfg.comp)
-            if self.msh.volumic:
+            if self.msh.ndim == 3:
                 self.sfile.create_dataset(f'rw_it{self.cfg.it}',
                                           data=self.fld.rw,
                                           compression=self.cfg.comp)
@@ -220,7 +220,7 @@ class FDTD:
                 self.sfile.create_dataset(f'wz_it{self.cfg.it}',
                                         data=self.fld.wz,
                                         compression=self.cfg.comp)
-                if self.msh.volumic:
+                if self.msh.ndim == 3:
                     self.sfile.create_dataset(f'wx_it{self.cfg.it}',
                                             data=self.fld.wx,
                                             compression=self.cfg.comp)
@@ -249,7 +249,7 @@ class FDTD:
 
         self.sfile = _h5py.File(self.cfg.datafile, 'w')
         self.sfile.attrs['vorticity'] = self.cfg.vrt
-        self.sfile.attrs['volumic'] = self.msh.volumic
+        self.sfile.attrs['ndim'] = self.msh.ndim
         self.sfile.attrs['p0'] = self.cfg.p0
         self.sfile.attrs['gamma'] = self.cfg.gamma
 
@@ -269,7 +269,7 @@ class FDTD:
         self.sfile.attrs['mesh'] = self.cfg.mesh
         self.sfile.attrs['bc'] = self.cfg.bc
         self.sfile.attrs['itmax'] = self.cfg.it
-        if self.msh.volumic:
+        if self.msh.ndim == 3:
             self.sfile.attrs['dz'] = self.msh.dz
             self.sfile.attrs['nz'] = self.msh.nz
             self.sfile.create_dataset('z', data=self.msh.z, compression=self.cfg.comp)
@@ -285,7 +285,7 @@ class FDTD:
             self.sfile.create_dataset('yn', data=self.msh.yn, compression=self.cfg.comp)
             self.sfile.create_dataset('xp', data=self.msh.xp, compression=self.cfg.comp)
             self.sfile.create_dataset('yp', data=self.msh.yp, compression=self.cfg.comp)
-            if self.msh.volumic:
+            if self.msh.ndim == 3:
                 self.sfile.create_dataset('zn', data=self.msh.yn, compression=self.cfg.comp)
                 self.sfile.create_dataset('zp', data=self.msh.yp, compression=self.cfg.comp)
 

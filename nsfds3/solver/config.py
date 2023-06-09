@@ -444,7 +444,7 @@ class CfgSetup:
 
         if self.obstacles:
             self.obstacles = [obs.flatten(self.flat_ax) for obs in self.obstacles
-                              if self.flat_idx in obs.ranges[self.flat_ax] and obs.volumic]
+                              if self.flat_idx in obs.rn[self.flat_ax] and obs.ndim == 3]
 
         if self.prb:
             self.prb = [[c for i, c in enumerate(prb) if i != self.flat_ax] for prb in self.prb]
