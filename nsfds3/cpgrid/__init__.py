@@ -26,10 +26,10 @@ DOCSTRING
 -----------
 """
 
-from .mesh import build, CartesianGrid, CurvilinearGrid
+from .mesh import build_mesh, CartesianGrid, CurvilinearGrid
 from .cdomain import ComputationDomains
-from .geometry import Obstacle, ObstacleSet, Domain, DomainSet
+from .geometry import Obstacle, ObstacleSet
+from .templates import TestCases
 
-__all__ = ['build', 'templates', 'CartesianGrid', 'CurvilinearGrid',
-           'ComputationDomains',
-           'ObstacleSet', 'Obstacle', 'DomainSet', 'Domain']
+__all__ = ['build_mesh', 'TestCases', 'CartesianGrid', 'CurvilinearGrid',
+           'ComputationDomains', 'ObstacleSet', 'Obstacle']

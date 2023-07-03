@@ -163,18 +163,7 @@ class Box:
             out.append(set(s).issuperset(o))
         return all(tuple(out))
 
-    def flatten(self, axis):
-        """ Return flat version of the object."""
-        cls = type(self)
-        if self.ndim == 2:
-            raise ValueError(f'{cls.__name__} already flat')
 
-        origin = tuple(o for i, o in enumerate(self.origin) if i != axis)
-        size = tuple(s for i, s in enumerate(self.size) if i != axis)
-        env = tuple(s for i, s in enumerate(self.env) if i != axis)
-        bc = ''.join([v for i, v in enumerate(self.bc) if i not in [2*axis, 2*axis + 1]])
-
-        return cls(origin, size, env=env, bc=bc)
 
     def _check_args(self):
         """ Check input arguments."""
@@ -292,6 +281,24 @@ class Cuboid(Box):
                  for f in self.faces]
         return '/'.join(chars)
 
+    def flatten(self, axis):
+        """ Return flat version of the object."""
+        cls = type(self)
+        if self.ndim == 2:
+            raise ValueError(f'{cls.__name__} already flat')
+
+        origin = tuple(o for i, o in enumerate(self.origin) if i != axis)
+        size = tuple(s for i, s in enumerate(self.size) if i != axis)
+        env = tuple(s for i, s in enumerate(self.env) if i != axis)
+        bc = ''.join([v for i, v in enumerate(self.bc) if i not in [2*axis, 2*axis + 1]])
+        obj = cls(origin, size, env=env, bc=bc)
+        if "V" in obj.bc:
+            for face in [f for f in obj.faces if f.bc == 'V']:
+                old_face = getattr(self, f'face_{face.side}')
+                face.set_source(old_face.source_function, old_face.source_profile)
+
+        return obj
+
     def __iter__(self):
         return iter(self.faces)
 
@@ -337,6 +344,9 @@ class Face(Box):
         if self.inner:
             self.normal = - self.normal
 
+        self.profile = "sine"
+        self.evolution = _np.array([])
+
         self.clamped = False
         self.periodic = False
         self.bounded = False
@@ -344,6 +354,26 @@ class Face(Box):
         self.colinear = []
         self.overlapped = []
         self.uncentered = set()
+
+    def set_source(self, func, profile='tukey'):
+        """ Setup a wall source.
+
+        Parameters
+        ----------
+        func : function
+            Function that takes (Nt, dt) as input arguments, where Nt is the
+            number of time iterations and dt the timestep and must return an
+            1d ndarray containing Nt points that describe the time evolution
+            of the wall source.
+        profile : str, 'tukey' by default.
+            Spacial profile. must be "sine" or "tukey"
+        """
+        self.source_evolution = _np.array([])
+        self.source_function = func
+        if profile.lower() not in ['sine', 'tukey']:
+            self.source_profile = 'tukey'
+        else:
+            self.source_profile = profile.lower()
 
     @property
     def bc(self):
@@ -412,6 +442,12 @@ class Face(Box):
 
         return s
 
+    def __getstate__(self):
+        attributes = self.__dict__.copy()
+        # can't picke external function, so delete it from instance...
+        if hasattr(self, 'source_function'):
+            del attributes['source_function']
+        return attributes
 
 class BoxSet:
 
@@ -435,7 +471,6 @@ class BoxSet:
 
     def __len__(self):
         return len(self.subs)
-
 
     def __add__(self, other):
         if self.stencil != other.stencil or self.shape != other.shape or self.bc != other.bc:

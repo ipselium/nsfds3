@@ -32,45 +32,19 @@ import sys
 from nsfds3.cpgrid import templates as _tplt
 
 
-def get_obstacle(cfg):
+def get_func(module, name):
     """ Get obstacle from custom file or fdgrid templates. """
 
-    if cfg.geofile not in cfg.none:
-        try:
-            sys.path.append(os.path.dirname(cfg.geofile))
-            custom = __import__(os.path.basename(cfg.geofile).split('.')[0])
-            obstacle = getattr(custom, cfg.geoname)(cfg.shape)
-        except (AttributeError, ImportError):
-            obstacle = []
+    if os.path.isfile(module):
+        sys.path.append(os.path.dirname(module))
+        custom = __import__(os.path.basename(module).split('.')[0])
     else:
-        try:
-            template = _tplt.TestCases(cfg.shape, stencil=11)
-            obstacle = getattr(template, cfg.geoname)
-        except AttributeError:
-            obstacle = []
-    return obstacle
+        custom = _tplt.TestCases
 
-
-def get_curvilinear(cfg):
-    """ Get curvilinear fonction from custom file or fdgrid templates. """
-
-    if cfg.geofile not in cfg.none:
-        try:
-            sys.path.append(os.path.dirname(cfg.geofile))
-            custom = __import__(os.path.basename(cfg.geofile).split('.')[0])
-            fcurv = getattr(custom, cfg.curvname)
-            cfg.curvflag = True
-        except (AttributeError, ImportError):
-            cfg.curvflag = False
-            fcurv = None
-    else:
-        try:
-            fcurv = getattr(_tplt, cfg.curvname)
-            cfg.curvflag = True
-        except AttributeError:
-            cfg.curvflag = False
-            fcurv = None
-    return fcurv
+    try:
+        return getattr(custom, name)
+    except AttributeError:
+        return None
 
 
 def get_wall_function(cfg, name):

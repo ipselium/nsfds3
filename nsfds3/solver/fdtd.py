@@ -73,6 +73,10 @@ class FDTD:
         else:
             self.timings = self.cfg.timings
 
+        # Initialize wall sources
+        for face in [f for f in msh.obstacles.faces if f.bc == "V"]:
+            face.source_evolution = face.source_function(cfg.nt, cfg.dt)
+
         # Initialize solver
         self.fld = Fields(self.cfg, self.msh)
         self.efluxes = EulerianFluxes(self.fld)
@@ -86,6 +90,8 @@ class FDTD:
             self.probes = _np.zeros((len(cfg.prb), cfg.ns))
         if self.cfg.vrt:
             self.wxyz = Vorticity(self.fld)
+
+
 
         # Initialize save
         self._init_save()
@@ -266,7 +272,7 @@ class FDTD:
         self.sfile.attrs['ns'] = self.cfg.ns
         self.sfile.attrs['rho0'] = self.cfg.rho0
         self.sfile.attrs['nbz'] = self.cfg.nbz
-        self.sfile.attrs['mesh'] = self.cfg.mesh
+        self.sfile.attrs['mesh'] = self.msh.mesh_type
         self.sfile.attrs['bc'] = self.cfg.bc
         self.sfile.attrs['itmax'] = self.cfg.it
         if self.msh.ndim == 3:
@@ -279,14 +285,14 @@ class FDTD:
         self.sfile.create_dataset('probe_values', data=probes,
                                   compression=self.cfg.comp)
 
-        if self.cfg.mesh == 'curvilinear':
+        if self.msh.mesh_type.lower() == 'curvilinear':
             self.sfile.create_dataset('J', data=self.msh.J, compression=self.cfg.comp)
-            self.sfile.create_dataset('xn', data=self.msh.xn, compression=self.cfg.comp)
-            self.sfile.create_dataset('yn', data=self.msh.yn, compression=self.cfg.comp)
+            #self.sfile.create_dataset('xn', data=self.msh.xn, compression=self.cfg.comp)
+            #self.sfile.create_dataset('yn', data=self.msh.yn, compression=self.cfg.comp)
             self.sfile.create_dataset('xp', data=self.msh.xp, compression=self.cfg.comp)
             self.sfile.create_dataset('yp', data=self.msh.yp, compression=self.cfg.comp)
             if self.msh.ndim == 3:
-                self.sfile.create_dataset('zn', data=self.msh.yn, compression=self.cfg.comp)
+                #self.sfile.create_dataset('zn', data=self.msh.yn, compression=self.cfg.comp)
                 self.sfile.create_dataset('zp', data=self.msh.yp, compression=self.cfg.comp)
 
     def show(self, view='p', vmin=None, vmax=None, **kwargs):

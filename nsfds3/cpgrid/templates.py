@@ -30,43 +30,76 @@ The `templates` module provides a collection of examples to :
 -----------
 """
 
+import numpy as _np
+from types import FunctionType
 from nsfds3.cpgrid.geometry import Obstacle
+
+
+def create_geometry(shape, origins, sizes, bc=None):
+    """ Obstacles separated"""
+    obstacles = []
+    if not bc:
+        bc = ['W' * 2 * len(shape), ] * len(origins)
+
+    for origin, size, _bc in zip(origins, sizes, bc):
+        obstacles.append(Obstacle(origin=origin, size=size, env=shape, bc=_bc))
+
+    return obstacles
 
 
 class TestCases:
     """ Collection of test cases for obstacle arrangements. """
 
-    def __init__(self, shape, stencil=11):
-        self.shape = shape
-        self.stencil = stencil
-        self.thresh = self.stencil * 2 + 1
-
-    def create_geometry(self, origins, sizes, bc=None):
-        """ Obstacles separated"""
-        obstacles = []
-        if not bc:
-            bc = ['W' * 2 * len(self.shape), ] * len(origins)
-
-        for origin, size, _bc in zip(origins, sizes, bc):
-            obstacles.append(Obstacle(origin=origin, size=size, env=self.shape, bc=_bc))
-
-        return obstacles
-
+    @classmethod
     @property
-    def all(self):
-        """ Return a list of all test cases. """
-        return [self.empty, self.single, self.edges,
-                self.superimposed1, self.superimposed2,
-                self.overlapped1, self.overlapped2,
-                self.Lcell, self.Tcell, self.Ocell]
+    def all(cls):
+        methods = dir(cls)
+        methods.remove('all')
+        return [getattr(cls, m) for m in methods
+                if not m.startswith('_') and not m.startswith('curv') and
+                type(getattr(cls, m)) == FunctionType]
 
-    @property
-    def base(self):
+    @staticmethod
+    def empty(shape, stencil=11):
+        """ Empty domain. """
+        conf = {'origins': [], 'sizes': []}
+        return create_geometry(shape, **conf)
+
+    @staticmethod
+    def single(shape, stencil=11):
+        """ Single obstacle. """
+
+        thresh = stencil * 2 + 1
+
+        if len(shape) == 2:
+            conf = {'origins': [(thresh, ) * 2, ],
+                    'sizes': [(40, ) * 2, ]}
+        else:
+            conf = {'origins': [(thresh, ) * 3, ],
+                    'sizes': [(40, ) * 3, ]}
+        return create_geometry(shape, **conf)
+
+    @staticmethod
+    def single_source(shape, stencil=11):
+        """ Single obstacle. """
+        import numpy as np
+
+        def sine(Nt, dt):
+            t = np.linspace(0, Nt * dt, Nt + 1)
+            f = 1 / (50 * dt)
+            amp = 1
+            return amp * np.sin(2 * np.pi * f * t)
+
+        thresh = stencil * 2 + 1
+        obs = Obstacle(origin=(thresh, ) * len(shape), size=(40, ) * len(shape), env=shape, bc='WVWW' + 2 * (len(shape) - 2) * 'W')
+        obs.face_right.set_source(sine, 'sine')
+        return [obs, ]
+
+    @staticmethod
+    def base(shape, stencil=11):
         """ Base geometry. """
 
-        shape = self.shape
-
-        if len(self.shape) == 2:
+        if len(shape) == 2:
             conf = {'origins': [(0, 80), (10, 95),                          # Two overlapped with one at bound location
                                 (11, 50), (20, 65),                         # Two overlapped
                                 (0, 11), (10, 24),                          # Two side to side with one at bound location
@@ -114,45 +147,31 @@ class TestCases:
                               (15, 15, 15), (15, 15, 15),
                               (26, 40, 15), (21, 20, 15)
                               ]}
-        return self.create_geometry(**conf)
+        return create_geometry(shape, **conf)
 
-    @property
-    def empty(self):
-        """ Empty domain. """
-        conf = {'origins': [], 'sizes': []}
-        return self.create_geometry(**conf)
-
-    @property
-    def single(self):
-        """ Single obstacle. """
-
-        if len(self.shape) == 2:
-            conf = {'origins': [(self.thresh, ) * 2, ],
-                    'sizes': [(40, ) * 2, ]}
-        else:
-            conf = {'origins': [(self.thresh, ) * 3, ],
-                    'sizes': [(40, ) * 3, ]}
-        return self.create_geometry(**conf)
-
-    @property
-    def edges(self):
+    @staticmethod
+    def edges(shape, stencil=11):
         """ All possible singles... """
-        height = 2 * self.thresh
-        if any(s < (3 * height) + 3 * self.thresh for s in self.shape):
+
+        thresh = stencil * 2 + 1
+        height = 2 * thresh
+
+        if any(s < (3 * height) + 3 * thresh for s in shape):
             raise Exception('domain too small for this test case')
 
-        mid = [int(self.shape[i] / 2) - int(height / 2)
-               for i in range(len(self.shape))]
-        if len(self.shape) == 2:
+        mid = [int(shape[i] / 2) - int(height / 2)
+               for i in range(len(shape))]
+
+        if len(shape) == 2:
             conf = {'origins': [[0, 0],
                                 [mid[0], 0],
                                 [0, mid[1]],
                                 [mid[0], mid[1]],
-                                [self.shape[0] - height, 0],
-                                [0, self.shape[1] - height],
-                                [mid[0], self.shape[1] - height],
-                                [self.shape[0] - height, mid[1]],
-                                [self.shape[0] - height, self.shape[1] - height],
+                                [shape[0] - height, 0],
+                                [0, shape[1] - height],
+                                [mid[0], shape[1] - height],
+                                [shape[0] - height, mid[1]],
+                                [shape[0] - height, shape[1] - height],
                                ],
                     'sizes': 9 * [[height, height], ]}
         else:
@@ -164,179 +183,214 @@ class TestCases:
                                 [mid[0], 0, mid[2]],
                                 [0, mid[1], mid[2]],
                                 [mid[0], mid[1], mid[2]],
-                                [self.shape[0] - height, 0, 0],
-                                [0, self.shape[1] - height, 0],
-                                [0, 0, self.shape[2] - height],
-                                [0, self.shape[1] - height, self.shape[2] - height],
-                                [self.shape[0] - height, 0, self.shape[2] - height],
-                                [self.shape[0] - height, self.shape[1] - height, 0],
-                                [self.shape[0] - height, self.shape[1] - height, self.shape[2] - height],
-                                [mid[0], self.shape[1] - height, 0],
-                                [mid[0], 0, self.shape[2] - height],
-                                [0, mid[1], self.shape[2] - height],
-                                [self.shape[0] - height, mid[1], 0],
-                                [0, self.shape[1] - height, mid[2]],
-                                [self.shape[0] - height, 0, mid[2]],
-                                [self.shape[0] - height, mid[1], mid[2]],
-                                [mid[0], self.shape[1] - height, mid[2]],
-                                [mid[0], mid[1], self.shape[2] - height],
-                                [mid[0], self.shape[1] - height, self.shape[2] - height],
-                                [self.shape[0] - height, mid[1], self.shape[2] - height],
-                                [self.shape[0] - height, self.shape[1] - height, mid[2]]],
+                                [shape[0] - height, 0, 0],
+                                [0, shape[1] - height, 0],
+                                [0, 0, shape[2] - height],
+                                [0, shape[1] - height, shape[2] - height],
+                                [shape[0] - height, 0, shape[2] - height],
+                                [shape[0] - height, shape[1] - height, 0],
+                                [shape[0] - height, shape[1] - height, shape[2] - height],
+                                [mid[0], shape[1] - height, 0],
+                                [mid[0], 0, shape[2] - height],
+                                [0, mid[1], shape[2] - height],
+                                [shape[0] - height, mid[1], 0],
+                                [0, shape[1] - height, mid[2]],
+                                [shape[0] - height, 0, mid[2]],
+                                [shape[0] - height, mid[1], mid[2]],
+                                [mid[0], shape[1] - height, mid[2]],
+                                [mid[0], mid[1], shape[2] - height],
+                                [mid[0], shape[1] - height, shape[2] - height],
+                                [shape[0] - height, mid[1], shape[2] - height],
+                                [shape[0] - height, shape[1] - height, mid[2]]],
                     'sizes': 27 * [[height, height, height], ]}
-        return self.create_geometry(**conf)
+        return create_geometry(shape, **conf)
 
-    @property
-    def superimposed1(self):
-        """ Two obstacles side to side. 
+    @staticmethod
+    def superimposed1(shape, stencil=11):
+        """ Two obstacles side to side.
         __________
         |   ||   |
         |___||___|
 
         """
-        height = 2 * self.thresh
-        if len(self.shape) == 2:
-            conf = {'origins': [(self.thresh, self.thresh),
-                                (self.thresh, self.thresh + height - 1)],
+
+        thresh = stencil * 2 + 1
+        height = 2 * thresh
+
+        if len(shape) == 2:
+            conf = {'origins': [(thresh, thresh),
+                                (thresh, thresh + height - 1)],
                     'sizes': [(height, height), (height, height)]}
         else:
-            conf = {'origins': [(self.thresh, self.thresh, self.thresh),
-                                (self.thresh, self.thresh, self.thresh + height - 1)],
+            conf = {'origins': [(thresh, thresh, thresh),
+                                (thresh, thresh, thresh + height - 1)],
                     'sizes': [(height, height, height),
                               (height, height, height)]}
-        return self.create_geometry(**conf)
+        return create_geometry(shape, **conf)
 
-    @property
-    def superimposed2(self):
+    @staticmethod
+    def superimposed2(shape, stencil=11):
         """ Two obstacles of different height side to side.
         __________
         |   ||   |
         |   ||___|
         |___|
-         """
-        height = 2 * self.thresh
-        if len(self.shape) == 2:
-            conf = {'origins': [(self.thresh, self.thresh),
-                                (2 * self.thresh, self.thresh + height - 1)],
-                    'sizes': [(2 * height, height),
-                              (height + self.thresh, height)]}
-        else:
-            conf = {'origins': [(self.thresh, self.thresh, self.thresh),
-                                (2 * self.thresh, self.thresh, self.thresh + height - 1)],
-                    'sizes': [(2 * height, 2 * height, height),
-                              (height + self.thresh, height, height)]}
-        return self.create_geometry(**conf)
+        """
 
-    @property
-    def Lcell(self):
+        thresh = stencil * 2 + 1
+        height = 2 * thresh
+
+        if len(shape) == 2:
+            conf = {'origins': [(thresh, thresh),
+                                (2 * thresh, thresh + height - 1)],
+                    'sizes': [(2 * height, height),
+                              (height + thresh, height)]}
+        else:
+            conf = {'origins': [(thresh, thresh, thresh),
+                                (2 * thresh, thresh, thresh + height - 1)],
+                    'sizes': [(2 * height, 2 * height, height),
+                              (height + thresh, height, height)]}
+        return create_geometry(shape, **conf)
+
+    @staticmethod
+    def Lcell(shape, stencil=11):
         """ L arrangement. """
-        height1 = 3 * self.thresh
-        height2 = 2 * self.thresh
-        if len(self.shape) == 2:
-            conf = {'origins': [(self.thresh, self.thresh),
-                                (self.thresh, self.thresh + height1 - 1)],
+
+        thresh = stencil * 2 + 1
+        height1 = 3 * thresh
+        height2 = 2 * thresh
+
+        if len(shape) == 2:
+            conf = {'origins': [(thresh, thresh),
+                                (thresh, thresh + height1 - 1)],
                     'sizes': [(height1, height1),
                               (height2, height1)]}
         else:
-            conf = {'origins': [(self.thresh, self.thresh, self.thresh),
-                                (self.thresh, self.thresh, self.thresh + height1 - 1)],
+            conf = {'origins': [(thresh, thresh, thresh),
+                                (thresh, thresh, thresh + height1 - 1)],
                     'sizes': [(height2, height2, height1),
                               (height2, height1, height1)]}
-        return self.create_geometry(**conf)
+        return create_geometry(shape, **conf)
 
-    @property
-    def Tcell(self):
+    @staticmethod
+    def Tcell(shape, stencil=11):
         """ T arrangement. """
-        height1 = 3 * self.thresh
-        height2 = 1 * self.thresh
-        if len(self.shape) == 2:
-            conf = {'origins': [(2 * self.thresh, self.thresh),
-                                (self.thresh, self.thresh + height1 - 1)],
+
+        thresh = stencil * 2 + 1
+        height1 = 3 * thresh
+        height2 = 1 * thresh
+
+        if len(shape) == 2:
+            conf = {'origins': [(2 * thresh, thresh),
+                                (thresh, thresh + height1 - 1)],
                     'sizes': [(height2, height1),
                               (height1, height1)]}
         else:
-            conf = {'origins': [(2 * self.thresh, self.thresh, self.thresh),
-                                (self.thresh, self.thresh, self.thresh + height1 - 1)],
+            conf = {'origins': [(2 * thresh, thresh, thresh),
+                                (thresh, thresh, thresh + height1 - 1)],
                     'sizes': [(height2, height1, height1),
                               (height1, height1, height1)]}
-        return self.create_geometry(**conf)
+        return create_geometry(shape, **conf)
 
-    @property
-    def Ucell(self):
+    @staticmethod
+    def Ucell(shape, stencil=11):
         """ Bridge arrangement. """
-        height1 = (3 * self.thresh)
-        height2 = (1 * self.thresh)
-        if len(self.shape) == 2:
-            conf = {'origins': [(self.thresh, self.thresh),
-                                (self.thresh, self.thresh + height2 - 1),
-                                (self.thresh + 2 * height2, self.thresh + height2 - 1)],
+
+        thresh = stencil * 2 + 1
+        height1 = (3 * thresh)
+        height2 = (1 * thresh)
+
+        if len(shape) == 2:
+            conf = {'origins': [(thresh, thresh),
+                                (thresh, thresh + height2 - 1),
+                                (thresh + 2 * height2, thresh + height2 - 1)],
                     'sizes': [(height1, height2),
                               (height2, height2),
                               (height2, height2)]}
         else:
-            conf = {'origins': [(self.thresh, self.thresh, self.thresh),
-                                (self.thresh, self.thresh, self.thresh + height2 - 1),
-                                (self.thresh + 2 * height2,
-                                    self.thresh, self.thresh + height2 - 1)],
+            conf = {'origins': [(thresh, thresh, thresh),
+                                (thresh, thresh, thresh + height2 - 1),
+                                (thresh + 2 * height2,
+                                    thresh, thresh + height2 - 1)],
                     'sizes': [(height1, height2, height2),
                               (height2, height2, height2),
                               (height2, height2, height2)]}
-        return self.create_geometry(**conf)
+        return create_geometry(shape, **conf)
 
-    @property
-    def Ocell(self):
+    @staticmethod
+    def Ocell(shape, stencil=11):
         """ Window arrangement. """
-        height1 = (3 * self.thresh)
-        height2 = (1 * self.thresh)
-        if len(self.shape) == 2:
-            conf = {'origins': [(self.thresh, self.thresh),
-                                (self.thresh, self.thresh + height2 - 1),
-                                (self.thresh + 2 * height2, self.thresh + height2 - 1),
-                                (self.thresh, self.thresh + 2 * height2 - 2)],
+
+        thresh = stencil * 2 + 1
+        height1 = 3 * thresh
+        height2 = 1 * thresh
+
+        if len(shape) == 2:
+            conf = {'origins': [(thresh, thresh),
+                                (thresh, thresh + height2 - 1),
+                                (thresh + 2 * height2, thresh + height2 - 1),
+                                (thresh, thresh + 2 * height2 - 2)],
                     'sizes': [(height1, height2),
                               (height2, height2),
                               (height2, height2),
                               (height1, height2)]}
         else:
-            conf = {'origins': [(self.thresh, self.thresh, self.thresh),
-                                (self.thresh, self.thresh, self.thresh + height2 - 1),
-                                (self.thresh + 2 * height2, self.thresh, self.thresh + height2 - 1),
-                                (self.thresh, self.thresh, self.thresh + 2 * height2 - 2)],
+            conf = {'origins': [(thresh, thresh, thresh),
+                                (thresh, thresh, thresh + height2 - 1),
+                                (thresh + 2 * height2, thresh, thresh + height2 - 1),
+                                (thresh, thresh, thresh + 2 * height2 - 2)],
                     'sizes': [(height1, height2, height2),
                               (height2, height2, height2),
                               (height2, height2, height2),
                               (height1, height2, height2)]}
-        return self.create_geometry(**conf)
+        return create_geometry(shape, **conf)
 
-    @property
-    def overlapped1(self):
+    @staticmethod
+    def overlapped1(shape, stencil=11):
         """ Two obstacles overlapped (one sides). """
-        width = 5 * self.thresh
-        if len(self.shape) == 2:
-            conf = {'origins': [(self.thresh, 0),
-                                (self.thresh + int(width / 5), width - 1)],
-                    'sizes': [(width, width),
-                              (width, width)]}
-        else:
-            conf = {'origins': [(self.thresh, self.thresh, 0),
-                                (self.thresh + int(width / 5), self.thresh, width - 1)],
-                    'sizes': [(width, width, width),
-                              (width, width, width)]}
-        return self.create_geometry(**conf)
 
-    @property
-    def overlapped2(self):
-        """ Two obstacles overlapped (two sides). """
-        width = 5 * self.thresh
-        if len(self.shape) == 2:
-            conf = {'origins': [(self.thresh, 0),
-                                (self.thresh + int(width / 5), width - 1)],
+        thresh = stencil * 2 + 1
+        width = 5 * thresh
+
+        if len(shape) == 2:
+            conf = {'origins': [(thresh, 0),
+                                (thresh + int(width / 5), width - 1)],
                     'sizes': [(width, width),
                               (width, width)]}
         else:
-            conf = {'origins': [(self.thresh, self.thresh, 0),
-                                (self.thresh + int(width / 5),
-                                    self.thresh + int(width / 5), width - 1)],
+            conf = {'origins': [(thresh, thresh, 0),
+                                (thresh + int(width / 5), thresh, width - 1)],
                     'sizes': [(width, width, width),
                               (width, width, width)]}
-        return self.create_geometry(**conf)
+        return create_geometry(shape, **conf)
+
+    @staticmethod
+    def overlapped2(shape, stencil=11):
+        """ Two obstacles overlapped (two sides). """
+
+        thresh = stencil * 2 + 1
+        width = 5 * thresh
+
+        if len(shape) == 2:
+            conf = {'origins': [(thresh, 0),
+                                (thresh + int(width / 5), width - 1)],
+                    'sizes': [(width, width),
+                              (width, width)]}
+        else:
+            conf = {'origins': [(thresh, thresh, 0),
+                                (thresh + int(width / 5),
+                                    thresh + int(width / 5), width - 1)],
+                    'sizes': [(width, width, width),
+                              (width, width, width)]}
+        return create_geometry(shape, **conf)
+
+    @staticmethod
+    def curv_mountain(x, y):
+
+        xsine = _np.linspace(-_np.pi, _np.pi, x.shape[0])
+        sine = _np.sin(xsine/0.1)
+        profile = _np.zeros_like(x)
+        for i in range(x.shape[1]):
+            profile[:, i] = (2/(i/50+1)) * (sine - xsine**2)
+
+        return x.copy(), y + profile

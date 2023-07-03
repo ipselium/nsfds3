@@ -46,10 +46,10 @@ from libfds.cmaths import curvilinear2d_metrics, curvilinear3d_metrics
 console = Console()
 
 
-def build(*args, **kwargs):
-    if kwargs.get('curvilinear_func', None):
-        return CartesianGrid(*args, **kwargs)
-    return CurvilinearGrid(*args, **kwargs)
+def build_mesh(cfg):
+    if getattr(cfg, 'curvilinear_func', None):
+        return CurvilinearGrid.from_cfg(cfg)
+    return CartesianGrid.from_cfg(cfg)
 
 
 class GridError(Exception):
@@ -129,6 +129,11 @@ class CartesianGrid:
 
         self.domain_limits = [(axe.min(), axe.max()) for axe in self.paxis]
         self.buffer_limits = [bounds(i, ax, bound) for i, (ax, bound) in enumerate(zip(self.paxis, buffer_bounds(self.bc, self.nbz)))]
+
+    @classmethod
+    def from_cfg(cls, cfg):
+        args, kwargs = cfg.get_mesh_config()
+        return cls(*args, **kwargs)
 
     def check_arguments_dims(self):
         """ Check dimensions of input arguments. """
@@ -341,7 +346,7 @@ class CurvilinearGrid(CartesianGrid):
 
     def __init__(self, shape, steps=None, origin=None, bc=None, obstacles=None,
                  curvilinear_func=None, nbz=20,
-                 stretch_factor=2, stretch_order=3, stencil=11):
+                 stretch_factor=2, stretch_order=3, stencil=11, free=True):
 
         if curvilinear_func:
             self.curvilinear_func = curvilinear_func
@@ -350,7 +355,7 @@ class CurvilinearGrid(CartesianGrid):
 
         super().__init__(shape, steps=steps, origin=origin, bc=bc, obstacles=obstacles,
                          nbz=nbz, stretch_factor=stretch_factor, stretch_order=stretch_order,
-                         stencil=stencil)
+                         stencil=stencil, free=free)
 
         self.check_metrics()
 

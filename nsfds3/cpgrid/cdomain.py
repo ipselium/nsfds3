@@ -62,7 +62,7 @@ class ComputationDomains:
             - locations_to_cuboids
     """
 
-    _BC_U = ['W', 'A']
+    _BC_U = ['W', 'A', 'V']
     _BC_C = ['P', ]
 
     def __init__(self, shape, obstacles=None, bc='WWWWWW', nbz=20, stencil=11, free=True):

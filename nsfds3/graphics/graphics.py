@@ -55,6 +55,10 @@ from nsfds3.utils.data import DataExtractor, FieldExtractor, DataIterator, neare
 from libfds.fields import Fields2d, Fields3d
 
 
+class ViewerError(Exception):
+    """ Exception raised when grid parameters are wrong. """
+
+
 def extend_range(a, b, percent=5):
     """ Extends the numerical range (a, b) by percent. """
     value = (b - a) * percent / 100
@@ -332,8 +336,7 @@ class CPViewer(MeshViewer):
     def __init__(self, cpdomain):
 
         if not hasattr(cpdomain, '_mask'):
-            print('Free must be False')
-            return
+            raise ViewerError('Free must be False')
 
         self.cpdomain = cpdomain
         self.ndim = cpdomain.ndim
@@ -380,7 +383,9 @@ class CPViewer(MeshViewer):
     def _frame3d(self, **kwargs):
 
         domains = self.xdomains + self.ydomains + self.zdomains
-        colorscales = [['blue', 'cyan'], ['red', 'magenta'], ['green', 'yellow']]
+        colorscales = {'p': ['blue', 'cyan'], 
+                       'm': ['red', 'magenta'], 
+                       'P': ['green', 'yellow']}
 
         fig = _go.Figure()
         data = []
@@ -397,11 +402,11 @@ class CPViewer(MeshViewer):
                                 flatshading=True   # to hide the triangles
                                 ))
 
-        for sub in [s for s in domains if s.tag[1] in ["p", "m"]]:
+        for sub in [s for s in domains if s.tag in ["p", "m"]]:
             data.append(_go.Mesh3d(x=sub.vertices[0],
                                 y=sub.vertices[1],
                                 z=sub.vertices[2],
-                                colorscale=colorscales[sub.tag[0]],
+                                colorscale=colorscales[sub.tag],
                                 intensity=_np.linspace(0, 1, 8, endpoint=True),
                                 name=f'o{sub.sid}',
                                 opacity=1,

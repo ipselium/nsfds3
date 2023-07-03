@@ -76,6 +76,7 @@ def create_template(path=None, filename=None, cfg=None):
     cfg.set('configuration', 'timings', 'False')
     cfg.set('configuration', 'quiet', 'False')
     cfg.set('configuration', 'cpu', '1')
+    cfg.set('configuration', 'free', 'True')
 
     cfg.add_section('simulation')
     cfg.set('simulation', 'nt', '500')
@@ -91,7 +92,6 @@ def create_template(path=None, filename=None, cfg=None):
     cfg.set('thermophysic', 'prandtl', '0.7')
 
     cfg.add_section('geometry')
-    cfg.set('geometry', 'mesh', 'cartesian')
     cfg.set('geometry', 'file', 'None')
     cfg.set('geometry', 'geoname', 'single')
     cfg.set('geometry', 'curvname', 'None')
@@ -234,7 +234,7 @@ class CfgSetup:
     def run(self):
         """ Run configuration. """
 
-        self.none = ['', 'none', 'None', None]
+        self.none = ['', 'no', 'No', 'none', 'None', None]
 
         try:
             self._cfg()
@@ -263,6 +263,7 @@ class CfgSetup:
         self.timings = CFG.getboolean('timings', False)
         self.quiet = CFG.getboolean('quiet', False)
         self.cpu = CFG.getint('cpu', 1)
+        self.free = CFG.getboolean('free', True)
 
     def _sim(self):
         """ Get simulation parameters. """
@@ -272,6 +273,7 @@ class CfgSetup:
         self.CFL = SIM.getfloat('cfl', 0.5)
         self.resume = SIM.getboolean('resume', False)
         self.it = 0
+        self.stencil = 11
 
         if self.nt % self.ns:
             self.nt -= self.nt % self.ns
@@ -319,26 +321,26 @@ class CfgSetup:
         self.flat = GEO.gettuple_int('flat', None)
 
         # Mesh type and geometry
-        self.mesh = GEO.get('mesh', 'cartesian').lower()
         self.geofile = GEO.get('file', None)
-        self.geoname = GEO.get('geoname', 'square')
+        self.geoname = GEO.get('geoname', None)
+        self.curvname = GEO.get('curvname', None)
 
         if len(self.shape) != len(self.steps) or 2*len(self.shape) != len(self.bc):
             raise ValueError('shape, steps and bc must have coherent dims.')
 
-        if self.mesh not in ['cartesian', 'curvilinear']:
-            raise ValueError('mesh must be cartesian or curvilinear')
-
         # Geometry
-        if self.geofile not in self.none:
-            self.geofile = self.path / self.geofile
-        self.obstacles = files.get_obstacle(self)
+        if self.geoname not in self.none:
+            self.obstacles = files.get_func(self.path / self.geofile, self.geoname)
+            if self.obstacles:
+                self.obstacles = self.obstacles(self.shape, self.stencil)
+        else:
+            self.obstacles = None
 
         # Curvilinear mesh
-        if self.mesh == 'curvilinear':
-            self.curvname = GEO.get('curvname', None)
+        if self.curvname not in self.none:
+            self.curvilinear_func = files.get_func(self.path / self.geofile, self.curvname)
         else:
-            self.curvname = None
+            self.curvilinear_func = None
 
     def _bz(self):
         """ Get Buffer Zone parameters. """
@@ -388,7 +390,7 @@ class CfgSetup:
         self.flt_xnu_0 = SOL.getfloat('selective filter 0-strength', 0.01)
 
         if any(xnu < 0 or xnu > 1 for xnu in [self.flt_xnu_n, self.flt_xnu_0]):
-            raise ValueError('Filter strength must be between O and 1')
+            raise ValueError('Filter strength must be between 0 and 1')
 
     def _save(self):
         """ Get save parameters. """
@@ -451,16 +453,21 @@ class CfgSetup:
 
     def get_mesh_config(self):
         """ Get Mesh configuration. """
-        return (self.shape, self.steps), \
-                {'origin': self.origin,
-                 'bc': self.bc,
-                 'obstacles': self.obstacles,
-                 'nbz': self.nbz,
-                 'stretch_factor': self.stretch_factor,
-                 'stretch_order': self.stretch_order}
+        args = self.shape, self.steps
+        kwargs = {'origin': self.origin,
+                  'bc': self.bc,
+                  'obstacles': self.obstacles,
+                  'nbz': self.nbz,
+                  'stretch_factor': self.stretch_factor,
+                  'stretch_order': self.stretch_order,
+                  'stencil': self.stencil,
+                  'free': self.free}
+        if self.curvilinear_func:
+            kwargs['curvilinear_func'] = self.curvilinear_func
+        return args, kwargs
 
     def __str__(self):
-        s = 'Simulation parameters:'
+        s = 'Simulation parameters:\n\n'
 
         # Thermophysics
         s += "\t* Thermophysic : "
