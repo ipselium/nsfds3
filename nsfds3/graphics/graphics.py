@@ -46,7 +46,7 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 import plotly.graph_objects as _go
 from plotly.subplots import make_subplots
 
-from progressbar import ProgressBar, Bar, ETA
+#from progressbar import ProgressBar, Bar, ETA
 from rich.progress import track
 
 from mplutils import modified_jet, MidPointNorm, set_figsize, get_subplot_shape

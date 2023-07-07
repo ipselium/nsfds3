@@ -355,7 +355,7 @@ class Face(Box):
         self.overlapped = []
         self.uncentered = set()
 
-    def set_source(self, func, profile='tukey'):
+    def set_source(self, func, profile='tukey', alpha=0.9):
         """ Setup a wall source.
 
         Parameters
@@ -370,6 +370,7 @@ class Face(Box):
         """
         self.source_evolution = _np.array([])
         self.source_function = func
+        self.source_alpha = alpha
         if profile.lower() not in ['sine', 'tukey']:
             self.source_profile = 'tukey'
         else:

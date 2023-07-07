@@ -157,7 +157,7 @@ class DataExtractor:
         self.gamma = self.get_attr('gamma')
         self.p0 = self.data.attrs['p0']
 
-        self.volumic = self.get_attr('volumic')
+        self.volumic = self.get_attr('ndim') == 3
         self.vorticity = self.get_attr('vorticity')
 
         if self.volumic:
