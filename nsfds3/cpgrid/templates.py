@@ -56,7 +56,8 @@ class TestCases:
         methods = dir(cls)
         methods.remove('all')
         return [getattr(cls, m) for m in methods
-                if not m.startswith('_') and not m.startswith('curv') and
+                if not m.startswith('_') and not m.startswith('curv') 
+                and not m.startswith('evolution') and
                 type(getattr(cls, m)) == FunctionType]
 
     @staticmethod
@@ -80,19 +81,22 @@ class TestCases:
         return create_geometry(shape, **conf)
 
     @staticmethod
-    def single_source(shape, stencil=11):
-        """ Single obstacle. """
+    def evolution_sine(Nt, dt):
+
         import numpy as np
 
-        def sine(Nt, dt):
-            t = np.linspace(0, Nt * dt, Nt + 1)
-            f = 1 / (50 * dt)
-            amp = 1
-            return amp * np.sin(2 * np.pi * f * t)
+        t = np.linspace(0, Nt * dt, Nt + 1)
+        f = 1 / (50 * dt)
+        amp = 1
+        return amp * np.sin(2 * np.pi * f * t)
+
+    @staticmethod
+    def single_source(shape, stencil=11):
+        """ Single obstacle. """
 
         thresh = stencil * 2 + 1
         obs = Obstacle(origin=(thresh, ) * len(shape), size=(40, ) * len(shape), env=shape, bc='WVWW' + 2 * (len(shape) - 2) * 'W')
-        obs.face_right.set_source(sine, 'sine')
+        obs.face_right.set_source(TestCases.evolution_sine, 'sine')
         return [obs, ]
 
     @staticmethod

@@ -73,9 +73,12 @@ class FDTD:
         else:
             self.timings = self.cfg.timings
 
-        # Initialize wall sources
+        # Initialize sources (boundaries and domain)
         for face in [f for f in msh.obstacles.faces if f.bc == "V"]:
             face.source_evolution = face.source_function(cfg.nt, cfg.dt)
+
+        for source in self.cfg.src:
+            source.set_evolution(cfg.nt, cfg.dt)
 
         # Initialize solver
         self.fld = Fields(self.cfg, self.msh)

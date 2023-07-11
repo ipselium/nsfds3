@@ -41,8 +41,7 @@ Example
 
 -----------
 """
-
-import json as _json
+import ast
 import time as _time
 import sys as _sys
 import shutil as _shutil
@@ -51,6 +50,7 @@ import pathlib as _pathlib
 import configparser as _configparser
 from pkg_resources import parse_version as _parse_version
 from nsfds3.utils import files
+from .sources import Pulse, Monopole
 
 
 def _parse_int_tuple(input):
@@ -107,11 +107,16 @@ def create_template(path=None, filename=None, cfg=None):
     cfg.set('buffer zone', 'stretch level', '2.')
     cfg.set('buffer zone', 'stretch order', '3.')
 
-    cfg.add_section('acoustic source')
-    cfg.set('source', 'type', 'pulse')
-    cfg.set('source', 'origin', '(32, 32, 32)')
-    cfg.set('source', 's0', '1e6')
-    cfg.set('source', 'b0', '5')
+    cfg.add_section('initial pulses')
+    cfg.set('initial pulses', 'origins', '()')
+    cfg.set('initial pulses', 'amplitudes', '()')
+    cfg.set('initial pulses', 'widths', '()')
+
+    cfg.add_section('sources')
+    cfg.set('sources', 'origins', '()')
+    cfg.set('sources', 'amplitudes', '()')
+    cfg.set('sources', 'widths', '()')
+    cfg.set('sources', 'evolutions', '()')
 
     cfg.add_section('flow')
     cfg.set('flow', 'type', 'None')
@@ -136,7 +141,7 @@ def create_template(path=None, filename=None, cfg=None):
     cfg.set('save', 'path', 'nsfds3/')
     cfg.set('save', 'filename', 'tmp')
     cfg.set('save', 'compression', 'None')
-    cfg.set('save', 'probes', '[]')
+    cfg.set('save', 'probes', '()')
 
     if not path:
         path = _pathlib.Path.home() / '.nsfds3'
@@ -244,6 +249,7 @@ class CfgSetup:
             self._geo()
             self._bz()
             self._src()
+            self._ics()
             self._flw()
             self._save()
             self._figs()
@@ -350,20 +356,38 @@ class CfgSetup:
         self.stretch_factor = BZ.getfloat('stretch factor', 2.)
         self.stretch_order = BZ.getfloat('stretch order', 3.)
 
+    def _ics(self):
+        """ Get initial conditions. """
+        ICS = self.cfg['initial pulses']
+        self.ics = []
+        self.ics_on = ICS.getboolean('on', True)
+        origins = ast.literal_eval(ICS.get('origins', '()'))
+        S0 = ast.literal_eval(ICS.get('amplitudes', '()'))
+        B0 = ast.literal_eval(ICS.get('widths', '()'))
+
+        if self.ics_on:
+            if isinstance(B0, (float, int)):
+                self.ics.append(Pulse(origins, S0, B0))
+            else:
+                for o, s, b in zip(origins, S0, B0):
+                    self.ics.append(Pulse(o, s, b))
+
     def _src(self):
-        """ Get source parameters. """
-        SRC = self.cfg['acoustic source']
-        self.stype = SRC.get('type', 'pulse').lower()
-        self.sorigin = SRC.gettuple_int('origin', tuple([int(n/2) for n in self.shape]))
-        self.S0 = SRC.getfloat('amplitude', 1e3)
-        self.B0 = SRC.getfloat('width', 5)
+        """ Get sources. """
+        SRC = self.cfg['sources']
+        self.src = []
+        self.src_on = SRC.getboolean('on', True)
+        origins = ast.literal_eval(SRC.get('origins', '()'))
+        S0 = ast.literal_eval(SRC.get('amplitudes', '()'))
+        B0 = ast.literal_eval(SRC.get('widths', '()'))
+        evolutions = ast.literal_eval(SRC.get('evolutions', '()'))
 
-        if self.stype not in ['pulse', ]:
-            self.stype = None
-            self.S0 = 0
-
-        if len(self.sorigin) != len(self.shape):
-            raise ValueError(f'Source location must be {len(self.shape)}d')
+        if self.src_on :
+            if isinstance(B0, (float, int)):
+                self.src.append(Pulse(origins, S0, B0, evolutions))
+            else:
+                for o, s, b, e in zip(origins, S0, B0, evolutions):
+                    self.src.append(Monopole(o, s, b, e))
 
     def _flw(self):
         """ Get flow parameters. """
@@ -403,7 +427,7 @@ class CfgSetup:
         self.save_fld = SAVE.getboolean('fields', True)
         self.comp = SAVE.get('compression', 'None')
         self.comp = None if self.comp == 'None' else self.comp
-        self.prb = _json.loads(SAVE.get('probes', '[]'))
+        self.prb = ast.literal_eval(SAVE.get('probes', '()'))
 
         # Check probes
         if self.prb:
@@ -438,7 +462,6 @@ class CfgSetup:
         self.shape = tuple(s for i, s in enumerate(self.shape) if i != self.flat_ax)
         self.steps = tuple(s for i, s in enumerate(self.steps) if i != self.flat_ax)
         self.U = tuple(s for i, s in enumerate(self.U) if i != self.flat_ax)
-        self.sorigin = tuple(s for i, s in enumerate(self.sorigin) if i != self.flat_ax)
         self.bc = ''.join(bc for i, bc in enumerate(self.bc) if i
                             not in [2*self.flat_ax, 2*self.flat_ax + 1])
         if self.origin:
@@ -447,6 +470,14 @@ class CfgSetup:
         if self.obstacles:
             self.obstacles = [obs.flatten(self.flat_ax) for obs in self.obstacles
                               if self.flat_idx in obs.rn[self.flat_ax] and obs.ndim == 3]
+
+        if self.ics:
+            for s in self.ics:
+                s.origin = tuple(s for i, s in enumerate(s.origin) if i != self.flat_ax)
+
+        if self.src:
+            for s in self.src:
+                s.origin = tuple(s for i, s in enumerate(s.origin) if i != self.flat_ax)
 
         if self.prb:
             self.prb = [[c for i, c in enumerate(prb) if i != self.flat_ax] for prb in self.prb]
@@ -478,12 +509,23 @@ class CfgSetup:
         s += f"\t* Physical time: {self.dt*self.nt:.5e} s.\n"
         s += f"\t* Time step    : dt={self.dt:.5e} s and nt={self.nt}.\n"
 
-        # Source
-        if self.stype not in self.none:
-            s += f"\t* source       : {self.stype} at {self.sorigin}"
+        # ICS
+
+
+        # Sources
+        if self.src or self.ics:
+            s += f"\t* Sources      :\n"
+
+        if self.ics:
+            for ic in self.ics:
+                s += f"\t\t- {ic}.\n"
+
+        if self.src:
+            for source in self.src:
+                s += f"\t\t- {source}.\n"
 
         if self.ftype not in self.none:
-            s += f"\t* flow         : {self.ftype} {self.components}."
+            s += f"\t* flow         : {self.ftype} {self.components}.\n"
 
         return s
 

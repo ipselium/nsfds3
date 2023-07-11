@@ -28,5 +28,6 @@ DOCSTRING
 
 from .config import CfgSetup, create_template
 from .fdtd import FDTD
+from .sources import Pulse, Monopole
 
-__all__ = ['CfgSetup', 'FDTD', 'create_template']
+__all__ = ['CfgSetup', 'FDTD', 'create_template', 'Pulse', 'Monopole']
