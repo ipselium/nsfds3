@@ -241,22 +241,22 @@ class FDTD:
 
     def save_objects(self):
 
-        with open(self.cfg.datafile.with_suffix('.cfg'), 'wb') as pkl:
+        with open(self.cfg.datapath.with_suffix('.cfg'), 'wb') as pkl:
             _pkl.dump(self.cfg, pkl, protocol=5)
 
-        with open(self.cfg.datafile.with_suffix('.msh'), 'wb') as pkl:
+        with open(self.cfg.datapath.with_suffix('.msh'), 'wb') as pkl:
             _pkl.dump(self.msh, pkl, protocol=5)
 
     def _init_save(self):
         """ Init save. """
 
-        if self.cfg.datafile.is_file():
-            msg = f'[bold red]{self.cfg.datafile}[/] already exists. \n[blink]Overwrite ?'
+        if self.cfg.datapath.is_file():
+            msg = f'[bold red]{self.cfg.datapath}[/] already exists. \n[blink]Overwrite ?'
             overwrite = Prompt.ask(msg, choices=['yes', 'no'], default='no')
             if overwrite.lower() == 'no':
                 _sys.exit(1)
 
-        self.sfile = _h5py.File(self.cfg.datafile, 'w')
+        self.sfile = _h5py.File(self.cfg.datapath, 'w')
         self.sfile.attrs['vorticity'] = self.cfg.vrt
         self.sfile.attrs['ndim'] = self.msh.ndim
         self.sfile.attrs['p0'] = self.cfg.p0
@@ -274,7 +274,7 @@ class FDTD:
         self.sfile.attrs['nt'] = self.cfg.nt
         self.sfile.attrs['ns'] = self.cfg.ns
         self.sfile.attrs['rho0'] = self.cfg.rho0
-        self.sfile.attrs['nbz'] = self.cfg.nbz
+        self.sfile.attrs['bz_n'] = self.cfg.bz_n
         self.sfile.attrs['mesh'] = self.msh.mesh_type
         self.sfile.attrs['bc'] = self.cfg.bc
         self.sfile.attrs['itmax'] = self.cfg.it

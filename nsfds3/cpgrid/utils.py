@@ -32,25 +32,25 @@ def sign(x):
     return -1 if x < 0 else 1
 
 
-def buffer_bounds(bc, nbz):
+def buffer_bounds(bc, bz_n):
     """ From bc, returns a list of indices corresponding to the limits of the buffer zone. """
-    return [[sign(0.5 - j) * nbz if v == "A" else -j for j, v in enumerate(bc[i:i+2])]
+    return [[sign(0.5 - j) * bz_n if v == "A" else -j for j, v in enumerate(bc[i:i+2])]
              for i in range(0, len(bc), 2)]
 
 
-def buffer_kwargs(bc, nbz, shape):
+def buffer_kwargs(bc, bz_n, shape):
     """ Returns a dict containing origin, size and bc of the buffer zone.
 
     Parameters
     ----------
     bc : int
         Boundary conditions
-    nbz : int
+    bz_n : int
         size of the buffer zone
     shape : tuple
         size of the domain
     """
-    bounds = buffer_bounds(bc, nbz)
+    bounds = buffer_bounds(bc, bz_n)
     origin = [c[0] for c in bounds]
     size = [n + c[1] - o + 1 for n, c, o in zip(shape, bounds, origin)]
     return dict(origin=origin, size=size, env=shape, bc=bc)

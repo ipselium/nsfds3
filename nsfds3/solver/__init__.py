@@ -26,7 +26,7 @@ DOCSTRING
 -----------
 """
 
-from .config import CfgSetup, create_template
+from .config import CfgSetup
 from .fdtd import FDTD
 from .sources import Pulse, Monopole
 

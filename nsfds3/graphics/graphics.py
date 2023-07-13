@@ -544,7 +544,7 @@ class MPLViewer(MeshViewer):
 
     def _init_movie(self, view):
 
-        title = os.path.basename(self.cfg.savefile).split('.')[0]
+        title = os.path.basename(self.cfg.datafile).split('.')[0]
         views = {'p': r'$p_a$ [Pa]',
                  'e': r'$e$ [kg.m$^2$.s$^{-2}$]',
                  'vx': r'$v_x$ [m/s]',
@@ -587,7 +587,7 @@ class MPLViewer(MeshViewer):
         # Movie parameters
         metadata = self._init_movie(view)
         writer = _ani.FFMpegWriter(fps=kwargs.get('fps'), metadata=metadata, bitrate=-1, codec="libx264")
-        with writer.saving(fig, self.cfg.savepath / metadata['filename'], dpi=kwargs.get('dpi')):
+        with writer.saving(fig, self.cfg.datadir / metadata['filename'], dpi=kwargs.get('dpi')):
 
             writer.grab_frame()
 

@@ -74,11 +74,11 @@ class CartesianGrid:
         periodic boundary.
     obstacles : :py:class:`fdgrid.domains.Domain`, optional
         Obstacles in the computation domain.
-    nbz : int, optional
+    bz_n : int, optional
         Number of points of the absorbing area (only if 'A' in `bc`).
-    stretch_factor : float, optional
+    bz_stretch_factor : float, optional
         Factor reach at the end of the stretching zone
-    stretch_order : float, optional
+    bz_stretch_order : float, optional
         Order of the streching function
     stencil : int, optional
         Size of the finite difference stencil (used by :py:mod:`nsfds2`).
@@ -96,7 +96,7 @@ class CartesianGrid:
     mesh_type = "Cartesian"
 
     def __init__(self, shape, steps=None, origin=None, bc=None, obstacles=None,
-                 nbz=20, stretch_factor=2, stretch_order=3, stencil=11, free=True):
+                 bz_n=20, bz_stretch_factor=2, bz_stretch_order=3, stencil=11, free=True):
 
         self.shape = shape
         self.steps = steps
@@ -104,9 +104,9 @@ class CartesianGrid:
         self.ndim = len(shape)
         self.bc = bc
         self.obstacles = obstacles
-        self.nbz = nbz
-        self.stretch_factor = stretch_factor
-        self.stretch_order = stretch_order
+        self.bz_n = bz_n
+        self.bz_stretch_factor = bz_stretch_factor
+        self.bz_stretch_order = bz_stretch_order
         self.stencil = stencil
         self.free = free
 
@@ -128,7 +128,7 @@ class CartesianGrid:
             return ax[tuple(b1)].min(), ax[tuple(b2)].max()
 
         self.domain_limits = [(axe.min(), axe.max()) for axe in self.paxis]
-        self.buffer_limits = [bounds(i, ax, bound) for i, (ax, bound) in enumerate(zip(self.paxis, buffer_bounds(self.bc, self.nbz)))]
+        self.buffer_limits = [bounds(i, ax, bound) for i, (ax, bound) in enumerate(zip(self.paxis, buffer_bounds(self.bc, self.bz_n)))]
 
     @classmethod
     def from_cfg(cls, cfg):
@@ -152,7 +152,7 @@ class CartesianGrid:
             self.steps = (1, ) * len(self.shape)
 
         if not self.origin:
-            self.origin = tuple([self.nbz if self.bc[2*i] == "A" else 0 for i in range(len(self.shape))])
+            self.origin = tuple([self.bz_n if self.bc[2*i] == "A" else 0 for i in range(len(self.shape))])
 
         if len(self.shape) != len(self.steps) or len(self.shape) != len(self.origin):
             raise ValueError('shape, steps, origin must have same dims.')
@@ -178,7 +178,7 @@ class CartesianGrid:
             msg += " i.e. '(PP....)'|'(..PP..)'|'(....PP)'"
             raise ValueError(msg)
 
-        if not all([n - self.nbz * (self.bc[2*i:2*i + 2].count('A')) > 11 for i, n in enumerate(self.shape)]):
+        if not all([n - self.bz_n * (self.bc[2*i:2*i + 2].count('A')) > 11 for i, n in enumerate(self.shape)]):
             raise GridError('One of the dimension is too small to setup a buffer zone.')
 
     def check_grid(self):
@@ -200,7 +200,7 @@ class CartesianGrid:
         """ Divide the computation domain into subdomains. """
 
         self._computation_domains = ComputationDomains(self.shape, self.obstacles,
-                                                       self.bc, self.nbz, self.stencil, 
+                                                       self.bc, self.bz_n, self.stencil, 
                                                        free=self.free)
 
         self.bounds = self._computation_domains.bounds
@@ -244,20 +244,20 @@ class CartesianGrid:
 
     def make_grid(self):
         """ Build grid. """
-        stretch = 1 + max(self.stretch_factor - 1, 0)  * np.linspace(0, 1, self.nbz) ** self.stretch_order
+        stretch = 1 + max(self.bz_stretch_factor - 1, 0)  * np.linspace(0, 1, self.bz_n) ** self.bz_stretch_order
 
         self.x = np.arange(self.nx, dtype=float) - int(self.nx/2)
         self.y = np.arange(self.ny, dtype=float) - int(self.ny/2)
 
         if self.bc[0] == 'A':
-            self.x[:self.nbz] *= stretch[::-1]
+            self.x[:self.bz_n] *= stretch[::-1]
         if self.bc[1] == 'A':
-            self.x[-self.nbz:] *= stretch
+            self.x[-self.bz_n:] *= stretch
 
         if self.bc[2] == 'A':
-            self.y[:self.nbz] *= stretch[::-1]
+            self.y[:self.bz_n] *= stretch[::-1]
         if self.bc[3] == 'A':
-            self.y[-self.nbz:] *= stretch
+            self.y[-self.bz_n:] *= stretch
 
         self.x *= self.dx
         self.y *= self.dy
@@ -268,9 +268,9 @@ class CartesianGrid:
         if self.ndim == 3:
             self.z = np.arange(self.nz, dtype=float) - int(self.nz/2)
             if self.bc[4] == 'A':
-                self.z[:self.nbz] *= stretch[::-1]
+                self.z[:self.bz_n] *= stretch[::-1]
             if self.bc[5] == 'A':
-                self.z[-self.nbz:] *= stretch
+                self.z[-self.bz_n:] *= stretch
             self.z *= self.dz
             self.z -= self.z[self.origin[2]]
 
@@ -297,9 +297,9 @@ class CartesianGrid:
         s += f"\t* Origin       : ({', '.join(str(n) for n in self.origin)})\n"
         if 'A' in self.bc:
             s += '\t* Buffer zone  :\n'
-            s += f'\t\t* Number of points : {self.nbz}\n'
-            s += f'\t\t* Stretch factor   : {self.stretch_factor}\n'
-            s += f'\t\t* Stretch order    : {self.stretch_order}\n'
+            s += f'\t\t* Number of points : {self.bz_n}\n'
+            s += f'\t\t* Stretch factor   : {self.bz_stretch_factor}\n'
+            s += f'\t\t* Stretch order    : {self.bz_stretch_order}\n'
             s += f'\t\t* Stretched axis   : {self.stretched_axis}\n\n'
         return s
 
@@ -327,11 +327,11 @@ class CurvilinearGrid(CartesianGrid):
         Obstacles in the computation domain.
     curvilinear_func : func
         Function to operate curvilinear transformation
-    nbz : int, optional
+    bz_n : int, optional
         Number of points of the absorbing area (only if 'A' in `bc`).
-    stretch_factor : float, optional
+    bz_stretch_factor : float, optional
         Factor reach at the end of the stretching zone
-    stretch_order : float, optional
+    bz_stretch_order : float, optional
         Order of the streching function
     stencil : int, optional
         Size of the finite difference stencil (used by :py:mod:`nsfds2`).
@@ -345,8 +345,8 @@ class CurvilinearGrid(CartesianGrid):
     mesh_type = "Curvilinear"
 
     def __init__(self, shape, steps=None, origin=None, bc=None, obstacles=None,
-                 curvilinear_func=None, nbz=20,
-                 stretch_factor=2, stretch_order=3, stencil=11, free=True):
+                 curvilinear_func=None, bz_n=20,
+                 bz_stretch_factor=2, bz_stretch_order=3, stencil=11, free=True):
 
         if curvilinear_func:
             self.curvilinear_func = curvilinear_func
@@ -354,7 +354,7 @@ class CurvilinearGrid(CartesianGrid):
             self.curvilinear_func = self._curvilinear_func
 
         super().__init__(shape, steps=steps, origin=origin, bc=bc, obstacles=obstacles,
-                         nbz=nbz, stretch_factor=stretch_factor, stretch_order=stretch_order,
+                         bz_n=bz_n, bz_stretch_factor=bz_stretch_factor, bz_stretch_order=bz_stretch_order,
                          stencil=stencil, free=free)
 
         self.check_metrics()

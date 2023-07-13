@@ -49,7 +49,7 @@ class ComputationDomains:
     bc : {'[APW][APW][APW][APW]'}, optional
         Boundary conditions. Must be a 4 or 6 characters string corresponding to
         left, right, front, back, bottom, and top boundaries, respectively.
-    nbz : int, optional
+    bz_n : int, optional
         Size of the buffer zone
     stencil : int, optional
         Size of the finite difference stencil.
@@ -65,12 +65,12 @@ class ComputationDomains:
     _BC_U = ['W', 'A', 'V']
     _BC_C = ['P', ]
 
-    def __init__(self, shape, obstacles=None, bc='WWWWWW', nbz=20, stencil=11, free=True):
+    def __init__(self, shape, obstacles=None, bc='WWWWWW', bz_n=20, stencil=11, free=True):
 
         self.shape = shape
         self.ndim = len(shape)
         self.bc = bc
-        self.nbz = nbz
+        self.bz_n = bz_n
         self.stencil, self._midstencil = stencil, int((stencil - 1) / 2)
 
         if isinstance(obstacles, ObstacleSet):
@@ -79,7 +79,7 @@ class ComputationDomains:
             self.obstacles = ObstacleSet(shape, bc=bc, subs=obstacles, stencil=stencil)
 
         self.bounds = self.obstacles.bounds
-        self.buffer = Domain(**buffer_kwargs(self.bc, self.nbz, self.shape))
+        self.buffer = Domain(**buffer_kwargs(self.bc, self.bz_n, self.shape))
 
         self.find_domains()
 
