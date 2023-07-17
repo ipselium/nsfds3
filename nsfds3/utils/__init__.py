@@ -26,5 +26,6 @@ DOCSTRING
 -----------
 """
 
+from .files import get_objects
 
-__all__ = ['files', 'headers', 'misc']
+__all__ = ['files', 'headers', 'misc', 'get_objects']

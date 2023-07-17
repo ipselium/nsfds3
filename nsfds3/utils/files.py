@@ -29,6 +29,8 @@ Utils : Files
 
 import os
 import sys
+import pickle
+import pathlib
 from nsfds3.cpgrid import templates as _tplt
 
 
@@ -57,3 +59,16 @@ def get_wall_function(cfg, name):
     except (AttributeError, ImportError):
         func = None
     return func
+
+def get_objects(path, fname):
+
+    path = pathlib.Path(path)
+    fname = pathlib.Path(fname)
+
+    with open(path / fname.with_suffix('.cfg'), 'rb') as f:
+        cfg = pickle.load(f, encoding='bytes')
+
+    with open(path / fname.with_suffix('.msh'), 'rb') as f:
+        msh = pickle.load(f, encoding='bytes')
+
+    return cfg, msh

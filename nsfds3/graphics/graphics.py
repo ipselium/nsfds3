@@ -547,17 +547,17 @@ class MPLViewer(MeshViewer):
         title = os.path.basename(self.cfg.datafile).split('.')[0]
         views = {'p': r'$p_a$ [Pa]',
                  'e': r'$e$ [kg.m$^2$.s$^{-2}$]',
+                 'rho': r'$\rho$ [kg.m$^3$]',
                  'vx': r'$v_x$ [m/s]',
                  'vy': r'$v_y$ [m/s]',
                  'vz': r'$v_y$ [m/s]',
-                 'rho': r'$\rho$ [kg.m$^3$]',
+                 'wx': r'$\omega_x$ [m/s]',
+                 'wy': r'$\omega_y$ [m/s]',
+                 'wz': r'$\omega_z$ [m/s]',
                  're': r'$\rho e$ [kg$^2$.m$^{-1}$.s$^{-2}$]',
                  'ru': r'$\rho v_x$ [kg.m$^{-2}$/s]',
                  'rv': r'$\rho v_y$ [kg.m$^{-2}$/s]',
-                 'rw': r'$\rho v_y$ [kg.m$^{-2}$/s]',
-                 'wx': r'$\omega_x$ [m/s]',
-                 'wy': r'$\omega_y$ [m/s]',
-                 'wz': r'$\omega_z$ [m/s]'}
+                 'rw': r'$\rho v_y$ [kg.m$^{-2}$/s]'}
 
         metadata = dict(title=title, filename=f'{title}_{view}.mkv',
                         view=view, var=views[view], comment='Made with nsfds3')
