@@ -55,11 +55,11 @@ Links
 
 
 .. |Pypi| image:: https://badge.fury.io/py/nsfds3.svg
-    :target: https://pypi.org/project/nsfds3
+    :target: https://badge.fury.io/py/nsfds3
     :alt: Pypi Package
 
 .. |Licence| image:: https://img.shields.io/github/license/ipselium/nsfds3.svg
 
-.. |DOI| image:: https://zenodo.org/badge/178000566.svg
-    :target: https://zenodo.org/badge/latestdoi/178000566
+.. |DOI| image:: https://zenodo.org/badge/505996277.svg
+    :target: https://zenodo.org/badge/latestdoi/505996277
 

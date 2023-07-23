@@ -1,5 +1,5 @@
 cff-version: 1.2.0
-title: "nsfds2"
+title: "nsfds3"
 message: "If you use this software, please cite it as below."
 type: software
 authors:
@@ -11,5 +11,5 @@ authors:
       Graduate School (IA-GS), CNRS, Le Mans
       Université, France 
 version: 0.2.0
-doi: 10.5281/zenodo.6211488
-url: "https://github.com/ipselium/nsfds2"
+doi: 10.5281/zenodo.8176266 
+url: "https://github.com/ipselium/nsfds3"
