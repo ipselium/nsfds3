@@ -20,14 +20,35 @@
 #
 # Creation Date : 2022-07-08 - 13:27:17
 """
------------
-DOCSTRING
+The `solver` package contains the following main objects:
 
------------
+* :py:class:`CfgSetup`: read a configuration file and set all simulation parameters.
+* :py:class:`FDTD`: setup and run the FDTD simulation
+* :py:class:`Pulse`: Describes an initial gaussian pressure pulse condition
+* :py:class:`Monopole`: Describes a time evolving source
+
+
+ The following example gives the general philosophy to use **nsfds3**::
+
+   from nsfds3.solver import CfgSetup, FDTD
+   from nsfds3.cpgrid import build_mesh
+
+   # Initialize simulation parameter
+   cfg = CfgSetup()    # or cfg = CfgSetup('path_to_configfile.conf')
+
+   # Define the mesh
+   msh = build_mesh(cfg)
+
+   # Create and run simulation
+   fdtd = FDTD(msh, cfg)
+   fdtd.run()
+
+   # Figures
+   fdtd.show(view='p', nans=True, buffer=True, grid=False, obstacles=True)
 """
 
-from .config import CfgSetup
-from .fdtd import FDTD
-from .sources import Pulse, Monopole
+from nsfds3.solver.config import CfgSetup
+from nsfds3.solver.fdtd import FDTD
+from nsfds3.solver.sources import Pulse, Monopole
 
-__all__ = ['CfgSetup', 'FDTD', 'create_template', 'Pulse', 'Monopole']
+__all__ = ['CfgSetup', 'FDTD', 'Pulse', 'Monopole']

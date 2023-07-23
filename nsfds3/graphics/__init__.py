@@ -20,10 +20,32 @@
 #
 # Creation Date : 2022-07-08 - 13:27:06
 """
------------
-DOCSTRING
+The `graphics` package provides some helper classes and functions to represent meshes graphically.
 
------------
+    * :py:class:`nsfds3.graphics.MeshViewer`: Graphical tool to visualize Mesh objects graphically.
+    * :py:class:`nsfds3.graphics.CPViewer`: MeshViewer specialization adapted to ComputationDomains.
+    * :py:class:`nsfds3.graphics.MPLViewer`: MeshViewer specialization adapted to libfds.Fields or hdf5 files.
+
+The main viewer used in nsfds3 is :py:class:`nsfds3.graphics.MPLViewer`.
+
+Example
+-------
+
+::
+
+    from nsfds3.graphics import MPLViewer
+    from nsfds3.utils import get_objects
+
+    path = 'data/'
+    filename = 'reference'
+    cfg, msh = get_objects(path, filename)
+    viewer = MPLViewer(cfg, msh, cfg.datapath')
+
+    viewer2d.movie(view='p', buffer=False, probes=True)  # Make movie
+    viewer2d.probes()                                    # figure with probe evolutions
+    viewer2d.spectrogram()                               # figure with spectrogram
 """
 
-from .graphics import CDViewer, MPLViewer, MeshViewer, CPViewer, fig_scale, dict_update
+from nsfds3.graphics.graphics import MPLViewer, MeshViewer, CPViewer
+
+__all__ = ['MPLViewer', 'MeshViewer', 'CPViewer']

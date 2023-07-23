@@ -1,7 +1,7 @@
 #! /usr/bin/env python3
 # -*- coding: utf-8 -*-
 #
-# Copyright © 2016-2020 Cyril Desjouy <cyril.desjouy@univ-lemans.fr>
+# Copyright © 2016-2023 Cyril Desjouy <cyril.desjouy@univ-lemans.fr>
 #
 # This file is part of nsfds3
 #
@@ -20,12 +20,14 @@
 #
 # Creation Date : 2022-07-08 - 13:27:28
 """
------------
-DOCSTRING
+The `utils` package gathers some utilities for **nsfds3**. The main ones are :
 
------------
+    * :py:func:`get_objects`: get cfg and msh from pickles
+    * :py:func:`get_pressure`: get pressure from conservative variables
+    * :py:func:`probes_to_wavfile`: Make .wav files from probes signals.
 """
 
-from .files import get_objects
+from nsfds3.utils.files import get_objects, probes_to_wavfile
+from nsfds3.utils.data import get_pressure
 
-__all__ = ['files', 'headers', 'misc', 'get_objects']
+__all__ = ['get_objects', 'get_pressure', 'probes_to_wavfile']

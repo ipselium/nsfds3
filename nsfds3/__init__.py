@@ -25,15 +25,10 @@
 Init package
 ------------
 """
-import sys
-import nsfds3.solver
-import nsfds3.cpgrid
-import nsfds3.utils
-import nsfds3.graphics
+import sys as _sys
 
-if sys.platform == 'darwin':
+if _sys.platform == 'darwin':
     import matplotlib
     matplotlib.use("TkAgg")
 
 __version__ = "0.1.0"
-__all__ = ['solver', 'cpgrid', 'utils', 'graphics']

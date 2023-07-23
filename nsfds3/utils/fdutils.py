@@ -21,7 +21,8 @@
 # Creation Date : 2023-03-16 - 22:32:44
 """
 -----------
-DOCSTRING
+
+Some utils to analyze finite differences schemes.
 
 -----------
 """

@@ -20,14 +20,15 @@
 #
 # Creation Date : 2022-06-22 - 08:22:53
 """
------------
-
-The `templates` module provides a collection of examples to :
+The `templates` module provides a collection of examples to:
 
 * build arangments of obstacles
-* set curvilinear transformations for :py:class:`fdgrid.mesh.CurvilinearMesh`
+* set curvilinear transformations
 
------------
+This module contains:
+
+* :py:func:`create_geometry` : returns a list of obstacles from their origin/size/bc parameters
+* :py:class:`TestCases` : Gather differents arangments of obstacles
 """
 
 import numpy as _np
@@ -48,7 +49,9 @@ def create_geometry(shape, origins, sizes, bc=None):
 
 
 class TestCases:
-    """ Collection of test cases for obstacle arrangements. """
+    """
+    Collection of obstacles arangments and curvilinear transformations.
+    """
 
     @classmethod
     @property
@@ -56,7 +59,7 @@ class TestCases:
         methods = dir(cls)
         methods.remove('all')
         return [getattr(cls, m) for m in methods
-                if not m.startswith('_') and not m.startswith('curv') 
+                if not m.startswith('_') and not m.startswith('curv')
                 and not m.startswith('evolution') and
                 type(getattr(cls, m)) == FunctionType]
 
@@ -81,18 +84,23 @@ class TestCases:
         return create_geometry(shape, **conf)
 
     @staticmethod
-    def evolution_sine(Nt, dt):
-
-        import numpy as np
-
-        t = np.linspace(0, Nt * dt, Nt + 1)
-        f = 1 / (50 * dt)
+    def evolution_sine(time):
+        """ Sinusoïdal time evolution """
+        f = 1 / (50 * time[1])
         amp = 1
-        return amp * np.sin(2 * np.pi * f * t)
+        return amp * _np.sin(2 * _np.pi * f * time)
 
     @staticmethod
     def single_source(shape, stencil=11):
-        """ Single obstacle. """
+        """ Single obstacle with wall source.
+
+        ::
+
+            _____
+            |   |
+            |___|
+
+        """
 
         thresh = stencil * 2 + 1
         obs = Obstacle(origin=(thresh, ) * len(shape), size=(40, ) * len(shape), env=shape, bc='WVWW' + 2 * (len(shape) - 2) * 'W')
@@ -155,7 +163,7 @@ class TestCases:
 
     @staticmethod
     def edges(shape, stencil=11):
-        """ All possible singles... """
+        """ All possible single edges... """
 
         thresh = stencil * 2 + 1
         height = 2 * thresh
@@ -212,9 +220,12 @@ class TestCases:
     @staticmethod
     def superimposed1(shape, stencil=11):
         """ Two obstacles side to side.
-        __________
-        |   ||   |
-        |___||___|
+
+        ::
+
+            __________
+            |   ||   |
+            |___||___|
 
         """
 
@@ -235,10 +246,14 @@ class TestCases:
     @staticmethod
     def superimposed2(shape, stencil=11):
         """ Two obstacles of different height side to side.
-        __________
-        |   ||   |
-        |   ||___|
-        |___|
+
+        ::
+
+            __________
+            |   ||   |
+            |   ||___|
+            |___|
+
         """
 
         thresh = stencil * 2 + 1
@@ -258,7 +273,16 @@ class TestCases:
 
     @staticmethod
     def Lcell(shape, stencil=11):
-        """ L arrangement. """
+        """ L arrangement.
+
+        ::
+
+            _____
+            |   |
+            |   |_____
+            |___||___|
+
+        """
 
         thresh = stencil * 2 + 1
         height1 = 3 * thresh
@@ -278,7 +302,16 @@ class TestCases:
 
     @staticmethod
     def Tcell(shape, stencil=11):
-        """ T arrangement. """
+        """ T arrangement.
+
+        ::
+
+          _________
+          |_______|
+            |   |
+            |___|
+
+        """
 
         thresh = stencil * 2 + 1
         height1 = 3 * thresh
@@ -298,7 +331,16 @@ class TestCases:
 
     @staticmethod
     def Ucell(shape, stencil=11):
-        """ Bridge arrangement. """
+        """ Bridge arrangement.
+
+        ::
+
+            _____     _____
+            |   |     |   |
+            |   |_____|   |
+            |___||___||___|
+
+        """
 
         thresh = stencil * 2 + 1
         height1 = (3 * thresh)
@@ -323,7 +365,17 @@ class TestCases:
 
     @staticmethod
     def Ocell(shape, stencil=11):
-        """ Window arrangement. """
+        """ Window arrangement.
+
+        ::
+
+            _______________
+            |   ||___||   |
+            |   |     |   |
+            |   |_____|   |
+            |___||___||___|
+
+        """
 
         thresh = stencil * 2 + 1
         height1 = 3 * thresh
@@ -390,7 +442,7 @@ class TestCases:
 
     @staticmethod
     def curv_mountain(x, y):
-
+        """ Curvilinear function example. """
         xsine = _np.linspace(-_np.pi, _np.pi, x.shape[0])
         sine = _np.sin(xsine/0.1)
         profile = _np.zeros_like(x)

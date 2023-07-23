@@ -20,10 +20,12 @@
 #
 # Creation Date : 2023-04-06 - 09:45:13
 """
------------
-DOCSTRING
+The `geometry` module provides objects to describe elements of geometry :
 
------------
+    * :py:class:`Obstacle` : describes an obstacle with its faces
+    * :py:class:`Domain` : describes a portion of the computation domain
+    * :py:class:`ObstacleSet` : Collection of Obstacle objects
+    * :py:class:`DomainSet` : Collection of Domain objects
 """
 
 import itertools as _it
@@ -58,6 +60,7 @@ class Box:
 
     @classmethod
     def from_slices(cls, slices, env, bc=None, inner=False, tag=None):
+        """ Instanciate Box from a list of slices. """
         origin = tuple(s.start for s in slices)
         size = tuple(s.stop - s.start for s in slices)
         return cls(origin=origin, size=size, env=env, bc=bc, inner=inner, tag=tag)
@@ -65,6 +68,7 @@ class Box:
     @property
     @functools.lru_cache()
     def indices(self):
+        """ Return a set of all indexes contained in the Box. """
         return set(_it.product(*self.rn))
 
     def _get_vertices(self):
@@ -163,8 +167,6 @@ class Box:
             out.append(set(s).issuperset(o))
         return all(tuple(out))
 
-
-
     def _check_args(self):
         """ Check input arguments."""
         if any(len(self.bc) != 2 * len(s) for s in [self.origin, self.size, self.env]):
@@ -224,6 +226,16 @@ class Box:
     def __contains__(self, other):
         return other.issubset(self)
 
+    def __eq__(self, other):
+        if not isinstance(other, type(self)):
+            raise ValueError(f'Can only compare {type(self).__name__} together')
+        attrs = ['origin', 'size', 'env', 'bc', 'inner', 'tag']
+        return all(getattr(self, attr, None) == getattr(other, attr, None) for attr in attrs)
+
+    def __hash__(self):
+        """ Mandatory because of the definition of __eq__. If not, self is not hashable. """
+        return id(self)
+
     def __fargs__(self):
         return f"origin={self.origin}, size={self.size}, bc={self.bc}"
 
@@ -239,6 +251,8 @@ class Box:
 
 
 class Cuboid(Box):
+    """ Specialization of Box objects to describe a cuboid and its faces. 
+        See :py:class:`nsfds3.cpgrid.geometry.Box` for further details. """
 
     count = 0
 
@@ -268,10 +282,7 @@ class Cuboid(Box):
 
     @property
     def description(self):
-        """ Return a brief description of the object.
-
-        Note : clamped and covered are the same ... Maybe different when P bc...
-        """
+        """ Return a brief description of the object. """
         attributes = dict(clamped='c', bounded='b',
                           free='f', colinear='I',
                           overlapped='o', covered='0',
@@ -282,7 +293,7 @@ class Cuboid(Box):
         return '/'.join(chars)
 
     def flatten(self, axis):
-        """ Return flat version of the object."""
+        """ Return a flat version of the object."""
         cls = type(self)
         if self.ndim == 2:
             raise ValueError(f'{cls.__name__} already flat')
@@ -299,6 +310,11 @@ class Cuboid(Box):
 
         return obj
 
+#    def __eq__(self, other):
+#        equal_boxes = super().__eq__(other)
+#        equal_faces = all(f1 == f2 for f1, f2 in zip(self, other))
+#        return equal_boxes and equal_faces
+
     def __iter__(self):
         return iter(self.faces)
 
@@ -307,14 +323,18 @@ class Cuboid(Box):
 
 
 class Obstacle(Cuboid):
-    pass
+    """ Specialization of Cuboid objects to describe an Obstacle.
+        See :py:class:`nsfds3.cpgrid.geometry.Box` and :py:class:`nsfds3.cpgrid.geometry.Cuboid` for further details. """
 
 
 class Domain(Cuboid):
-    pass
+    """ Specialization of Cuboid objects to describe a portion of the computation domain.
+        See :py:class:`nsfds3.cpgrid.geometry.Box` and :py:class:`nsfds3.cpgrid.geometry.Cuboid` for further details. """
 
 
 class Face(Box):
+    """ Specialization of Box objects to describe a face. 
+        See :py:class:`nsfds3.cpgrid.geometry.Box` for further details. """
 
     _sides = {'right': (0, 1, 1), 'left': (0, -1, 0),    # (axis, normal, idx)
               'back': (1, 1, 3), 'front': (1, -1, 2),
@@ -344,9 +364,6 @@ class Face(Box):
         if self.inner:
             self.normal = - self.normal
 
-        self.profile = "sine"
-        self.evolution = _np.array([])
-
         self.clamped = False
         self.periodic = False
         self.bounded = False
@@ -361,15 +378,21 @@ class Face(Box):
         Parameters
         ----------
         func : function
-            Function that takes (Nt, dt) as input arguments, where Nt is the
-            number of time iterations and dt the timestep and must return an
-            1d ndarray containing Nt points that describe the time evolution
-            of the wall source.
+            Function that takes the time axis t as input arguments, which is calculated as follows::
+
+                import numpy as np
+                t = np.linspace(0, nt * dt, nt + 1)
+
+            where Nt is the number of time iterations and dt the timestep. set_source must return a
+            1d ndarray containing Nt + 1 points that describe the time evolution of the wall source.
         profile : str, 'tukey' by default.
             Spacial profile. must be "sine" or "tukey"
         """
+        if not callable(func):
+            raise ValueError('func must be callable')
         self.source_evolution = _np.array([])
         self.source_function = func
+        self.source_name = func.__name__
         self.source_alpha = alpha
         if profile.lower() not in ['sine', 'tukey']:
             self.source_profile = 'tukey'
@@ -387,15 +410,22 @@ class Face(Box):
 
     @property
     def free(self):
+        """ Report whether the face is free or not. """
         return all(not getattr(self, attr) for attr in self._attributes if attr != 'free')
 
     @property
     def description(self):
+        """ Return a brief description of the object. """
         return '/'.join([c for c in self._attributes if getattr(self, c)])
 
     def _check_args(self):
         """ Check input arguments.
-        Note: Overload _check_args to impose bc to be 1-character string."""
+
+        Note
+        ----
+
+        Overload _check_args from Box to impose bc to be 1-character string.
+        """
 
         if any(len(self.size) != len(s) for s in [self.origin, self.env]):
             raise ValueError('origin, size, and env must have the same dimension')
@@ -436,6 +466,13 @@ class Face(Box):
 
         return Box(origin=origin, size=size, env=self.env, bc=''.join(bc))
 
+#    def __eq__(self, other):
+#        if not isinstance(other, type(self)):
+#            raise ValueError(f'Can only compare {type(self).__name__} together')
+#        attrs = ['origin', 'size', 'env', 'bc', 'inner',
+#                 'source_profile', 'source_alpha', 'source_name']
+#        return all(getattr(self, attr, None) == getattr(other, attr, None) for attr in attrs)
+
     def __fargs__(self):
 
         s = f"origin={self.origin}, size={self.size}, "
@@ -444,13 +481,19 @@ class Face(Box):
         return s
 
     def __getstate__(self):
+        """
+        Note
+        ----
+        can't picke external function, so delete it from instance...
+        """
         attributes = self.__dict__.copy()
-        # can't picke external function, so delete it from instance...
         if hasattr(self, 'source_function'):
             del attributes['source_function']
         return attributes
 
+
 class BoxSet:
+    """ Elementary object to describe a collection of Cuboids. """
 
     def __init__(self, shape, bc, subs=None, stencil=11):
 
@@ -463,6 +506,11 @@ class BoxSet:
         self.faces = tuple(_it.chain(*[sub.faces for sub in subs]))
         self.bounds = Obstacle(origin=(0, ) * len(shape), size=shape, env=shape, bc=self.bc, inner=True).faces
         self.sids = {o.sid:o for o in self.subs}
+
+    def __eq__(self, other):
+        if not isinstance(other, type(self)):
+            raise ValueError(f'Can only compare {type(self).__name__} together')
+        return all(o1 == o2 for o1, o2 in zip(self, other))
 
     def __getitem__(self, n):
         return self.subs[n]
@@ -502,11 +550,23 @@ class BoxSet:
 
 
 class DomainSet(BoxSet):
-    """ Collection of Domains objects. """
+    """ Specialization of BoxSet objects to describe a collection of Domain objects.
+        See :py:class:`nsfds3.cpgrid.geometry.BoxSet` for further details.
+    """
+
+    @property
+    def inner_objects(self):
+        """ Return an new instance without the objects located at the limits of the domain. """
+        subs = [sub for sub in self
+                if 0 not in [c[0] for c in sub.cn] and
+                all([c[1] != s - 1 for c, s in zip(sub.cn, sub.env)])]
+        return DomainSet(self.shape, bc=self.bc, subs=subs, stencil=self.stencil)
 
 
 class ObstacleSet(BoxSet):
-    """ Collection of Obstacle objects. """
+    """ Specialization of BoxSet objects to describe a collection of Obstacle objects.
+        See :py:class:`nsfds3.cpgrid.geometry.BoxSet` for further details.
+    """
 
     def __init__(self, shape, bc, subs=None, stencil=11):
 
@@ -564,11 +624,13 @@ class ObstacleSet(BoxSet):
         return loc and span
 
     def get_obstacle_by_face(self, f):
+        """ Return the Obstacle object containing the face f. """
         for o in self:
             if o.sid == f.sid:
                 return o
 
     def get_obstacle_by_sid(self, sid):
+        """ Return Obstacle whose identity is sid. """
         for o in self:
             if o.sid == sid:
                 return o
@@ -633,7 +695,3 @@ class ObstacleSet(BoxSet):
         if not instance:
             raise TypeError('The object does not have a volumic version')
         return instance
-
-
-if __name__ == "__main__":
-    pass

@@ -20,11 +20,7 @@
 #
 # Creation Date : 2022-07-21 - 09:00:24
 """
------------
-
-nsfds3.utils.data provides some helper class or function to retrieve data from nsfds3 simulations
-
------------
+The module `data` provides some helper class or function to retrieve data from nsfds3 simulations.
 """
 
 
@@ -35,8 +31,8 @@ import numpy as _np
 from libfds import fields
 
 
-def nearest_index(n, ns, nt):
-    """ Returns nearest possible index `n`
+def closest_index(n, ns, nt):
+    """ Returns the index closest to `n`.
 
     Parameters
     ----------
@@ -46,6 +42,11 @@ def nearest_index(n, ns, nt):
         Subdivision of `nt`
     nt: int
         Total number of iterations
+
+    Returns
+    -------
+    ns: int
+        The index closest to n
     """
 
     if n > nt:
@@ -63,17 +64,111 @@ def nearest_index(n, ns, nt):
     return ns
 
 
-def get_data(filename):
-    """ Get data from `filename` (hdf5 file). """
+def get_data(fname):
+    """ Get data from hdf5 file named `filename`.
+
+    Parameters
+    ----------
+    fname: str
+        path to data file
+
+    Returns
+    -------
+    data: h5py file
+        The buffer interface to the hdf5 file
+
+    Raises
+    ------
+    OSError
+        If hdf5 file is not valid or does not exist
+    """
 
     try:
-        filename = pathlib.Path(filename).expanduser()
-        data = h5py.File(filename, 'r')
+        fname = pathlib.Path(fname).expanduser()
+        data = h5py.File(fname, 'r')
     except OSError:
         print('You must provide a valid hdf5 file')
         sys.exit(1)
     else:
         return data
+
+
+def get_pressure(r=None, ru=None, rv=None, rw=None, re=None, gamma=1.4):
+    """ Get pressure from conservative variables.
+
+    Parameters
+    ----------
+    r, ru, rv, rw, re: numpy.array, optional
+        Conservative variables
+    gamma: float, optional
+        Heat capacity ratio
+
+    Returns
+    -------
+    p: numpy.array
+        Pressure
+
+    Examples
+    --------
+
+    The pressure is not directly provided. To access acoustic pressure, one can use::
+
+        from nsfds3.utils import get_pressure
+
+	    p = get_pressure(r=r, ru=ru, rv=rv, rw=rw, re=re, gamma=gamma)
+
+    """
+    if any(item is None for item in [r, ru, rv, re]):
+        raise ValueError('r, ru, rv, re must be provided')
+
+    p = _np.empty_like(r)
+
+    if p.ndim == 3 and rw is not None:
+        fields.update_p3d(p, r, ru, rv, rw, re, gamma)
+    elif p.ndim == 2:
+        fields.update_p2d(p, r, ru, rv, re, gamma)
+    else:
+        raise ValueError('Variable must be 2 or 3d')
+
+    return p
+
+
+def check_view(view, volumic=True, vorticity=True):
+    """ Displays a message specifying which variables can be plotted.
+
+    Parameters
+    ----------
+    view: str
+        The name of the variable to consider
+    volumic: bool
+        Specifies whether the simulation is 3d or not
+    vorticity:
+        Specifies whether vorticity is calculated or not
+    """
+
+    views = ['r', 'ru', 'rv', 'rw', 're', 'wx', 'wy', 'wz',
+             'p', 'rho', 'vx', 'vy', 'vz', 'e']
+
+    if view == 'rho':
+        view = 'r'
+
+    if view in ['rw', 'vz', 'wx', 'wy'] and not volumic:
+        print('No z-component for velocity')
+        sys.exit(1)
+
+    if view in ['wx', 'wy', 'wz'] and not vorticity:
+        print('No data for vorticity')
+        sys.exit(1)
+
+    if view not in views:
+        vortis = '|wz' if volumic else '|wx|wy|wz'
+        msg = 'view must be : {}' + (vortis if vorticity else '')
+        var3d = 'p|r|rho|r|ru|rv|rw|re|vx|vy|vz|e'
+        var2d = 'p|r|rho|r|ru|rv|re|vx|vy|e'
+        print(msg.format(var3d if volumic else var2d) )
+        sys.exit(1)
+
+    return view
 
 
 class DataIterator:
@@ -182,26 +277,27 @@ class DataExtractor:
             Can be int (frame index), tuple (int_min, int_max), or 'auto'
         """
 
+        view = check_view(view, self.volumic, self.vorticity)
+
         if not ref or ref == 'auto':
             ref = self.autoref(view=view)
 
         if isinstance(ref, int):
             var = self.get(view=view,
-                           iteration=nearest_index(ref, self.ns, self.nt))
+                           iteration=closest_index(ref, self.ns, self.nt))
             return _np.nanmin(var), _np.nanmax(var)
 
         if isinstance(ref, tuple):
             varmin = self.get(view=view,
-                              iteration=nearest_index(ref[0], self.ns, self.nt))
+                              iteration=closest_index(ref[0], self.ns, self.nt))
             varmax = self.get(view=view,
-                              iteration=nearest_index(ref[1], self.ns, self.nt))
+                              iteration=closest_index(ref[1], self.ns, self.nt))
             return _np.nanmin(varmin), _np.nanmax(varmax)
-
-        self._bad_choice()
 
     def autoref(self, view='p'):
         """ Autoset reference. """
 
+        view = check_view(view, self.volumic, self.vorticity)
         var = DataIterator(self, view=(view, ))
 
         maxs = []
@@ -232,40 +328,27 @@ class DataExtractor:
     def get(self, view='p', iteration=0):
         """ Get data at iteration. """
 
-        if view == 'rho':
-            view == 'r'
-
-        if view in ['rw', 'vz', 'wx', 'wy'] and not self.volumic:
-            print('No z-component for velocity')
-            sys.exit(1)
-
-        if view in ['wx', 'wy', 'wz'] and not self.vorticity:
-            print('No data for vorticity')
-            sys.exit(1)
+        view = check_view(view, self.volumic, self.vorticity)
 
         if view == 'p':
             r = self.data[f"r_it{iteration}"][...]
             ru = self.data[f"ru_it{iteration}"][...]
             rv = self.data[f"rv_it{iteration}"][...]
             re = self.data[f"re_it{iteration}"][...]
-            p = _np.empty_like(r)
             if self.volumic:
                 rw = self.data[f"rw_it{iteration}"][...]
-                fields.update_p3d(p, r, ru, rv, rw, re, self.gamma)
             else:
-                fields.update_p2d(p, r, ru, rv, re, self.gamma)
-
+                rw = None
+            p = get_pressure(r=r, ru=ru, rv=rv, rw=rw, re=re, gamma=self.gamma)
             return p.transpose(self.T) - self.p0
 
-        if view in ['vx', 'vy', 'vz', 'e']:
+        elif view in ['vx', 'vy', 'vz', 'e']:
             v = self.data[f"{self.var[view]}_it{iteration}"][...]
             r = self.data[f"r_it{iteration}"][...]
             return (v / r).transpose(self.T)
 
-        if view in ['r', 'ru', 'rv', 'rw', 're', 'wx', 'wy', 'wz']:
+        elif view in ['r', 'ru', 'rv', 'rw', 're', 'wx', 'wy', 'wz']:
             return (self.data[f"{view}_it{iteration}"][...]).transpose(self.T)
-
-        self._bad_choice()
 
     def get_attr(self, attr):
         """ Get attribute from hdf5 file. attr must be string."""
@@ -274,19 +357,6 @@ class DataExtractor:
     def get_dataset(self, dataset):
         """ Get dataset from hdf5 file. attr must be string."""
         return self.data[dataset][...]
-
-    def _bad_choice(self):
-
-        vortis = '|wz' if self.volumic else '|wx|wy|wz'
-        msg = 'view must be : {}' + (vortis if self.vorticity else '')
-        var3d = 'p|r|rho|r|ru|rv|rw|re|vx|vy|vz|e'
-        var2d = 'p|r|rho|r|ru|rv|re|vx|vy|e'
-
-        if self.volumic:
-            print(msg.format(var3d))
-        else:
-            print(msg.format(var2d))
-        sys.exit(1)
 
 
 class FieldExtractor:
@@ -312,16 +382,7 @@ class FieldExtractor:
     def get(self, view='p', iteration=None):
         """ Get data at iteration. """
 
-        if view == 'rho':
-            view == 'r'
-
-        if view in ['rw', 'vz', 'wx', 'wy'] and not self.volumic:
-            print('No z-component for velocity')
-            sys.exit(1)
-
-        if view in ['wx', 'wy', 'wz'] and not self.vorticity:
-            print('No data for vorticity')
-            sys.exit(1)
+        view = check_view(view, self.volumic, self.vorticity)
 
         if view == 'p':
             return _np.array(self.fld.p).transpose(self.T) - self.fld.p0
@@ -331,18 +392,3 @@ class FieldExtractor:
 
         if view in ['vx', 'vy', 'vz', 'e']:
             return _np.array(getattr(self.fld, self.var[view]) / self.fld.r).transpose(self.T)
-
-        self._bad_choice()
-
-    def _bad_choice(self):
-
-        vortis = '|wz' if self.volumic else '|wx|wy|wz'
-        msg = 'view must be : {}' + (vortis if self.vorticity else '')
-        var3d = 'p|r|rho|r|ru|rv|rw|re|vx|vy|vz|e'
-        var2d = 'p|r|rho|r|ru|rv|re|vx|vy|e'
-
-        if self.volumic:
-            print(msg.format(var3d))
-        else:
-            print(msg.format(var2d))
-        sys.exit(1)

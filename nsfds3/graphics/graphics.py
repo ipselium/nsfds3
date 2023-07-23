@@ -20,91 +20,64 @@
 #
 # Creation Date : 2022-06-09 - 22:15:26
 """
------------
-
 Some helper classes and functions to represent meshes graphically.
 
------------
+    * `MeshViewer` : Graphical tool to visualize Mesh objects graphically.
+    * `CPViewer` : MeshViewer specialization adapted to ComputationDomains.
+    * `MPLViewer` : MeshViewer specialization adapted to libfds.Fields or hdf5 files.
+    * `PlyViewer` : Mesh/ComputationDomain viewer using Plotly.
 """
 
 import os
 import sys
 import pathlib
-import collections.abc
-from copy import deepcopy
-
 import numpy as _np
-from scipy import signal as _signal
-
+import scipy.signal as _signal
 import matplotlib.pyplot as _plt
+import matplotlib.animation as _ani
+import plotly.graph_objects as _go
+
+from plotly.subplots import make_subplots
 from matplotlib import patches as _patches, path as _path
 from matplotlib.image import PcolorImage
-from matplotlib.colors import ListedColormap, BoundaryNorm
-import matplotlib.animation as _ani
 from mpl_toolkits.axes_grid1 import make_axes_locatable
-
-import plotly.graph_objects as _go
-from plotly.subplots import make_subplots
 
 #from progressbar import ProgressBar, Bar, ETA
 from rich.progress import track
-
-from mplutils import modified_jet, MidPointNorm, set_figsize, get_subplot_shape
-from nsfds3.utils.data import DataExtractor, FieldExtractor, DataIterator, nearest_index
-
+from nsfds3.utils.data import DataExtractor, FieldExtractor, DataIterator, closest_index
+from nsfds3.graphics.utils import MidPointNorm, cmap_jet, cmap_mask, dict_update, fig_scale
 from libfds.fields import Fields2d, Fields3d
+
+
+cmap = cmap_jet()
 
 
 class ViewerError(Exception):
     """ Exception raised when grid parameters are wrong. """
 
 
-def extend_range(a, b, percent=5):
-    """ Extends the numerical range (a, b) by percent. """
-    value = (b - a) * percent / 100
-    return a - value, b + value
-
-
-def dict_update(d1, d2):
-    out1 = deepcopy(d1)
-    out2 = deepcopy(d2)
-    if all((isinstance(d, collections.abc.Mapping) for d in (out1, out2))):
-        for k, v in out2.items():
-            out1[k] = dict_update(out1.get(k), v)
-        return out1
-    return out2
-
-
-def fig_scale(ax1, ax2, ref=None):
-    """ Return ideal size ratio. """
-    if isinstance(ax1, (tuple, list)):
-        s1 = sum(ax.max() - ax.min() for ax in ax1)
-    else:
-        s1 = ax1.max() - ax1.min()
-
-    if isinstance(ax2, (tuple, list)):
-        s2 = sum(ax.max() - ax.min() for ax in ax2)
-    else:
-        s2 = ax2.max() - ax2.min()
-
-    ratio = min(s1, s2) / max(s1, s2)
-    b1 = 1 / (1 + ratio)
-    b2 = 1 - b1
-
-    if ref:
-        if s1 < s2:
-            b2, b1 = ref, ref * b1 / b2
-        else:
-            b1, b2 = ref, ref * b2 / b1
-
-    return b2 if s1 < s2 else b1, b2 if s2 < s1 else b1
-
-
-cmap = modified_jet()
-
-
 class MeshViewer:
-    """ """
+    """ Graphical tool to visualize Mesh objects graphically.
+
+    Parameters
+    ----------
+    figsize: tuple, optional
+        Size of the figure
+    dpi: int, optional
+        Resolution of the figure
+    grid: bool, optional
+        If True, display the grid.
+    buffer: bool, optional
+        If True, display the buffer zones.
+    obstacles: bool, optional
+        If True, display the obstacles
+    domains: bool, optional
+        If True, diplay the computation domains
+    N: int, optional
+        Grid step
+    slice: tuple, (x0, y0[, z0])
+        Position of the cross sections for 3d views
+    """
 
     dkwargs = dict(figsize=(10, 10), dpi=100,
                    grid=True, buffer=True, obstacles=True, domains=False, N=1,
@@ -132,12 +105,11 @@ class MeshViewer:
         else:
             fig, *_ = self._frame2d(**kwargs)
 
-        fig.show()
+        _plt.show()
 
     def _frame3d(self, cbar=False, **kwargs):
 
         slices = self._get_slices(kwargs.get('slices'))
-
         fig, ax_xy = _plt.subplots(figsize=kwargs.get('figsize'), dpi=kwargs.get('dpi'), tight_layout=True)
 
         # Size fig. & Limits
@@ -237,14 +209,14 @@ class MeshViewer:
     def _get_slices(self, slices):
 
         if slices:
-            if all([a < b for a, b in zip(slices, self.msh.shape[::-1])]):
-                self.i_xy, self.i_xz, self.i_zy = slices
+            if all([a < b for a, b in zip(slices, self.msh.shape)]):
+                self.i_zy, self.i_xz, self.i_xy = slices
             else:
                 raise IndexError('Slices out of bounds')
         else:
-            self.i_xy, self.i_xz, self.i_zy = [int(n/2) for n in self.msh.shape[::-1]]
+            self.i_zy, self.i_xz, self.i_xy = [int(n/2) for n in self.msh.shape]
 
-        return self.i_xy, self.i_xz, self.i_zy
+        return self.i_zy, self.i_xz, self.i_xy
 
     @staticmethod
     def objects(ax, axes, indices, obj, **kwargs):
@@ -332,6 +304,7 @@ class MeshViewer:
 
 
 class CPViewer(MeshViewer):
+    """ MeshViewer specialization adapted to ComputationDomains. """
 
     def __init__(self, cpdomain):
 
@@ -350,13 +323,7 @@ class CPViewer(MeshViewer):
 
         self.axis = tuple(_np.arange(0, n) for n in self.cpdomain.shape)
         self.axis = _np.meshgrid(*self.axis, indexing='ij')
-        self.cmap, self.norm = self.mask_cmap(cpdomain.stencil)
-
-    @staticmethod
-    def mask_cmap(stencil=11):
-        nodes = [-stencil, 0, 1, stencil]
-        colors = ["mistyrose", "black", "white", "paleturquoise"]
-        return ListedColormap(colors), BoundaryNorm(nodes, len(colors) - 1)
+        self.cmap, self.norm = cmap_mask(cpdomain.stencil)
 
     def _frame2d(self, **kwargs):
 
@@ -382,40 +349,43 @@ class CPViewer(MeshViewer):
 
     def _frame3d(self, **kwargs):
 
-        domains = self.xdomains + self.ydomains + self.zdomains
-        colorscales = {'p': ['blue', 'cyan'], 
-                       'm': ['red', 'magenta'], 
+        colorscales = {'p': ['blue', 'cyan'],
+                       'm': ['red', 'magenta'],
                        'P': ['green', 'yellow']}
 
         fig = _go.Figure()
         data = []
-        for sub in self.obstacles:
-            data.append(_go.Mesh3d(x=sub.vertices[0],
-                                y=sub.vertices[1],
-                                z=sub.vertices[2],
-                                colorscale=['black', 'gray'],
-                                intensity=_np.linspace(0, 1, 8, endpoint=True),
-                                name=f'o{sub.sid}',
-                                opacity=1,
-                                alphahull=0,
-                                showscale=False,
-                                flatshading=True   # to hide the triangles
-                                ))
+        if kwargs['obstacles']:
+            for sub in self.obstacles:
+                data.append(_go.Mesh3d(x=sub.vertices[0],
+                                    y=sub.vertices[1],
+                                    z=sub.vertices[2],
+                                    colorscale=['black', 'gray'],
+                                    intensity=_np.linspace(0, 1, 8, endpoint=True),
+                                    name=f'o{sub.sid}',
+                                    opacity=1,
+                                    alphahull=0,
+                                    showscale=False,
+                                    flatshading=True   # to hide the triangles
+                                    ))
+        if kwargs['domains']:
+            domains = self.xdomains + self.ydomains + self.zdomains
+            if not kwargs['bounds']:
+                domains = domains.inner_objects
+            for sub in [s for s in domains if s.tag in ["p", "m"]]:
+                data.append(_go.Mesh3d(x=sub.vertices[0],
+                                    y=sub.vertices[1],
+                                    z=sub.vertices[2],
+                                    colorscale=colorscales[sub.tag],
+                                    intensity=_np.linspace(0, 1, 8, endpoint=True),
+                                    name=f'o{sub.sid}',
+                                    opacity=1,
+                                    alphahull=0,
+                                    showscale=False,
+                                    flatshading=True   # to hide the triangles
+                                    ))
 
-        for sub in [s for s in domains if s.tag in ["p", "m"]]:
-            data.append(_go.Mesh3d(x=sub.vertices[0],
-                                y=sub.vertices[1],
-                                z=sub.vertices[2],
-                                colorscale=colorscales[sub.tag],
-                                intensity=_np.linspace(0, 1, 8, endpoint=True),
-                                name=f'o{sub.sid}',
-                                opacity=1,
-                                alphahull=0,
-                                showscale=False,
-                                flatshading=True   # to hide the triangles
-                                ))
-
-        fig.update_layout(width=800, height=600, font_size=11,  scene_aspectmode="data", 
+        fig.update_layout(width=800, height=600, font_size=11,  scene_aspectmode="data",
                         scene_camera_eye=dict (x=1.45, y=1.45, z=1), template="none")
         fig.add_traces(data)
 
@@ -423,14 +393,11 @@ class CPViewer(MeshViewer):
 
 
 class MPLViewer(MeshViewer):
-    """
-    TODO : Factoriser fields2d/fields3d avec MeshViewer._frame2d/frame3d
-
-    """
+    """ MeshViewer specialization adapted to libfds.Fields or hdf5 files. """
 
     dkwargs = dict(figsize=(10, 10), dpi=100, fps=24,
-                   grid=False, buffer=True, obstacles=True, domains=False, N=1,
-                   slices = None,
+                   grid=False, buffer=True, obstacles=True, domains=False, probes=True,
+                   N=1, slices = None,
                    kwargs_grid=dict(zorder=5),
                    kwargs_obstacles=dict(facecolor='k', alpha=0.2, fill=False, zorder=100),
                    kwargs_domains=dict(facecolor='y', zorder=100),
@@ -574,7 +541,7 @@ class MPLViewer(MeshViewer):
             sys.exit(1)
 
         # Nb of iterations and reference
-        nt = self.cfg.nt if not nt else nearest_index(nt, self.cfg.ns, self.cfg.nt)
+        nt = self.cfg.nt if not nt else closest_index(nt, self.cfg.ns, self.cfg.nt)
         ref = 'auto' if not ref else ref
 
         # Create Iterator and make 1st frame
@@ -619,14 +586,14 @@ class MPLViewer(MeshViewer):
         probes = self.data.get_dataset('probe_locations').tolist()
 
         if not probes:
-            return None
+            raise ValueError("No probes !")
 
         p = self.data.get_dataset('probe_values')
         t = _np.arange(self.cfg.nt) * self.cfg.dt
 
         _, ax = _plt.subplots(figsize=figsize)
         for i, c in enumerate(probes):
-            ax.plot(t, p[i, :] - self.cfg.p0,
+            ax.plot(t, p[i, :] - self.cfg.tp.p0,
                     label=f'@{tuple([self.axis[i][tuple(c)] for i in range(len(p.shape))])}')
         ax.set_xlim(t.min(), t.max())
         ax.set_xlabel('Time [s]')
@@ -634,8 +601,6 @@ class MPLViewer(MeshViewer):
         ax.legend()
         ax.grid()
         _plt.show()
-
-        return None
 
     def spectrogram(self, M=None, figsize=(9, 4)):
         """ Plot spectograms at probes.
@@ -649,7 +614,7 @@ class MPLViewer(MeshViewer):
         probes = self.data.get_dataset('probe_locations').tolist()
 
         if not probes:
-            return None
+            raise ValueError("No probes !")
 
         if not M:
             M = min(int(self.cfg.nt/20), 256)
@@ -657,13 +622,17 @@ class MPLViewer(MeshViewer):
         p = self.data.get_dataset('probe_values')
 
         fig, ax = _plt.subplots(p.shape[0], figsize=figsize, tight_layout=True)
+
+        if p.shape[0] == 1:
+            ax = _np.array([ax, ])
+
         for i, c in enumerate(probes):
 
-            freqs, times, Sx = _signal.spectrogram(p[i, :] - self.cfg.p0,
+            freqs, times, Sx = _signal.spectrogram(p[i, :] - self.cfg.tp.p0,
                                                    nperseg=M,
                                                    fs=1 / self.cfg.dt,
                                                    scaling='spectrum')
-            Sx =  10 * _np.log10(Sx)
+            Sx =  10 * _np.log10(abs(Sx))
             im = ax[i].pcolormesh(times, freqs / 1000, Sx, cmap="Greys")
             ax[i].set_ylabel('Frequency [kHz]')
             if i != len(probes) - 1:
@@ -675,11 +644,9 @@ class MPLViewer(MeshViewer):
         ax[0].set_title('Square spectrum magitude')
         _plt.show()
 
-        return None
 
-
-class CDViewer:
-    """ Computation domain viewer. """
+class PlyViewer:
+    """ Legacy Mesh/ComputationDomain viewer using Plotly. """
 
     def __init__(self, obj):
         self.shape = obj.shape

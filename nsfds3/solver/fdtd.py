@@ -23,10 +23,8 @@
 # pylint: disable=redefined-outer-name
 # pylint: disable=protected-access
 """
------------
-DOCSTRING
-
------------
+The `fdtd` module provides the `FDTD` (Finite Difference Time Domain) class that
+setup and run the simulation
 """
 
 import sys as _sys
@@ -40,21 +38,53 @@ from libfds.fields import Fields
 from libfds.fluxes import EulerianFluxes, ViscousFluxes, Vorticity
 from libfds.filters import SelectiveFilter, ShockCapture
 
-
 from rich import print
 from rich.prompt import Prompt
 from rich.panel import Panel
 from rich.progress import track
 from rich.color import ANSI_COLOR_NAMES
 
-from nsfds3.cpgrid import CartesianGrid
-from nsfds3.solver import CfgSetup
 from nsfds3.graphics import MPLViewer
 from nsfds3.utils import misc
+from nsfds3.solver import CfgSetup
+
 
 
 class FDTD:
-    """ FDTD technique. """
+    """ Solve Navier-Stokes equations using Finite Difference Time Domain (FDTD) technique.
+
+    Parameters
+    ----------
+    cfg: CfgSetup
+        Configuration of the simulation
+    msh: CartesianGrid, CurvilinearGrid
+        Grid used for the simulation
+    quiet: bool
+        If True, display informations on the standard output
+    timings: bool
+        If True, display complete timings during the simulation
+
+    Notes
+    -----
+    When the simulation is complete, one can use the `show` method to display the desired field
+    at the last iteration, or inspect the `fld` object that gathers all conservative variables
+    at the last iteration.
+
+    Finite differences schemes, Runge-Kutta algorithm and selective filter are applied using
+    the technique described in [1]_. The shock capturing procedure is applied using the technique
+    described in [2]_.
+
+    References
+    ----------
+
+    .. [1] C. Bogey, C. Bailly, "A family of low dispersive and low dissipative explicit schemes for
+           flow and noise computations", Journal of Computational Physics, Volume 194, Issue 1, 2004, 
+           Pages 194-214.
+
+    .. [2] C. Bogey, N. de Cacqueray, C. Bailly, "A shock-capturing methodology based on adaptative 
+           spatial filtering for high-order non-linear computations", Journal of Computational Physics,
+           Volume 228, Issue 5, 2009, Pages 1447-1465.
+    """
 
     def __init__(self, cfg, msh, quiet=None, timings=None):
 
@@ -74,11 +104,12 @@ class FDTD:
             self.timings = self.cfg.timings
 
         # Initialize sources (boundaries and domain)
+        time = _np.linspace(0, cfg.nt * cfg.dt, cfg.nt + 1)
         for face in [f for f in msh.obstacles.faces if f.bc == "V"]:
-            face.source_evolution = face.source_function(cfg.nt, cfg.dt)
+            face.source_evolution = face.source_function(time)
 
         for source in self.cfg.src:
-            source.set_evolution(cfg.nt, cfg.dt)
+            source.set_evolution(time)
 
         # Initialize solver
         self.fld = Fields(self.cfg, self.msh)
@@ -94,115 +125,91 @@ class FDTD:
         if self.cfg.vrt:
             self.wxyz = Vorticity(self.fld)
 
-
-
         # Initialize save
         self._init_save()
 
         # Initialize timer
         self._timings = {}
-        self.colors = [c for n, c in enumerate(ANSI_COLOR_NAMES) if 40 < n < 51]
 
-    @staticmethod
-    def timer(func):
-        """ Time method of a class instance containing 'bench' attribute. """
-        def wrapper(self, *args, **kwargs):
-            if self.timings:
-                start = _pc()
-            func(self, *args, **kwargs)
-            if self.timings:
-                if func.__name__ in self._timings:
-                    self._timings[func.__name__].append(_pc() - start)
-                else:
-                    self._timings[func.__name__] = [_pc() - start, ]
-        return wrapper
+    def _log(self):
+        """ Display informations about the simulation. """
 
-    def unload_timings(self):
-        """ Empty timings and display. """
-
-        desc = ""
-        ttime = sum(list(_it.chain(*self._timings.values()))) / self.cfg.ns
-        for color, key in zip(self.colors, self._timings):
-            time = _np.array(self._timings[key]).mean()
-            if time > 2e-4:
-                desc += f'\t-[italic {color}]{key:20}: '
-                desc += f'{time:.4f}\n'
-            self._timings[key] = []
+        if self.timings:
+            desc, time_per_iteration = misc.unload_timings(self._timings)
 
         if self.timings and not self.quiet:
             txt = f"Iteration: [red]{self.cfg.it:>6}\t[/]|\t"
             txt += f"Residuals: [green]{self.fld.residual():>.4f}\t[/]|\t"
-            txt += f"Time: {ttime:>.4f}"
+            txt += f"Time: {time_per_iteration:>.4f}"
             print(Panel(txt))
             print(f"{desc}")
 
-    @timer
     def run(self):
-        """ Run FDTD. """
+        """ Run simulation. """
         ti = _pc()
         try:
             for self.cfg.it in track(range(self.cfg.it, self.cfg.nt + 1),
                                     disable=self.quiet):
-                self.eulerian_fluxes()
-                self.viscous_fluxes()
-                self.selective_filter()
-                self.shock_capture()
-                self.vorticity()
-                self.update_probes()
+                self._eulerian_fluxes()
+                self._viscous_fluxes()
+                self._selective_filter()
+                self._shock_capture()
+                self._vorticity()
+                self._update_probes()
                 if not self.cfg.it % self.cfg.ns:
-                    self.save()
-                    self.unload_timings()
+                    self._save()
+                    self._log()
 
             if not self.quiet:
                 msg = 'Simulation completed in [red]{}[/].\n'
                 msg += 'Final residuals of [red]{:>.4f}[/].\n'
                 msg += 'End at physical time [red]t = {:.4f} sec.'
                 print(Panel(msg.format(misc.secs_to_dhms(_pc() - ti),
-                                    self.fld.residual(),
-                                    self.cfg.dt * self.cfg.it)))
+                                       self.fld.residual(),
+                                       self.cfg.dt * self.cfg.it)))
         finally:
             self.sfile.close()
             self.save_objects()
 
-    @timer
-    def eulerian_fluxes(self):
+    @misc.timer
+    def _eulerian_fluxes(self):
         """ Compute Eulerian fluxes. """
         self.efluxes.rk4()
 
-    @timer
-    def viscous_fluxes(self):
+    @misc.timer
+    def _viscous_fluxes(self):
         """ Compute viscous fluxes. """
         if self.cfg.vsc:
             self.vfluxes.integrate()
             self.efluxes.cout()
 
-    @timer
-    def selective_filter(self):
+    @misc.timer
+    def _selective_filter(self):
         """ Apply selective filter. """
         if self.cfg.flt:
             self.sfilter.apply()
 
-    @timer
-    def shock_capture(self):
+    @misc.timer
+    def _shock_capture(self):
         """ Apply shock capture procedure. """
         if self.cfg.cpt:
             self.scapture.apply()
 
-    @timer
-    def vorticity(self):
+    @misc.timer
+    def _vorticity(self):
         """ Compute vorticity """
         if self.cfg.vrt:
             self.wxyz.compute()
 
-    @timer
-    def update_probes(self):
+    @misc.timer
+    def _update_probes(self):
         """ Update probes. """
         if self.cfg.prb:
             for n, c in enumerate(self.cfg.prb):
                 self.probes[n, self.cfg.it % self.cfg.ns] = self.fld.p[tuple(c)]
 
-    @timer
-    def save(self):
+    @misc.timer
+    def _save(self):
         """ Save data. """
 
         self.sfile.attrs['itmax'] = self.cfg.it
@@ -240,6 +247,7 @@ class FDTD:
             self.sfile['probe_values'][:, self.cfg.it - self.cfg.ns:self.cfg.it] = self.probes
 
     def save_objects(self):
+        """ Save cfg and msh objects. """
 
         with open(self.cfg.datapath.with_suffix('.cfg'), 'wb') as pkl:
             _pkl.dump(self.cfg, pkl, protocol=5)
@@ -254,13 +262,13 @@ class FDTD:
             msg = f'[bold red]{self.cfg.datapath}[/] already exists. \n[blink]Overwrite ?'
             overwrite = Prompt.ask(msg, choices=['yes', 'no'], default='no')
             if overwrite.lower() == 'no':
-                _sys.exit(1)
+                _sys.exit(0)
 
         self.sfile = _h5py.File(self.cfg.datapath, 'w')
         self.sfile.attrs['vorticity'] = self.cfg.vrt
         self.sfile.attrs['ndim'] = self.msh.ndim
-        self.sfile.attrs['p0'] = self.cfg.p0
-        self.sfile.attrs['gamma'] = self.cfg.gamma
+        self.sfile.attrs['p0'] = self.cfg.tp.p0
+        self.sfile.attrs['gamma'] = self.cfg.tp.gamma
 
         # Not necessary ?
         self.sfile.attrs['obstacles'] = self.msh.get_obstacles()
@@ -273,7 +281,7 @@ class FDTD:
         self.sfile.attrs['ny'] = self.msh.ny
         self.sfile.attrs['nt'] = self.cfg.nt
         self.sfile.attrs['ns'] = self.cfg.ns
-        self.sfile.attrs['rho0'] = self.cfg.rho0
+        self.sfile.attrs['rho0'] = self.cfg.tp.rho0
         self.sfile.attrs['bz_n'] = self.cfg.bz_n
         self.sfile.attrs['mesh'] = self.msh.mesh_type
         self.sfile.attrs['bc'] = self.cfg.bc
@@ -305,11 +313,11 @@ class FDTD:
 
 
 if __name__ == '__main__':
+
+    from nsfds3.cpgrid import build_mesh
+
     config = CfgSetup()
-    args, kwargs = config.get_config()
-    mesh = CartesianGrid(*args, **kwargs)
+    mesh = build_mesh(config)
     fdtd = FDTD(config, mesh)
-    print(mesh)
-    print(mesh.domains)
     fdtd.run()
     fdtd.show()

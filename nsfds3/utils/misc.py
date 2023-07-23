@@ -23,13 +23,23 @@
 """
 -----------
 
-Some tools used by the mesher.
+Some misc. tools.
 
 -----------
 """
 
+import os as _os
 import sys as _sys
 import datetime as _datetime
+import itertools as _it
+import numpy as _np
+import scipy.signal as _sps
+import scipy.io.wavfile as _wf
+from time import perf_counter as _pc
+from rich.color import ANSI_COLOR_NAMES
+
+
+font_colors = list(ANSI_COLOR_NAMES.keys())[30:]
 
 
 def getsizeof(obj, seen=None, unit=None):
@@ -71,3 +81,112 @@ def secs_to_dhms(secs):
            (month if dhms.month == 2 else months if dhms.month > 2 else '') + \
            (day if dhms.day == 2 else days if dhms.day > 2 else '') + \
            (h if dhms.hour > 0 else '') + m + s + ms
+
+
+def timer(func):
+    """ Time method of a class instance containing:
+
+        - _timings: dictionary attribute
+        - timing: boolean attribute
+    """
+    def wrapper(self, *args, **kwargs):
+
+        if self.timings:
+            start = _pc()
+
+        func(self, *args, **kwargs)
+
+        if self.timings:
+            if func.__name__ in self._timings:
+                self._timings[func.__name__].append(_pc() - start)
+            else:
+                self._timings[func.__name__] = [_pc() - start, ]
+
+    return wrapper
+
+
+def unload_timings(timings, eps=2e-4):
+    """ Empty timings and return a formatted description of the timings and the mean time per iteration.
+
+    Parameters
+    ----------
+    timings: dict
+        Dictionary containing the timings
+    eps: float, optional
+        Display only timings > eps. eps=2e-4 by default.
+
+    Returns
+    -------
+    tuple with str and float : tuple
+        formatted description of the timings (str) and total time (float)
+
+    """
+
+    desc = ""
+
+    if timings:
+        ns = len(list(timings.values())[0])
+        time_per_iteration = sum(list(_it.chain(*timings.values()))) / ns
+    else:
+        time_per_iteration = 0
+
+    for color, key in zip(font_colors, timings):
+        title = key if not key.startswith('_') else key[1:]
+        time = _np.array(timings[key]).mean()
+        if time > eps:
+            desc += f'\t-[italic {color}]{title:20}: '
+            desc += f'{time:.4f}\n'
+        timings[key] = []
+
+    return desc, time_per_iteration
+
+
+def get_padded(s, N, value=0):
+    """ Pad signal with value. """
+    if N > s.shape[0]:
+        return _np.concatenate([s, value*_np.ones(N - s.shape[0])])
+
+    return s
+
+
+def resample(file, target_rate, pad=None, write=False, force_mono=True):
+    """ Resample target wave file with target_rate. """
+
+    target_rate = int(target_rate)
+
+    if not 1 < target_rate < 4.3e6:
+        raise ValueError('Sampling rate must be 1 < rate < 4.3e6')
+
+    path = _os.path.dirname(file)
+    filename = _os.path.basename(file).split('.')
+    rate, data = _wf.read(file)
+    dtype = data.dtype
+    duration = data.shape[0]/rate
+    N = int(target_rate*duration)
+
+    if len(data.shape) == 2 and force_mono:   # stereo to mono
+        data = (data[:, 0] + data[:, 1])/2
+
+    print(f'Resampling {file} at {target_rate} kHz ({N} points)...')
+    print(f'Set nt > {N} to play the whole sound')
+    if len(data.shape) == 1:   # mono
+        data_r = _sps.resample(data, N).astype(dtype)
+        if pad:
+            data_r = get_padded(data_r, pad)
+
+
+    if len(data.shape) == 2:   # stereo
+        tmp_l = _sps.resample(data[:, 0], N).astype(dtype)
+        tmp_r = _sps.resample(data[:, 1], N).astype(dtype)
+        if pad:
+            tmp_l = get_padded(tmp_l, pad)
+            tmp_r = get_padded(tmp_r, pad)
+
+        data_r = _np.vstack([tmp_l, tmp_r]).T
+
+
+    if write:
+        print(f'Writing {N} samples at {target_rate} kHz rate...')
+        _wf.write(path + '{}_r.{}'.format(*filename), rate=target_rate, data=data_r)
+
+    return data_r/abs(data_r).max()

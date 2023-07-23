@@ -20,21 +20,17 @@
 #
 # Creation Date : 2022-06-09 - 23:00:01
 """
------------
-
-Module `cdomain` provides `ComputationDomains` class aiming at dividing the
-grid into subdomains corresponding to different geometric configurations.
-
------------
+The `cdomain` module provides :py:class:`ComputationDomains` class aiming at dividing the
+grid into subdomains following the geometric configurations.
 """
 
 import itertools as _it
 import numpy as _np
 import rich.progress as _rp
-from .geometry import ObstacleSet, DomainSet, Domain
-from .cutils import get_2d_cuboids, get_3d_cuboids
-from .utils import buffer_kwargs
-import nsfds3.graphics as _graphics
+from nsfds3.cpgrid.geometry import ObstacleSet, DomainSet, Domain
+from nsfds3.cpgrid.cutils import get_2d_cuboids, get_3d_cuboids
+from nsfds3.cpgrid.utils import buffer_kwargs
+from nsfds3.graphics import CPViewer
 
 
 class ComputationDomains:
@@ -44,7 +40,7 @@ class ComputationDomains:
     ----------
     shape : tuple
         Size of the domain. Must be a tuple with 3 int objects.
-    obstacles : list, :py:class:`nsfds3.mesher.geometry.ObstacleSet`, optional
+    obstacles : list of nsfds3.cpgrid.geometry.Obstacle, :py:class:`nsfds3.cpgrid.geometry.ObstacleSet`, optional
         Obstacles in the computation domain.
     bc : {'[APW][APW][APW][APW]'}, optional
         Boundary conditions. Must be a 4 or 6 characters string corresponding to
@@ -55,11 +51,6 @@ class ComputationDomains:
         Size of the finite difference stencil.
     free: bool, optional
         Free memory after the domains are found
-
-    TODO
-    ----
-        - optimizations :
-            - locations_to_cuboids
     """
 
     _BC_U = ['W', 'A', 'V']
@@ -88,7 +79,7 @@ class ComputationDomains:
 
     def _mask_init(self):
         """
-        Initialize a mask that will contain 0 at the location of obstacles and 1 elsewhere.
+        Initialize a mask that contains 0 at the location of obstacles and 1 elsewhere.
         """
         self._mask = _np.ones(self.shape + (self.ndim, ), dtype=_np.int8)
         sax = (slice(0, self.ndim), )
@@ -121,8 +112,8 @@ class ComputationDomains:
         Fill a mask according to finite difference scheme to be applied on each point.
             - Obstacles        : 0
             - Centered schemes : 1
-            - Forward scheme   : 11
-            - Backward scheme  : -11
+            - Forward scheme   : stencil
+            - Backward scheme  : -stencil
         """
 
         self._mask_init()
@@ -142,7 +133,17 @@ class ComputationDomains:
             self._mask[fbox.sn + (f.axis, )] *= base
 
     def get_cuboids(self, mask, ax=-1, N=-1):
+        """ Return a list of dictionnaries containing cuboid parameters.
 
+        Parameters
+        ----------
+            mask : np.array
+                Search cuboids in mask
+            ax : int, optional
+                Direction of the search. Can be 0 (x), 1 (y), or other (center)
+            N : int, optional
+                Fix one dimension of the output cuboids. Only for ax=0 or ax=1.
+        """
         if mask.ndim == 2:
             return get_2d_cuboids(mask, ax, N)
 
@@ -153,11 +154,11 @@ class ComputationDomains:
 
     def find_domains(self):
         """
-        TODO : Fix bc of Domains !!!!!!!!!!!!!!!!!!!
+        Split the domain in rectangular/cubic subdomains
         """
 
         self._mask_setup()
-        confs = [1, 11, -11]
+        confs = [1, self.stencil, -self.stencil]
         domains = [[] for i in range(self.ndim)]
 
         with _rp.Progress(_rp.TextColumn("[bold blue]{task.description:<20}...", justify="right"),
@@ -185,11 +186,11 @@ class ComputationDomains:
                         details=f'Total : {pbar.tasks[0].finished_time:.2f} s')
             pbar.refresh()
 
-        self.update_domains_bc(domains)
+        self._update_domains_bc(domains)
         _ = [setattr(self, f'{ax}domains', d) for ax, d in zip('xyz', domains)]
         self.cdomains = min(domains, key=len)
 
-    def update_domains_bc(self, domains):
+    def _update_domains_bc(self, domains):
 
         for i in range(self.ndim):
             domains[i] = DomainSet(self.shape, self.bc, domains[i])
@@ -205,7 +206,7 @@ class ComputationDomains:
 
     def show(self, obstacles=True, domains=False, bounds=True, only_mesh=True, **kwargs):
         """ Plot 3d representation of computation domain. """
-        viewer = _graphics.CPViewer(self)
+        viewer = CPViewer(self)
         viewer.show(obstacles=obstacles, domains=domains, bounds=bounds, only_mesh=only_mesh, **kwargs)
 
     def _free(self):
@@ -214,15 +215,23 @@ class ComputationDomains:
         except AttributeError:
             pass
 
+    def __str__(self):
+        s = ''
+        for ax, _ in zip('xyz', range(self.ndim)):
+            s += f"{ax}-{getattr(self, f'{ax}domains')}\n\n"
+        return s
+
+    def __repr__(self):
+        return self.__str__()
+
 
 if __name__ == "__main__":
 
-    from .templates import TestCases
+    from nsfds3.cpgrid.templates import TestCases
 
     # Geometry
-    nx, ny, nz = 512, 512, 512
-    shape, stencil = (nx, ny, nz), 3
-
-    test_cases = TestCases(shape, stencil)
-    cp = ComputationDomains(shape, test_cases.case9, stencil=stencil)
-    cp.show(obstacles=True, domains=True, bounds=False)
+    shape = 512, 512, 512
+    bc = 'WWWWWW'
+    obstacles = TestCases.base(shape=shape)
+    cp = ComputationDomains(shape, bc=bc, obstacles=obstacles, free=False)
+    cp.show(domains=True, bounds=False)
