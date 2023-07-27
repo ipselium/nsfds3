@@ -155,10 +155,10 @@ class FDTD:
                 self._selective_filter()
                 self._shock_capture()
                 self._vorticity()
-                self._update_probes()
                 if not self.cfg.it % self.cfg.ns:
                     self._save()
                     self._log()
+                self._update_probes()
 
             if not self.quiet:
                 msg = 'Simulation completed in [red]{}[/].\n'

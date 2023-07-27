@@ -21,9 +21,7 @@ Dependencies
 :numpy: >= 1.1
 :matplotlib: >= 3.0
 :h5py: >= 2.8
-:progressbar33: >= 2.4
-:libfds: >= 0.1.0
-:mplutils: >= 0.4.2
+:libfds: >= 0.2.0
 
 **Important:** To create animations using **nsfds3 make movie**, you also need to
 have **ffmpeg** installed on your system.

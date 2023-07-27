@@ -4,6 +4,7 @@ results/
 *TODO*
 *.hdf5
 *.cfg
+*.msh
 *.mkv
 *.html
 *log*
