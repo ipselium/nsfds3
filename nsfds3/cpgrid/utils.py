@@ -28,8 +28,24 @@ Some tools for cpgrid.
 """
 
 import re
+import os
 import numpy as _np
+from .templates import TestCases as _tc
 
+
+def get_func(module, name):
+    """ Get obstacle from custom file or fdgrid templates. """
+
+    if os.path.isfile(module):
+        sys.path.append(os.path.dirname(module))
+        custom = __import__(os.path.basename(module).split('.')[0])
+    else:
+        custom = _tc
+
+    try:
+        return getattr(custom, name)
+    except AttributeError:
+        return None
 
 class GridError(Exception):
     """ Exception raised when grid parameters are wrong. """

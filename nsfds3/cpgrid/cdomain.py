@@ -30,7 +30,7 @@ import rich.progress as _rp
 from nsfds3.cpgrid.geometry import ObstacleSet, DomainSet, Domain
 from nsfds3.cpgrid.cutils import get_2d_cuboids, get_3d_cuboids
 from nsfds3.cpgrid.utils import buffer_kwargs
-from nsfds3.graphics import CPViewer
+from nsfds3.graphics.graphics import CPViewer
 
 
 class ComputationDomains:

@@ -35,22 +35,6 @@ import time
 import scipy.io.wavfile as _wf
 import numpy as _np
 from nsfds3.utils.data import DataExtractor as _DataExtractor
-from nsfds3.cpgrid import templates as _tplt
-
-
-def get_func(module, name):
-    """ Get obstacle from custom file or fdgrid templates. """
-
-    if os.path.isfile(module):
-        sys.path.append(os.path.dirname(module))
-        custom = __import__(os.path.basename(module).split('.')[0])
-    else:
-        custom = _tplt.TestCases
-
-    try:
-        return getattr(custom, name)
-    except AttributeError:
-        return None
 
 
 def get_objects(path, fname):

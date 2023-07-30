@@ -941,7 +941,7 @@ class CfgSetup:
     def _update_obstacles(self):
         if self.geoname not in self._NONE:
             geofile = '' if self.geofile is None else self.geofile
-            self.obstacles = files.get_func(self.path / geofile, self.geoname)
+            self.obstacles = cputils.get_func(self.path / geofile, self.geoname)
             if self.obstacles is not None:
                 self.obstacles = self.obstacles(self.shape)
         else:
@@ -952,7 +952,7 @@ class CfgSetup:
     def _update_curvilinear_transformation(self):
         if self.curvname not in self._NONE:
             geofile = '' if self.geofile is None else self.geofile
-            self.curvfunc = files.get_func(self.path / geofile, self.curvname)
+            self.curvfunc = cputils.get_func(self.path / geofile, self.curvname)
         else:
             self.curvfunc = None
 
