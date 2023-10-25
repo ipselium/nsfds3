@@ -92,9 +92,9 @@ cpdef list get_3d_cuboids(integer[:, :, ::1] mask, int ax=-1, int N=-1):
         mask : np.array
             Search cuboids in mask
         ax : int, optional
-            Direction of the search. Can be 0 (x), 1 (y), or other (center)
+            Direction of the search. Can be 0 (x), 1 (y), 2 (z), or other (center)
         N : int, optional
-            Fix one dimension of the output cuboids. Only for ax=0 or ax=1.
+            Fix one dimension of the output cuboids. Only for ax=0, ax=1, ax=2.
     """
     if N > 0 and ax == 0:
         return _get_x_3d_cuboids(mask, N)
@@ -132,11 +132,13 @@ cdef list _get_2d_cuboids(integer[:, ::1] mask):
                     cxf = ix
                     break
 
-        cuboids.append(dict(origin=(cxi, cyi), size=(cxf - cxi, cyf - cyi)))
-
-        for ix in range(cxi, cxf):
-            for iy in range(cyi, cyf):
-                m[ix, iy] = 0
+        if cxf - cxi > 0 and cyf - cyi > 0:
+            cuboids.append(dict(origin=(cxi, cyi), size=(cxf - cxi, cyf - cyi)))
+            for ix in range(cxi, cxf):
+                for iy in range(cyi, cyf):
+                    m[ix, iy] = 0
+        else:
+            break
 
     return cuboids
 
@@ -153,7 +155,7 @@ cdef list _get_3d_cuboids(integer[:, :, ::1] mask):
     while any_nonzero3d(m):
 
         cxi, cyi, czi = first_nonzero3d(m)
-        cxf, cyf, czf = mask.shape[0], mask.shape[1], mask.shape[2]
+        cxf, cyf, czf = m.shape[0], m.shape[1], m.shape[2]
 
         for iz in range(czi, czf):
             if m[cxi, cyi, iz] != 1:
@@ -169,12 +171,15 @@ cdef list _get_3d_cuboids(integer[:, :, ::1] mask):
                     if m[ix, iy, iz] != 1:
                         cxf = ix
                         break
+        if cxf - cxi > 0 and cyf - cyi > 0 and czf - czi > 0:
+            cuboids.append(dict(origin=(cxi, cyi, czi), size=(cxf - cxi, cyf - cyi, czf - czi)))
+            for ix in range(cxi, cxf):
+                for iy in range(cyi, cyf):
+                    for iz in range(czi, czf):
+                        m[ix, iy, iz] = 0
+        else:
+            break
 
-        cuboids.append(dict(origin=(cxi, cyi, czi), size=(cxf - cxi, cyf - cyi, czf - czi)))
-        for ix in range(cxi, cxf):
-            for iy in range(cyi, cyf):
-                for iz in range(czi, czf):
-                    m[ix, iy, iz] = 0
     return cuboids
 
 
@@ -203,11 +208,14 @@ cdef list _get_x_2d_cuboids(integer[:, ::1] mask, int N):
                 break
 
         cyf = min(cyf, cyf_bis)
-        cuboids.append(dict(origin=(cxi, cyi), size=(N, cyf - cyi)))
 
-        for ix in range(cxi, cxi + N):
-            for iy in range(cyi, cyf):
-                m[ix, iy] = 0
+        if cyf - cyi > 0:
+            cuboids.append(dict(origin=(cxi, cyi), size=(N, cyf - cyi)))
+            for ix in range(cxi, cxi + N):
+                for iy in range(cyi, cyf):
+                    m[ix, iy] = 0
+        else:
+            break
 
     return cuboids
 
@@ -249,12 +257,14 @@ cdef list _get_x_3d_cuboids(integer[:, :, ::1] mask, int N):
         cyf = min(cyf, cyf_bis)
         czf = min(czf, czf_bis)
 
-        cuboids.append(dict(origin=(cxi, cyi, czi), size=(N, cyf - cyi, czf - czi)))
-
-        for ix in range(cxi, cxi + N):
-            for iy in range(cyi, cyf):
-                for iz in range(czi, czf):
-                    m[ix, iy, iz] = 0
+        if cyf - cyi > 0 and czf - czi > 0:
+            cuboids.append(dict(origin=(cxi, cyi, czi), size=(N, cyf - cyi, czf - czi)))
+            for ix in range(cxi, cxi + N):
+                for iy in range(cyi, cyf):
+                    for iz in range(czi, czf):
+                        m[ix, iy, iz] = 0
+        else:
+            break
 
     return cuboids
 
@@ -284,11 +294,14 @@ cdef list _get_y_2d_cuboids(integer[:, ::1] mask, int N):
                 break
 
         cxf = min(cxf, cxf_bis)
-        cuboids.append(dict(origin=(cxi, cyi), size=(cxf - cxi, N)))
 
-        for ix in range(cxi, cxf):
-            for iy in range(cyi, cyi + N):
-                m[ix, iy] = 0
+        if cxf - cxi > 0:
+            cuboids.append(dict(origin=(cxi, cyi), size=(cxf - cxi, N)))
+            for ix in range(cxi, cxf):
+                for iy in range(cyi, cyi + N):
+                    m[ix, iy] = 0
+        else:
+            break
 
     return cuboids
 
@@ -329,13 +342,15 @@ cdef list _get_y_3d_cuboids(integer[:, :, ::1] mask, int N):
 
         cxf = min(cxf, cxf_bis)
         czf = min(czf, czf_bis)
-
-        cuboids.append(dict(origin=(cxi, cyi, czi), size=(cxf - cxi, N, czf - czi)))
-
-        for ix in range(cxi, cxf):
-            for iy in range(cyi, cyi + N):
-                for iz in range(czi, czf):
-                    m[ix, iy, iz] = 0
+        
+        if cxf - cxi > 0 and czf - czi > 0:
+            cuboids.append(dict(origin=(cxi, cyi, czi), size=(cxf - cxi, N, czf - czi)))
+            for ix in range(cxi, cxf):
+                for iy in range(cyi, cyi + N):
+                    for iz in range(czi, czf):
+                        m[ix, iy, iz] = 0
+        else:
+            break
 
     return cuboids
 
@@ -377,12 +392,14 @@ cdef list _get_z_3d_cuboids(integer[:, :, ::1] mask, int N):
         cxf = min(cxf, cxf_bis)
         cyf = min(cyf, cyf_bis)
 
-        cuboids.append(dict(origin=(cxi, cyi, czi), size=(cxf - cxi, cyf - cyi, N)))
-
-        for ix in range(cxi, cxf):
-            for iy in range(cyi, cyf):
-                for iz in range(czi, czi + N):
-                    m[ix, iy, iz] = 0
+        if cxf - cxi > 0 and cyf - cyi > 0:
+            cuboids.append(dict(origin=(cxi, cyi, czi), size=(cxf - cxi, cyf - cyi, N)))
+            for ix in range(cxi, cxf):
+                for iy in range(cyi, cyf):
+                    for iz in range(czi, czi + N):
+                        m[ix, iy, iz] = 0
+        else:
+            break
 
     return cuboids
 
@@ -463,3 +480,32 @@ cdef tuple first_nonzero3d(integer[:, :, ::1] m, short val=1):
             break
 
     return ix, iy, iz
+
+cpdef int count_zero2d(integer[:, ::1] m):
+    """ Count the number of 0 in m. """
+    cdef int nx = m.shape[0]
+    cdef int ny = m.shape[1]
+    cdef int n = 0
+    cdef Py_ssize_t ix, iy
+
+    for ix in range(nx):
+        for iy in range(ny):
+            if m[ix, iy] == 0:
+                n += 1
+    return n
+
+
+cpdef int count_zero3d(integer[:, :, ::1] m):
+    """ Count the number of 0 in m. """
+    cdef int nx = m.shape[0]
+    cdef int ny = m.shape[1]
+    cdef int nz = m.shape[2]
+    cdef int n = 0
+    cdef Py_ssize_t ix, iy, iz
+
+    for ix in range(nx):
+        for iy in range(ny):
+            for iz in range(nz):
+                if m[ix, iy, iz] == 0:
+                    n += 1
+    return n

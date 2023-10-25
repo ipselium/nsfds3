@@ -1,0 +1,7 @@
+numpy
+scipy
+matplotlib
+plotly
+progressbar33
+rich
+h5py

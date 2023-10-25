@@ -1,0 +1,2 @@
+[console_scripts]
+nsfds3 = nsfds3.main:main
