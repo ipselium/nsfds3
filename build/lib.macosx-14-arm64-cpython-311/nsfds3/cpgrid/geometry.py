@@ -58,6 +58,8 @@ class Box:
         self._set_sin()
 
         self.vertices = self._get_vertices()
+        m = _it.product(*[(s, range(s.start, s.start + 1), range(s.stop - 1, s.stop)) for s in self.rn])
+        self.edges = tuple(set([s for s in m if [len(c) for c in s].count(1) == self.ndim - 1]))
 
     @classmethod
     def from_slices(cls, slices, env, bc=None, inner=False, tag=None):
@@ -114,6 +116,20 @@ class Box:
             values[axis] = [v + 0.1 if i in idx else v
                                     for i, v in enumerate(values[axis])]
         return values
+
+    def slice_from_edge(self, edge):
+        s = tuple()
+        for i, r in enumerate(edge):
+            if len(r) == 1:
+                if i == self.axis:
+                    s += (r.start, )
+                elif self.cn[i][0] == r.start:
+                    s += (r.start if r.start == 0 else r.start + 1, )
+                elif self.cn[i][1] == r.start:
+                    s += (r.start if r.stop == self.env[i] else r.start - 1, )
+            else:
+                s += (slice(r.start if r.start == 0 else r.start + 1, r.stop if r.stop == self.env[i] else r.stop - 1), )
+        return s
 
     def inner_slices(self, ax=None):
         """ Return inner slices except along axis (int). """
@@ -337,6 +353,13 @@ class Domain(Cuboid):
     """ Specialization of Cuboid objects to describe a portion of the computation domain.
         See :py:class:`nsfds3.cpgrid.geometry.Box` and :py:class:`nsfds3.cpgrid.geometry.Cuboid` for further details. """
 
+    def __init__(self, origin, size, env, bc=None, inner=False, tag=None, axis=None):
+
+        super().__init__(origin, size, env, bc=bc, inner=inner, tag=tag)
+        self.axis = axis
+
+    def __fargs__(self):
+        return f"origin={self.origin}, size={self.size}, bc={self.bc}, sid={self.sid}, tag={self.tag}, axis={self.axis}"
 
 class Face(Box):
     """ Specialization of Box objects to describe a face. 
@@ -450,6 +473,20 @@ class Face(Box):
         return tuple(slice(s.start - self.normal, s.stop - self.normal) if i == self.axis 
                         else s for i, s in enumerate(self.sn))
 
+    def corner_slices(self, corner):
+        """ Return inner slice taking account a corner. """
+        sin = tuple()
+        for i, (c, s) in enumerate(zip(corner, self.size)):
+            if i == self.axis:
+                sin += (self.sin[self.axis], )
+            elif s == self.env[i] - 1:
+                sin += (slice(0, self.env[i]), )
+            elif c == 0:
+                sin += (slice(0, s - 1), )
+            else:
+                sin += (slice(c + 2 - s, c + 1), )
+        return sin
+
     def box(self, N=5):
         """ Return a box extending N points ahead of the object."""
 
@@ -522,7 +559,8 @@ class BoxSet:
         self.stencil = stencil
 
         self.faces = tuple(_it.chain(*[sub.faces for sub in subs]))
-        self.bounds = Obstacle(origin=(0, ) * len(shape), size=shape, env=shape, bc=self.bc, inner=True).faces
+        self.corners = tuple(_it.product(*zip((0, ) * len(shape), tuple(s - 1 for s in shape))))
+        self.bounds = Obstacle(origin=(0, ) * len(shape), size=shape, env=shape, bc=self.bc, inner=True)
         self.sids = {o.sid:o for o in self.subs}
 
     def __eq__(self, other):
@@ -572,18 +610,60 @@ class DomainSet(BoxSet):
         See :py:class:`nsfds3.cpgrid.geometry.BoxSet` for further details.
     """
 
-    @property
-    def inner_objects(self):
-        """ Return an new instance without the objects located at the limits of the domain. """
-        subs = [sub for sub in self
-                if 0 not in [c[0] for c in sub.cn] and
-                all([c[1] != s - 1 for c, s in zip(sub.cn, sub.env)])]
-        return DomainSet(self.shape, bc=self.bc, subs=subs, stencil=self.stencil)
+    def __init__(self, shape, bc, subs=None, obstacles=None, stencil=11):
+
+        super().__init__(shape, bc=bc, subs=subs, stencil=stencil)    
+        self.obstacles = obstacles if obstacles else []
+
+        self._update_bc()
+
+        self.outer = []
+        for bound in self.bounds.faces:
+            for face in [f for f in self.faces if f.loc == bound.loc and f.side == bound.side]:
+                if face.parent.tag in ('p', 'm') and face.parent.axis == bound.axis:
+                    self.outer.append(face.parent)
+        self.inner = [o for o in self if o not in self.outer]
+
+    def _update_bc(self):
+        """ Set bc of computation subdomains. """
+        for f1, f2 in _it.product(self.faces, self.obstacles.faces):
+            if f1.side == f2.opposite and f1.loc == f2.loc:
+                if f1.intersects(f2):
+                    f1.bc = f2.bc
+
+        for f1, f2 in _it.product(self.faces, self.bounds.faces):
+            if f1.side == f2.side and f1.loc == f2.loc:
+                if f1.intersects(f2):
+                    f1.bc = f2.bc
+
+        for sub in self:
+            if 'P' in sub.bc[2*sub.axis:2*sub.axis + 2]:
+                sub.tag = 'P'
+
+    def __add__(self, other):
+        """ Override BoxSet.__add__. """
+        if self.stencil != other.stencil or self.shape != other.shape or self.bc != other.bc or self.obstacles != other.obstacles:
+            raise ValueError(f'{type(self)} not compatible')
+        return type(self)(shape=self.shape, bc=self.bc, subs=self.subs + other.subs, obstacles=self.obstacles, stencil=self.stencil)
 
 
 class ObstacleSet(BoxSet):
     """ Specialization of BoxSet objects to describe a collection of Obstacle objects.
         See :py:class:`nsfds3.cpgrid.geometry.BoxSet` for further details.
+
+        Note
+        ----
+        ObstacleSet provides several useful sequences of faces : 
+
+            - periodic : faces located on a periodic boundary of the domain
+            - colinear : faces that are colinear with other obstacle faces
+            - covered : faces that are entirely covered by an obstacle
+            - overlapped : faces that are partially overlapped by an obstacle
+            - clamped : faces located on a boundary (not periodic) of the domain 
+            - bounded : faces that are bounded by at least one boundary of the domain
+            - edged : faces that are located on a boundary of the domain and bounded by at least another one
+            - free : free face
+            - uncentered : faces that need an uncentered scheme
     """
 
     def __init__(self, shape, bc, subs=None, stencil=11):
@@ -591,13 +671,14 @@ class ObstacleSet(BoxSet):
         super().__init__(shape, bc=bc, subs=subs, stencil=stencil)
 
         self._update_face_description()
-
-        self.clamped = tuple(f for f in self.faces if f.clamped)
-        self.covered = tuple(f for f in self.faces if f.covered)
+        
         self.periodic = tuple(f for f in self.faces if f.periodic)
-        self.bounded = tuple(f for f in self.faces if f.bounded)
         self.colinear = tuple(f for f in self.faces if f.colinear)
+        self.covered = tuple(f for f in self.faces if f.covered)
         self.overlapped = tuple(f for f in self.faces if f.overlapped)
+        self.clamped = tuple(f for f in self.faces if f.clamped)
+        self.bounded = tuple(f for f in self.faces if f.bounded)
+        self.edged = tuple(f for f in self.faces if f.clamped and f.bounded)
         self.free = tuple(f for f in self.faces if f.free)
         self.uncentered = tuple(f for f in self.faces if not f.clamped and not f.covered)
 
@@ -622,7 +703,7 @@ class ObstacleSet(BoxSet):
         faces = self.free + self.overlapped + self.colinear + self.bounded
         combs = [(f1, f2) for f1, f2 in _it.combinations(faces, r=2)
                  if f1.sid != f2.sid and f1.side == f2.opposite]
-        combs += [(f1, f2) for f1, f2 in _it.product(faces, self.bounds)
+        combs += [(f1, f2) for f1, f2 in _it.product(faces, self.bounds.faces)
                  if f1.sid != f2.sid and f1.side == f2.side]
 
         for f1, f2 in combs:
@@ -667,7 +748,7 @@ class ObstacleSet(BoxSet):
         faces_vs_subs = [(f, o) for f, o in _it.product(self.faces, self) if f.sid != o.sid]
 
         # Faces clamped to global domain (handle periodic condition)
-        for f, b in _it.product(self.faces, self.bounds):
+        for f, b in _it.product(self.faces, self.bounds.faces):
             if f.side == b.side:
                 if f in b:
                     if b.bc != 'P':
@@ -696,7 +777,7 @@ class ObstacleSet(BoxSet):
                     f.overlapped.append(o)
 
         # Bounds covered by an obstacle
-        for f, o in _it.product(self.bounds, self):
+        for f, o in _it.product(self.bounds.faces, self):
             if f.intersects(o):
                 f.overlapped.append(o)
 

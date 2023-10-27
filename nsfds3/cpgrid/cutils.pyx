@@ -480,32 +480,3 @@ cdef tuple first_nonzero3d(integer[:, :, ::1] m, short val=1):
             break
 
     return ix, iy, iz
-
-cpdef int count_zero2d(integer[:, ::1] m):
-    """ Count the number of 0 in m. """
-    cdef int nx = m.shape[0]
-    cdef int ny = m.shape[1]
-    cdef int n = 0
-    cdef Py_ssize_t ix, iy
-
-    for ix in range(nx):
-        for iy in range(ny):
-            if m[ix, iy] == 0:
-                n += 1
-    return n
-
-
-cpdef int count_zero3d(integer[:, :, ::1] m):
-    """ Count the number of 0 in m. """
-    cdef int nx = m.shape[0]
-    cdef int ny = m.shape[1]
-    cdef int nz = m.shape[2]
-    cdef int n = 0
-    cdef Py_ssize_t ix, iy, iz
-
-    for ix in range(nx):
-        for iy in range(ny):
-            for iz in range(nz):
-                if m[ix, iy, iz] == 0:
-                    n += 1
-    return n

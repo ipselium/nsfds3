@@ -70,7 +70,7 @@ class ComputationDomains:
         else:
             self.obstacles = ObstacleSet(shape, bc=bc, subs=obstacles, stencil=stencil)
 
-        self.corners = tuple(_it.product(*zip((0, ) * len(shape), tuple(s - 1 for s in shape))))
+        self.corners = self.obstacles.corners
         self.bounds = self.obstacles.bounds
         self.buffer = Domain(**buffer_kwargs(self.bc, self.bz_n, self.shape))
 
@@ -109,11 +109,18 @@ class ComputationDomains:
                     fix |= set(f.intersection(fc))
                 self._mask[tuple(zip(*fix)) + sax] = 0
         
-        # Fix obstacle located at the corners
-        for f in self.obstacles.clamped:
+        # Fix obstacle faces located at the corners (2d/3d), and also at the edges of the domain (in 3d)
+        for f in self.obstacles.edged:
+            # Fix corners in 2d/3d
             for c in self.corners:
                 if f.contains(c):
-                    self._mask[c + sax] = 0
+                    s = f.corner_slices(c)
+                    self._mask[s + sax] = 0
+            if self.ndim == 3:
+                for fedge, bedge in _it.product(f.edges, self.bounds.edges):
+                    if [set(rf).intersection(re) for rf, re in zip(fedge, bedge)]:
+                        self._mask[f.slice_from_edge(fedge) + sax] = 0
+
 
     def _mask_setup(self):
         """
@@ -125,7 +132,7 @@ class ComputationDomains:
         """
 
         self._mask_init()
-        bounds = tuple(b for b in self.bounds if b.bc in self._BC_U)
+        bounds = tuple(b for b in self.bounds.faces if b.bc in self._BC_U)
 
         for f in self.obstacles.uncentered + bounds:
             fbox = f.box(self._midstencil)
@@ -178,13 +185,13 @@ class ComputationDomains:
                                  total=len(confs) * self.ndim, details='Starting...')
 
             for axname, n in zip('xyz', range(self.ndim)):
-                for name, mid, c in zip('cpm', [-1, 5, 5], confs):
+                for name, mid, c in zip('cpm', [-1, self._midstencil, self._midstencil], confs):
                     ti = pbar.get_time()
 
                     m = _np.array((self._mask[..., n] == c), dtype=_np.int8)                     # To optimize ?
                     cuboids = self.get_cuboids(m, ax=n, N=mid)
                     for cub in cuboids:
-                        domains[n].append(Domain(cub['origin'], cub['size'], self.shape, tag=name))
+                        domains[n].append(Domain(cub['origin'], cub['size'], self.shape, tag=name, axis=n))
 
                     pbar.update(task, advance=1,
                                 details=f'{axname} / {name} in {pbar.get_time() - ti:.2f} s')
@@ -193,28 +200,13 @@ class ComputationDomains:
                         details=f'Total : {pbar.tasks[0].finished_time:.2f} s')
             pbar.refresh()
 
-        self._update_domains_bc(domains)
-        _ = [setattr(self, f'{ax}domains', d) for ax, d in zip('xyz', domains)]
-        self.domains = tuple(domains)
+        self.domains = []
+        for ax, domain in zip('xyz', domains):
+            setattr(self, f'{ax}domains', DomainSet(self.shape, self.bc, subs=domain, obstacles=self.obstacles))
+            self.domains.append(getattr(self, f'{ax}domains'))
         self.cdomains = min(domains, key=len)
         if not self.is_valid:
             print("Computation domain seems not to be valid.")
-
-    def _update_domains_bc(self, domains):
-        
-        for i in range(self.ndim):
-            domains[i] = DomainSet(self.shape, self.bc, domains[i])
-            for f1, f2 in _it.product(domains[i].faces, self.obstacles.faces):
-                if f1.side == f1.opposite:
-                    if f1.intersects(f2):
-                        f1.bc = f2.bc
-            for f1, f2 in _it.product(domains[i].faces, self.bounds):
-                if f1.side == f1.side:
-                    if f1.intersects(f2):
-                        f1.bc = f2.bc
-            for sub in domains[i]:
-                if 'P' in sub.bc[2*i:2*i + 2]:
-                    sub.tag = 'P'
 
     def show(self, obstacles=True, domains=False, bounds=True, only_mesh=True, **kwargs):
         """ Plot 3d representation of computation domain. """

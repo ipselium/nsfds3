@@ -105,7 +105,7 @@ class MeshViewer:
         else:
             fig, *_ = self._frame2d(**kwargs)
 
-        _plt.show()
+        fig.show()
 
     def _frame3d(self, cbar=False, **kwargs):
 
@@ -371,7 +371,7 @@ class CPViewer(MeshViewer):
         if kwargs['domains']:
             domains = self.xdomains + self.ydomains + self.zdomains
             if not kwargs['bounds']:
-                domains = domains.inner_objects
+                domains = domains.inner
             for sub in [s for s in domains if s.tag in ["p", "m"]]:
                 data.append(_go.Mesh3d(x=sub.vertices[0],
                                     y=sub.vertices[1],
@@ -386,7 +386,7 @@ class CPViewer(MeshViewer):
                                     ))
 
         fig.update_layout(width=800, height=600, font_size=11,  scene_aspectmode="data",
-                        scene_camera_eye=dict (x=1.45, y=1.45, z=1), template="none")
+                        scene_camera_eye=dict(x=1.45, y=1.45, z=1), template="none")
         fig.add_traces(data)
 
         return fig, None
