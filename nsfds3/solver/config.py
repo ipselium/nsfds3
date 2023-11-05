@@ -118,17 +118,21 @@ class CfgSetup:
         bz stretch factor           -> self.bz_stretch_factor = 2
 
         [initial pulses]
-        on                          -> self.ics_on = False
-        origins                     -> self.ics_origins = (),
-        amplitudes                  -> self.ics_S0 = ()
-        widths                      -> self.ics_B0 = ()
+        on                          -> self.ics.on = False
+        origins                     -> self.ics.origins = (),
+        amplitudes                  -> self.ics.S0 = ()
+        widths                      -> self.ics.B0 = ()
+        orders                      -> self.ics.orders = ()
+        alphas                      -> self.ics.alphas = ()
 
         [sources]
-        on                          -> self.src_on = False
-        origins                     -> self.src_origins = (),
-        amplitudes                  -> self.src_S0 = ()
-        widths                      -> self.src_B0 = ()
-        evolutions                  -> self.src_evolutions = ()
+        on                          -> self.src.on = False
+        origins                     -> self.src.origins = (),
+        amplitudes                  -> self.src.S0 = ()
+        widths                      -> self.src.B0 = ()
+        orders                      -> self.ics.orders = ()
+        alphas                      -> self.ics.alphas = ()
+        evolutions                  -> self.src.evolutions = ()
 
         [flow]
         type                        -> self.flw_type = None
@@ -157,7 +161,6 @@ class CfgSetup:
     """
 
     _T_REF = constants.zero_Celsius     # Temperature 0°C
-    _R_gp = constants.R                 # Molar gas constant
     _NONE = ('', 'no', 'No', 'none', 'None', None, 'False', 'false', False)
     _SECTIONS = ('general', 'thermophysic', 'geometry',
                  'sources', 'initial pulses',
@@ -248,16 +251,20 @@ class CfgSetup:
         self._cfg.set('geometry', 'bz stretch order', str(self.bz_stretch_order))
         self._cfg.set('geometry', 'bz stretch factor', str(self.bz_stretch_factor))
 
-        self._cfg.set('initial pulses', 'on', str(self.ics_on))
-        self._cfg.set('initial pulses', 'origins', str(self.ics_origins))
-        self._cfg.set('initial pulses', 'amplitudes', str(self.ics_S0))
-        self._cfg.set('initial pulses', 'widths', str(self.ics_B0))
+        self._cfg.set('initial pulses', 'on', str(self.ics.on))
+        self._cfg.set('initial pulses', 'origins', str(self.ics.origins))
+        self._cfg.set('initial pulses', 'amplitudes', str(self.ics.S0))
+        self._cfg.set('initial pulses', 'widths', str(self.ics.B0))
+        self._cfg.set('initial pulses', 'orders', str(self.ics.orders))
+        self._cfg.set('initial pulses', 'alphas', str(self.ics.alphas))
 
-        self._cfg.set('sources', 'on', str(self.src_on))
-        self._cfg.set('sources', 'origins', str(self.src_origins))
-        self._cfg.set('sources', 'amplitudes', str(self.src_S0))
-        self._cfg.set('sources', 'widths', str(self.src_B0))
-        self._cfg.set('sources', 'evolutions', str(self.src_evolutions))
+        self._cfg.set('sources', 'on', str(self.src.on))
+        self._cfg.set('sources', 'origins', str(self.src.origins))
+        self._cfg.set('sources', 'amplitudes', str(self.src.S0))
+        self._cfg.set('sources', 'widths', str(self.src.B0))
+        self._cfg.set('sources', 'orders', str(self.src.orders))
+        self._cfg.set('sources', 'alphas', str(self.src.alphas))
+        self._cfg.set('sources', 'evolutions', str(self.src.evolutions))
 
         self._cfg.set('flow', 'type', str(self.flw_type))
         self._cfg.set('flow', 'components', str(self.flw_components))
@@ -564,90 +571,6 @@ class CfgSetup:
         return (0, ) * len(self.shape)
 
     @property
-    def ics_origins(self):
-        """ Origins of the initial pressure pulses. """
-        return self._ics_origins
-
-    @ics_origins.setter
-    def ics_origins(self, value):
-        if not isinstance(value, tuple):
-            raise ValueError('ics_origin: tuple expected')
-        self._ics_origins = value
-        self._update_ics()
-
-    @property
-    def ics_S0(self):
-        """ Amplitudes of the initial pressure pulses. """
-        return self._ics_S0
-
-    @ics_S0.setter
-    def ics_S0(self, value):
-        if not isinstance(value, tuple):
-            raise ValueError('ics_S0: tuple expected')
-        self._ics_S0 = value
-        self._update_ics()
-
-    @property
-    def ics_B0(self):
-        """ Widths of the initial pressure pulses. """
-        return self._ics_B0
-
-    @ics_B0.setter
-    def ics_B0(self, value):
-        if not isinstance(value, tuple):
-            raise ValueError('ics_B0: tuple expected')
-        self._ics_B0 = value
-        self._update_ics()
-
-    @property
-    def src_origins(self):
-        """ Origins of the sources. """
-        return self._src_origins
-
-    @src_origins.setter
-    def src_origins(self, value):
-        if not isinstance(value, tuple):
-            raise ValueError('src_origin: tuple expected')
-        self._src_origins = value
-        self._update_src()
-
-    @property
-    def src_S0(self):
-        """ Amplitudes of the sources. """
-        return self._src_S0
-
-    @src_S0.setter
-    def src_S0(self, value):
-        if not isinstance(value, tuple):
-            raise ValueError('src_S0: tuple expected')
-        self._src_S0 = value
-        self._update_src()
-
-    @property
-    def src_B0(self):
-        """ Widths of the sources. """
-        return self._src_B0
-
-    @src_B0.setter
-    def src_B0(self, value):
-        if not isinstance(value, tuple):
-            raise ValueError('src_B0: tuple expected')
-        self._src_B0 = value
-        self._update_src()
-
-    @property
-    def src_evolutions(self):
-        """ Time evolutions of the sources. """
-        return self._src_B0
-
-    @src_evolutions.setter
-    def src_evolutions(self, value):
-        if not isinstance(value, tuple):
-            raise ValueError('src_evolution: tuple expected')
-        self._src_evolutions = value
-        self._update_src()
-
-    @property
     def flw_type(self):
         """ Type of mean flow. """
         return self._flw_type
@@ -714,90 +637,92 @@ class CfgSetup:
     def _get_parameters(self):
         """ Parse all simulation parameters. """
 
-        GNL = self._cfg['general']
-        self._version = GNL.get('version', self.version_base)
-        self._datadir = self.path / _pathlib.Path(GNL.get('data dir', 'data/'))
-        self._datafile = _pathlib.Path(GNL.get('data file', self.cfgfile.stem)).with_suffix('.hdf5')
-        self.timings = GNL.getboolean('timings', False)
-        self.quiet = GNL.getboolean('quiet', False)
-        self.cpu = GNL.getint('cpu', self.cpu_count // 2)
-        self.free = GNL.getboolean('free', True)
-        self.comp = GNL.getboolean('comp', False)
+        CFG_GNL = self._cfg['general']
+        self._version = CFG_GNL.get('version', self.version_base)
+        self._datadir = self.path / _pathlib.Path(CFG_GNL.get('data dir', 'data/'))
+        self._datafile = _pathlib.Path(CFG_GNL.get('data file', self.cfgfile.stem)).with_suffix('.hdf5')
+        self.timings = CFG_GNL.getboolean('timings', False)
+        self.quiet = CFG_GNL.getboolean('quiet', False)
+        self.cpu = CFG_GNL.getint('cpu', self.cpu_count // 2)
+        self.free = CFG_GNL.getboolean('free', True)
+        self.comp = CFG_GNL.getboolean('comp', False)
         files.mkdir(self.datadir, self.verbose)
 
-        GEO = self._cfg['geometry']
-        self.bz_n = GEO.getint('bz grid points', 20)
-        self.bz_filter_order = GEO.getfloat('bz filter ordrer', 3.)
-        self.bz_stretch_order = GEO.getfloat('bz stretch order', 3.)
-        self.bz_stretch_factor = GEO.getfloat('bz stretch factor', 2.)
-        self._shape = GEO.gettuple_int('shape', (128, 96, 32))
+        CFG_GEO = self._cfg['geometry']
+        self.bz_n = CFG_GEO.getint('bz grid points', 20)
+        self.bz_filter_order = CFG_GEO.getfloat('bz filter ordrer', 3.)
+        self.bz_stretch_order = CFG_GEO.getfloat('bz stretch order', 3.)
+        self.bz_stretch_factor = CFG_GEO.getfloat('bz stretch factor', 2.)
+        self._shape = CFG_GEO.gettuple_int('shape', (128, 96, 32))
         self._shape = cputils.parse_shape(self._shape)
-        self._steps = GEO.gettuple_float('steps', (1., 1., 1.))
+        self._steps = CFG_GEO.gettuple_float('steps', (1., 1., 1.))
         self._steps = cputils.parse_steps(self._shape, self._steps)
-        self._bc = GEO.get('bc', 'WWWWWW').upper()
+        self._bc = CFG_GEO.get('bc', 'WWWWWW').upper()
         self._bc = cputils.parse_bc(self._shape, self._bc)
-        self._origin = GEO.gettuple_int('origin', None)
+        self._origin = CFG_GEO.gettuple_int('origin', None)
         self._origin = cputils.parse_origin(self._shape, self._origin, self._bc, self.bz_n)
-        self._flat = GEO.gettuple_int('flat', None)
-        self._geofile = GEO.get('geofile', '')
-        self._geoname = GEO.get('geoname', None)
-        self._curvname = GEO.get('curvname', None)
+        self._flat = CFG_GEO.gettuple_int('flat', None)
+        self._geofile = CFG_GEO.get('geofile', '')
+        self._geoname = CFG_GEO.get('geoname', None)
+        self._curvname = CFG_GEO.get('curvname', None)
         self._update_obstacles()
         self._update_curvilinear_transformation()
 
-        SOL = self._cfg['solver']
-        self.resume = SOL.getboolean('resume', False)
-        self._nt = SOL.getint('nt', 50)
-        self._ns = SOL.getint('ns', 10)
-        self.CFL = SOL.getfloat('cfl', 0.5)
-        self._prb = ast.literal_eval(SOL.get('probes', '()'))
+        CFG_SOL = self._cfg['solver']
+        self.resume = CFG_SOL.getboolean('resume', False)
+        self._nt = CFG_SOL.getint('nt', 50)
+        self._ns = CFG_SOL.getint('ns', 10)
+        self.CFL = CFG_SOL.getfloat('cfl', 0.5)
+        self._prb = ast.literal_eval(CFG_SOL.get('probes', '()'))
         self._prb = self._parse_probes(self._prb)
-        self.save_fld = SOL.getboolean('save fields', True)
-        self.vsc = SOL.getboolean('viscous fluxes', True)
-        self.vrt = SOL.getboolean('vorticity', True)
-        self.cpt = SOL.getboolean('shock capture', True)
-        self.flt = SOL.getboolean('selective filter', True)
-        self._flt_xnu_n = SOL.getfloat('selective filter n-strength', 0.2)
-        self._flt_xnu_0 = SOL.getfloat('selective filter 0-strength', 0.01)
+        self.save_fld = CFG_SOL.getboolean('save fields', True)
+        self.vsc = CFG_SOL.getboolean('viscous fluxes', True)
+        self.vrt = CFG_SOL.getboolean('vorticity', True)
+        self.cpt = CFG_SOL.getboolean('shock capture', True)
+        self.flt = CFG_SOL.getboolean('selective filter', True)
+        self._flt_xnu_n = CFG_SOL.getfloat('selective filter n-strength', 0.2)
+        self._flt_xnu_0 = CFG_SOL.getfloat('selective filter 0-strength', 0.01)
         self.it = 0
         self._check_filter(self._flt_xnu_n)
         self._check_filter(self._flt_xnu_0)
         self._adjust_nt()
 
-        ICS = self._cfg['initial pulses']
-        self.ics_on = ICS.getboolean('on', False)
-        self._ics_origins = ast.literal_eval(ICS.get('origins', '(), '))
-        self._ics_S0 = ast.literal_eval(ICS.get('amplitudes', '()'))
-        self._ics_B0 = ast.literal_eval(ICS.get('widths', '()'))
-        self._update_ics()
+        CFG_ICS = self._cfg['initial pulses']
+        self.ics = sources.ICS(origins=ast.literal_eval(CFG_ICS.get('origins', '(), ')), 
+                               S0=ast.literal_eval(CFG_ICS.get('amplitudes', '()')), 
+                               B0=ast.literal_eval(CFG_ICS.get('widths', '()')),
+                               orders=ast.literal_eval(CFG_ICS.get('orders', '()')), 
+                               alphas=ast.literal_eval(CFG_ICS.get('alphas', '()')),
+                               stypes=CFG_ICS.get('types', '()'))
+        self.ics.on = CFG_ICS.getboolean('on', False)
 
-        SRC = self._cfg['sources']
-        self.src_on = SRC.getboolean('on', False)
-        self._src_origins = ast.literal_eval(SRC.get('origins', '(), '))
-        self._src_S0 = ast.literal_eval(SRC.get('amplitudes', '()'))
-        self._src_B0 = ast.literal_eval(SRC.get('widths', '()'))
-        self._src_evolutions = ast.literal_eval(SRC.get('evolutions', '()'))
-        self._update_src()
+        CFG_SRC = self._cfg['sources']
+        self.src = sources.SRC(origins=ast.literal_eval(CFG_SRC.get('origins', '(), ')), 
+                               S0=ast.literal_eval(CFG_SRC.get('amplitudes', '()')), 
+                               B0=ast.literal_eval(CFG_SRC.get('widths', '()')),
+                               orders=ast.literal_eval(CFG_SRC.get('orders', '()')), 
+                               alphas=ast.literal_eval(CFG_SRC.get('alphas', '()')),
+                               stypes=CFG_SRC.get('types', '()'),
+                               evolutions=ast.literal_eval(CFG_SRC.get('evolutions', '()')))
+        self.src.on = CFG_SRC.getboolean('on', False)
 
-        FLW = self._cfg['flow']
-        self._flw_type = FLW.get('type', 'None').lower()
-        self._flw_components = FLW.gettuple_float('components', self.zeros)
+        CFG_FLW = self._cfg['flow']
+        self._flw_type = CFG_FLW.get('type', 'None').lower()
+        self._flw_components = CFG_FLW.gettuple_float('components', self.zeros)
         self._check_flow(self.flw_type, self.flw_components)
 
-        THP = self._cfg['thermophysic']
-        norm = THP.getboolean('norm', False)
-        rho0 = THP.getfloat('rho0', 1.2)
-        T0 = THP.getfloat('T0', 20)
-        gamma = THP.getfloat('gamma', 1.4)
-        self.tp = Air(rho0, T0, gamma, norm)
+        CFG_THP = self._cfg['thermophysic']
+        self.tp = Air(rho0=CFG_THP.getfloat('rho0', 1.2), 
+                      T0=CFG_THP.getfloat('T0', 20), 
+                      gamma=CFG_THP.getfloat('gamma', 1.4), 
+                      norm=CFG_THP.getboolean('norm', False))
 
-        FIGS = self._cfg['figures']
-        self.show_fig = FIGS.getboolean('show figures', True)
-        self.show_prb = FIGS.getboolean('show probes', True)
-        self.show_bz = FIGS.getboolean('show bz', True)
-        self.show_bc = FIGS.getboolean('show bc', True)
-        self.fps = FIGS.getint('fps', 24)
-
+        CFG_FIGS = self._cfg['figures']
+        self.show_fig = CFG_FIGS.getboolean('show figures', True)
+        self.show_prb = CFG_FIGS.getboolean('show probes', True)
+        self.show_bz = CFG_FIGS.getboolean('show bz', True)
+        self.show_bc = CFG_FIGS.getboolean('show bc', True)
+        self.fps = CFG_FIGS.getint('fps', 24)
 
     @staticmethod
     def to_2d_tuple(var, ax):
@@ -892,53 +817,6 @@ class CfgSetup:
             if flat_idx not in range(self.shape[flat_ax]):
                 raise ValueError('flat: element 1 (index) must be in the domain')
 
-    def _check_ics(self):
-        """ Check that initial conditions are consistents. """
-        if not any(isinstance(o, (tuple, list)) for o in self.ics_origins):
-            self._ics_origins = self._ics_origins,
-
-        if isinstance(self.ics_S0, (int, float)):
-            self._ics_S0 = self._ics_S0,
-
-        if isinstance(self.ics_B0, (int, float)):
-            self._ics_B0 = self._ics_B0,
-
-        if not all([len(o) == len(self.shape) for o in self.ics_origins]):
-            raise ValueError(f'ics_origin: each element must be {len(self.shape)}')
-
-    def _check_src(self):
-        """ Check that sources are consistents. """
-        if not any(isinstance(o, (tuple, list)) for o in self.src_origins):
-            self._src_origins = self._src_origins,
-
-        if isinstance(self.src_S0, (int, float)):
-            self._src_S0 = self._src_S0,
-
-        if isinstance(self.src_B0, (int, float)):
-            self._src_B0 = self._src_B0,
-
-        if isinstance(self.src_evolutions, (int, float, str)):
-            self._src_B0 = self._src_B0,
-
-        if not all([len(o) == len(self.shape) for o in self.src_origins]):
-            raise ValueError(f'src_origin: each element must be {len(self.shape)}')
-
-    def _update_ics(self):
-        """ Update initial conditions parameters. """
-        self.ics = []
-        if self.ics_on:
-            self._check_ics()
-            for o, s, b in zip(self.ics_origins, self.ics_S0, self.ics_B0):
-                self.ics.append(sources.Pulse(o, s, b))
-
-    def _update_src(self):
-        """ Update sources parameters. """
-        self.src = []
-        if self.src_on :
-            self._check_src()
-            for o, s, b, e in zip(self.src_origins, self.src_S0, self.src_B0, self.src_evolutions):
-                self.src.append(sources.Monopole(o, s, b, e))
-
     def _update_obstacles(self):
         if self.geoname not in self._NONE:
             geofile = '' if self.geofile is None else self.geofile
@@ -1005,16 +883,16 @@ class CfgSetup:
         else:
             wall_source = False
 
-        if self.src or self.ics or wall_source:
+        if self.src.on or self.ics.on or wall_source:
             s += f"* Sources :\n"
 
-        if self.ics:
-            for ic in self.ics:
-                s += f"\t- {ic}.\n"
+        if self.ics.on:
+            for src in self.ics.__repr__().split('\n'):
+                s += f"\t{src}\n"
 
-        if self.src:
-            for source in self.src:
-                s += f"\t- {source}.\n"
+        if self.src.on:
+            for src in self.src.__repr__().split('\n'):
+                s += f"\t{src}\n"
 
         if wall_source:
             s += f"\t- Wall source setup"
