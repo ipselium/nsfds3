@@ -104,26 +104,26 @@ class FDTD:
             self.timings = self.cfg.timings
 
         # Initialize sources (boundaries and domain)
-        time = _np.linspace(0, cfg.nt * cfg.dt, cfg.nt + 1)
+        time = _np.linspace(0, cfg.sol.nt * cfg.dt, cfg.sol.nt + 1)
         for face in [f for f in msh.obstacles.faces if f.bc == "V"]:
             face.source_evolution = face.source_function(time)
 
-        for source in self.cfg.src:
+        for source in self.cfg.src.tes:
             source.set_evolution(time)
 
         # Initialize solver
         self.fld = Fields(self.cfg, self.msh)
         self.efluxes = EulerianFluxes(self.fld)
-        if self.cfg.vsc:
+        if self.cfg.sol.vsc:
             self.vfluxes = ViscousFluxes(self.fld)
-        if self.cfg.flt:
+        if self.cfg.sol.flt:
             self.sfilter = SelectiveFilter(self.fld)
-        if self.cfg.cpt:
+        if self.cfg.sol.cpt:
             self.scapture = ShockCapture(self.fld)
-        if self.cfg.prb:
-            self.probes = _np.zeros((len(cfg.prb), cfg.ns))
-        if self.cfg.vrt:
+        if self.cfg.sol.vrt:
             self.wxyz = Vorticity(self.fld)
+        if self.cfg.prb:
+            self.probes = _np.zeros((len(cfg.prb), cfg.sol.ns))
 
         # Initialize save
         self._init_save()
@@ -138,7 +138,7 @@ class FDTD:
             desc, time_per_iteration = misc.unload_timings(self._timings)
 
         if self.timings and not self.quiet:
-            txt = f"Iteration: [red]{self.cfg.it:>6}\t[/]|\t"
+            txt = f"Iteration: [red]{self.cfg.sol.it:>6}\t[/]|\t"
             txt += f"Residuals: [green]{self.fld.residual():>.4f}\t[/]|\t"
             txt += f"Time: {time_per_iteration:>.4f}"
             print(Panel(txt))
@@ -148,14 +148,14 @@ class FDTD:
         """ Run simulation. """
         ti = _pc()
         try:
-            for self.cfg.it in track(range(self.cfg.it, self.cfg.nt + 1),
-                                    disable=self.quiet):
+            for self.cfg.sol.it in track(range(self.cfg.sol.it, self.cfg.sol.nt + 1),
+                                         disable=self.quiet):
                 self._eulerian_fluxes()
                 self._viscous_fluxes()
                 self._selective_filter()
                 self._shock_capture()
                 self._vorticity()
-                if not self.cfg.it % self.cfg.ns:
+                if not self.cfg.sol.it % self.cfg.sol.ns:
                     self._save()
                     self._log()
                 self._update_probes()
@@ -166,7 +166,7 @@ class FDTD:
                 msg += 'End at physical time [red]t = {:.4f} sec.'
                 print(Panel(msg.format(misc.secs_to_dhms(_pc() - ti),
                                        self.fld.residual(),
-                                       self.cfg.dt * self.cfg.it)))
+                                       self.cfg.dt * self.cfg.sol.it)))
         finally:
             self.sfile.close()
             self.save_objects()
@@ -179,72 +179,72 @@ class FDTD:
     @misc.timer
     def _viscous_fluxes(self):
         """ Compute viscous fluxes. """
-        if self.cfg.vsc:
+        if self.cfg.sol.vsc:
             self.vfluxes.integrate()
             self.efluxes.cout()
 
     @misc.timer
     def _selective_filter(self):
         """ Apply selective filter. """
-        if self.cfg.flt:
+        if self.cfg.sol.flt:
             self.sfilter.apply()
 
     @misc.timer
     def _shock_capture(self):
         """ Apply shock capture procedure. """
-        if self.cfg.cpt:
+        if self.cfg.sol.cpt:
             self.scapture.apply()
 
     @misc.timer
     def _vorticity(self):
         """ Compute vorticity """
-        if self.cfg.vrt:
+        if self.cfg.sol.vrt:
             self.wxyz.compute()
 
     @misc.timer
     def _update_probes(self):
         """ Update probes. """
-        if self.cfg.prb:
+        if self.cfg.prb:         
             for n, c in enumerate(self.cfg.prb):
-                self.probes[n, self.cfg.it % self.cfg.ns] = self.fld.p[tuple(c)]
+                self.probes[n, self.cfg.sol.it % self.cfg.sol.ns] = self.fld.p[tuple(c)]
 
     @misc.timer
     def _save(self):
         """ Save data. """
 
-        self.sfile.attrs['itmax'] = self.cfg.it
+        self.sfile.attrs['itmax'] = self.cfg.sol.it
 
-        if self.cfg.save_fld:
-            self.sfile.create_dataset(f'r_it{self.cfg.it}',
+        if self.cfg.sol.save:
+            self.sfile.create_dataset(f'r_it{self.cfg.sol.it}',
                                       data=self.fld.r,
-                                      compression=self.cfg.comp)
-            self.sfile.create_dataset(f'ru_it{self.cfg.it}',
+                                      compression=self.cfg.sol.comp)
+            self.sfile.create_dataset(f'ru_it{self.cfg.sol.it}',
                                       data=self.fld.ru,
-                                      compression=self.cfg.comp)
-            self.sfile.create_dataset(f'rv_it{self.cfg.it}',
+                                      compression=self.cfg.sol.comp)
+            self.sfile.create_dataset(f'rv_it{self.cfg.sol.it}',
                                       data=self.fld.rv,
-                                      compression=self.cfg.comp)
-            self.sfile.create_dataset(f're_it{self.cfg.it}',
+                                      compression=self.cfg.sol.comp)
+            self.sfile.create_dataset(f're_it{self.cfg.sol.it}',
                                       data=self.fld.re,
-                                      compression=self.cfg.comp)
+                                      compression=self.cfg.sol.comp)
             if self.msh.ndim == 3:
-                self.sfile.create_dataset(f'rw_it{self.cfg.it}',
+                self.sfile.create_dataset(f'rw_it{self.cfg.sol.it}',
                                           data=self.fld.rw,
-                                          compression=self.cfg.comp)
+                                          compression=self.cfg.sol.comp)
 
-            if self.cfg.vrt:
-                self.sfile.create_dataset(f'wz_it{self.cfg.it}',
+            if self.cfg.sol.vrt:
+                self.sfile.create_dataset(f'wz_it{self.cfg.sol.it}',
                                         data=self.fld.wz,
-                                        compression=self.cfg.comp)
+                                        compression=self.cfg.sol.comp)
                 if self.msh.ndim == 3:
-                    self.sfile.create_dataset(f'wx_it{self.cfg.it}',
+                    self.sfile.create_dataset(f'wx_it{self.cfg.sol.it}',
                                             data=self.fld.wx,
-                                            compression=self.cfg.comp)
-                    self.sfile.create_dataset(f'wy_it{self.cfg.it}',
+                                            compression=self.cfg.sol.comp)
+                    self.sfile.create_dataset(f'wy_it{self.cfg.sol.it}',
                                             data=self.fld.wy,
-                                            compression=self.cfg.comp)
+                                            compression=self.cfg.sol.comp)
         if self.cfg.prb:
-            self.sfile['probe_values'][:, self.cfg.it - self.cfg.ns:self.cfg.it] = self.probes
+            self.sfile['probe_values'][:, self.cfg.sol.it - self.cfg.sol.ns:self.cfg.sol.it] = self.probes
 
     def save_objects(self):
         """ Save cfg and msh objects. """
@@ -265,46 +265,46 @@ class FDTD:
                 _sys.exit(0)
 
         self.sfile = _h5py.File(self.cfg.datapath, 'w')
-        self.sfile.attrs['vorticity'] = self.cfg.vrt
+        self.sfile.attrs['vorticity'] = self.cfg.sol.vrt
         self.sfile.attrs['ndim'] = self.msh.ndim
         self.sfile.attrs['p0'] = self.cfg.tp.p0
         self.sfile.attrs['gamma'] = self.cfg.tp.gamma
 
         # Not necessary ?
         self.sfile.attrs['obstacles'] = self.msh.get_obstacles()
-        self.sfile.create_dataset('x', data=self.msh.x, compression=self.cfg.comp)
-        self.sfile.create_dataset('y', data=self.msh.y, compression=self.cfg.comp)
+        self.sfile.create_dataset('x', data=self.msh.x, compression=self.cfg.sol.comp)
+        self.sfile.create_dataset('y', data=self.msh.y, compression=self.cfg.sol.comp)
         self.sfile.attrs['dx'] = self.msh.dx
         self.sfile.attrs['dy'] = self.msh.dy
         self.sfile.attrs['dt'] = self.cfg.dt
         self.sfile.attrs['nx'] = self.msh.nx
         self.sfile.attrs['ny'] = self.msh.ny
-        self.sfile.attrs['nt'] = self.cfg.nt
-        self.sfile.attrs['ns'] = self.cfg.ns
+        self.sfile.attrs['nt'] = self.cfg.sol.nt
+        self.sfile.attrs['ns'] = self.cfg.sol.ns
         self.sfile.attrs['rho0'] = self.cfg.tp.rho0
-        self.sfile.attrs['bz_n'] = self.cfg.bz_n
+        self.sfile.attrs['bz_n'] = self.cfg.geo.bz_n
         self.sfile.attrs['mesh'] = self.msh.mesh_type
-        self.sfile.attrs['bc'] = self.cfg.bc
-        self.sfile.attrs['itmax'] = self.cfg.it
+        self.sfile.attrs['bc'] = self.cfg.geo.bc
+        self.sfile.attrs['itmax'] = self.cfg.sol.it
         if self.msh.ndim == 3:
             self.sfile.attrs['dz'] = self.msh.dz
             self.sfile.attrs['nz'] = self.msh.nz
-            self.sfile.create_dataset('z', data=self.msh.z, compression=self.cfg.comp)
+            self.sfile.create_dataset('z', data=self.msh.z, compression=self.cfg.sol.comp)
 
-        probes = _np.zeros((len(self.cfg.prb), self.cfg.nt))
-        self.sfile.create_dataset('probe_locations', data=self.cfg.prb)
+        probes = _np.zeros((len(self.cfg.prb), self.cfg.sol.nt))
+        self.sfile.create_dataset('probe_locations', data=self.cfg.prb.locs)
         self.sfile.create_dataset('probe_values', data=probes,
-                                  compression=self.cfg.comp)
+                                  compression=self.cfg.sol.comp)
 
         if self.msh.mesh_type.lower() == 'curvilinear':
-            self.sfile.create_dataset('J', data=self.msh.J, compression=self.cfg.comp)
-            #self.sfile.create_dataset('xn', data=self.msh.xn, compression=self.cfg.comp)
-            #self.sfile.create_dataset('yn', data=self.msh.yn, compression=self.cfg.comp)
-            self.sfile.create_dataset('xp', data=self.msh.xp, compression=self.cfg.comp)
-            self.sfile.create_dataset('yp', data=self.msh.yp, compression=self.cfg.comp)
+            self.sfile.create_dataset('J', data=self.msh.J, compression=self.cfg.sol.comp)
+            #self.sfile.create_dataset('xn', data=self.msh.xn, compression=self.cfg.sol.comp)
+            #self.sfile.create_dataset('yn', data=self.msh.yn, compression=self.cfg.sol.comp)
+            self.sfile.create_dataset('xp', data=self.msh.xp, compression=self.cfg.sol.comp)
+            self.sfile.create_dataset('yp', data=self.msh.yp, compression=self.cfg.sol.comp)
             if self.msh.ndim == 3:
-                #self.sfile.create_dataset('zn', data=self.msh.yn, compression=self.cfg.comp)
-                self.sfile.create_dataset('zp', data=self.msh.yp, compression=self.cfg.comp)
+                #self.sfile.create_dataset('zn', data=self.msh.yn, compression=self.cfg.sol.comp)
+                self.sfile.create_dataset('zp', data=self.msh.yp, compression=self.cfg.sol.comp)
 
     def show(self, view='p', vmin=None, vmax=None, **kwargs):
         """ Show results. """

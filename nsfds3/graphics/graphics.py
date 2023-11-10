@@ -541,7 +541,7 @@ class MPLViewer(MeshViewer):
             sys.exit(1)
 
         # Nb of iterations and reference
-        nt = self.cfg.nt if not nt else closest_index(nt, self.cfg.ns, self.cfg.nt)
+        nt = self.cfg.sol.nt if not nt else closest_index(nt, self.cfg.sol.ns, self.cfg.sol.nt)
         ref = 'auto' if not ref else ref
 
         # Create Iterator and make 1st frame
@@ -589,7 +589,7 @@ class MPLViewer(MeshViewer):
             raise ValueError("No probes !")
 
         p = self.data.get_dataset('probe_values')
-        t = _np.arange(self.cfg.nt) * self.cfg.dt
+        t = _np.arange(self.cfg.sol.nt) * self.cfg.dt
 
         _, ax = _plt.subplots(figsize=figsize)
         for i, c in enumerate(probes):
@@ -617,7 +617,7 @@ class MPLViewer(MeshViewer):
             raise ValueError("No probes !")
 
         if not M:
-            M = min(int(self.cfg.nt/20), 256)
+            M = min(int(self.cfg.sol.nt/20), 256)
 
         p = self.data.get_dataset('probe_values')
 

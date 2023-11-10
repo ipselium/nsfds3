@@ -117,15 +117,16 @@ class Air:
         return self.Cp * self.mu / self.k
 
     def __str__(self):
-        s = f'- Static pressure                 : {self.p0} Pa\n'
-        s += f'- Density                         : {self.rho0} kg.m^{-3}\n'
-        s += f'- Temperature                     : {self.T0} K ({self.T0 - self.Tref}°C)\n'
-        s += f'- Celerity                        : {self.c0} m/s\n'
-        s += f'- Heat capacity ratio             : {self.gamma}\n'
-        s += f'- Isochoric mass heat capacity    : {self.Cv} J.kg^{-1}.K^{-1}\n'
-        s += f'- Isobaric mass Heat capacity (P) : {self.Cp} J.kg^{-1}.K^{-1}\n'
-        s += f'- Prandtl number                  : {self.prandtl}\n'
-        s += f'- Dynamic viscosity               : {self.mu} Pa.s\n'
+        s = "\n[Thermophysic]"
+        s += f'\n\t- Static pressure                 : {self.p0} Pa'
+        s += f'\n\t- Density                         : {self.rho0} kg.m^{-3}'
+        s += f'\n\t- Temperature                     : {self.T0} K ({self.T0 - self.Tref}°C)'
+        s += f'\n\t- Celerity                        : {self.c0} m/s'
+        s += f'\n\t- Heat capacity ratio             : {self.gamma}'
+        s += f'\n\t- Isochoric mass heat capacity    : {self.Cv} J.kg^{-1}.K^{-1}'
+        s += f'\n\t- Isobaric mass Heat capacity (P) : {self.Cp} J.kg^{-1}.K^{-1}'
+        s += f'\n\t- Prandtl number                  : {self.prandtl}'
+        s += f'\n\t- Dynamic viscosity               : {self.mu} Pa.s'
         return s
 
     def __repr__(self):

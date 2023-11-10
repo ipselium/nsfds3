@@ -615,7 +615,8 @@ class DomainSet(BoxSet):
         super().__init__(shape, bc=bc, subs=subs, stencil=stencil)    
         self.obstacles = obstacles if obstacles else []
 
-        self._update_bc()
+        if self.obstacles:
+            self._update_bc()
 
         self.outer = []
         for bound in self.bounds.faces:

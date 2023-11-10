@@ -119,7 +119,7 @@ def get_pressure(r=None, ru=None, rv=None, rw=None, re=None, gamma=1.4):
 
     """
     if any(item is None for item in [r, ru, rv, re]):
-        raise ValueError('r, ru, rv, re must be provided')
+        raise ValueError('r, ru, rv[, rw], re must be provided')
 
     p = _np.empty_like(r)
 

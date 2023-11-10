@@ -15,3 +15,5 @@ results/
 *.ipynb
 *.c
 NOTES.md
+nsfds3/nsfds3.code-workspace
+nsfds3/.vscode

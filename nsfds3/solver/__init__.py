@@ -24,8 +24,8 @@ The `solver` package contains the following main objects:
 
 * :py:class:`CfgSetup`: read a configuration file and set all simulation parameters.
 * :py:class:`FDTD`: setup and run the FDTD simulation
-* :py:class:`Pulse`: Describes an initial gaussian pressure pulse condition
-* :py:class:`Monopole`: Describes a time evolving source
+* :py:class:`Source`: Describe a source
+* :py:class:`SourceSet`: Describes a set of sources
 
 
  The following example gives the general philosophy to use **nsfds3**::
@@ -49,6 +49,6 @@ The `solver` package contains the following main objects:
 
 from nsfds3.solver.config import CfgSetup
 from nsfds3.solver.fdtd import FDTD
-from nsfds3.solver.sources import Pulse, Monopole
+from nsfds3.solver.sources import Source, SourceSet
 
-__all__ = ['CfgSetup', 'FDTD', 'Pulse', 'Monopole']
+__all__ = ['CfgSetup', 'FDTD', 'Source', 'SourceSet']

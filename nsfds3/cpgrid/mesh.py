@@ -44,7 +44,7 @@ console = Console()
 
 def build_mesh(cfg):
     """ Return Grid from :py:class:`nsfds3.solver.CfgSetup` configuration. """
-    if getattr(cfg, 'curvfunc', None):
+    if getattr(cfg.geo, 'curvfunc', None):
         return CurvilinearGrid.from_cfg(cfg)
     return CartesianGrid.from_cfg(cfg)
 
@@ -90,12 +90,14 @@ class CartesianGrid:
     mesh_type = "Cartesian"
 
     def __init__(self, shape, steps=None, origin=None, bc=None, obstacles=None,
-                 bz_n=20, bz_stretch_factor=2, bz_stretch_order=3, stencil=11, free=True):
+                 bz_n=20, bz_stretch_factor=2, bz_stretch_order=3, bz_filter_order=3.,
+                 stencil=11, free=True):
 
         self.obstacles = [] if obstacles is None else obstacles
         self.bz_n = bz_n
         self.bz_stretch_factor = bz_stretch_factor
         self.bz_stretch_order = bz_stretch_order
+        self.bz_filter_order = bz_filter_order
         self.stencil = stencil
         self.free = free
         self.shape, self.steps, self.origin, self.bc = utils.parse_grid_parameters(shape,
@@ -126,7 +128,7 @@ class CartesianGrid:
     @classmethod
     def from_cfg(cls, cfg):
         """ Build grid from configuration. """
-        args, kwargs = cfg.get_grid_configuration()
+        args, kwargs = cfg.grid_configuration
         return cls(*args, **kwargs)
 
     def _set_attributes(self, names, values):
@@ -289,8 +291,9 @@ class CurvilinearGrid(CartesianGrid):
     mesh_type = "Curvilinear"
 
     def __init__(self, shape, steps=None, origin=None, bc=None, obstacles=None,
-                 curvfunc=None, bz_n=20,
-                 bz_stretch_factor=2, bz_stretch_order=3, stencil=11, free=True):
+                 curvfunc=None, 
+                 bz_n=20, bz_stretch_factor=2, bz_stretch_order=3, bz_filter_order=3.,
+                 stencil=11, free=True):
 
         if curvfunc:
             self.curvfunc = curvfunc
@@ -299,7 +302,7 @@ class CurvilinearGrid(CartesianGrid):
 
         super().__init__(shape, steps=steps, origin=origin, bc=bc, obstacles=obstacles,
                          bz_n=bz_n, bz_stretch_factor=bz_stretch_factor, bz_stretch_order=bz_stretch_order,
-                         stencil=stencil, free=free)
+                         bz_filter_order=bz_filter_order, stencil=stencil, free=free)
 
         self.check_metrics()
 
