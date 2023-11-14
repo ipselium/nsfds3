@@ -17,3 +17,7 @@ results/
 NOTES.md
 nsfds3/nsfds3.code-workspace
 nsfds3/.vscode
+tests/test.npy.npz
+*.npz
+*.npy
+*.msh

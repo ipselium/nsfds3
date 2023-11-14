@@ -35,43 +35,51 @@ from .templates import TestCases as _tc
 
 
 def get_func(module, name):
-    """ Get obstacle from custom file or fdgrid templates. """
-
+    """ Get function from python module. If not found, fallback to
+    nsfds3.cpgrid.templates ir None.
+    """
     if os.path.isfile(module):
         sys.path.append(os.path.dirname(module))
         custom = __import__(os.path.basename(module).split('.')[0])
     else:
         custom = _tc
+    
+    return getattr(custom, name, None)
 
-    try:
-        return getattr(custom, name)
-    except AttributeError:
-        return None
 
 class GridError(Exception):
-    """ Exception raised when grid parameters are wrong. """
+    """Exception raised when grid parameters are wrong. """
 
 
 def sign(x):
-    """ Returns sign of x. """
+    """Returns the sign of x. """
     return -1 if x < 0 else 1
 
 
 def parse_shape(shape):
-    """ Check that grid shape is consistent, i.e. that each dimension does not exceed the max value of int16. """
+    """Parse shape. """
+    max_int16 = _np.iinfo(_np.int16).max
     if len(shape) not in (2, 3):
         raise ValueError('shape: inconsistent dimension')
-    if any(s > _np.iinfo(_np.int16).max for s in shape):
-        raise GridError(f'shape: 1 dimension exceeds {_np.iinfo(_np.int16)}')
+    if any(s > max_int16 for s in shape):
+        raise GridError(f'shape: 1 dimension exceeds {max_int16}')
     return shape
 
 
 def parse_bc(shape, bc):
-    """ Parse boundary condition. """
-
-    regex = [r'[^P]P..', r'P[^P]..', r'[^P]P....', r'P[^P]....',
-                r'..[^P]P', r'..P[^P]', r'..[^P]P..', r'..P[^P]..',
-                r'....[^P]P', r'....P[^P]',]
+    """Parse boundary condition. """
+    regex = [
+        r'[^P]P..', 
+        r'P[^P]..', 
+        r'[^P]P....', 
+        r'P[^P]....',
+        r'..[^P]P', 
+        r'..P[^P]', 
+        r'..[^P]P..', 
+        r'..P[^P]..',
+        r'....[^P]P', 
+        r'....P[^P]',
+        ]
 
     if bc is None:
         bc = 'W' * len(shape) * 2
@@ -96,8 +104,7 @@ def parse_bc(shape, bc):
 
 
 def parse_steps(shape, steps):
-    """ Parse spacial steps. """
-
+    """Parse spacial steps. """
     if steps is None:
         steps = (1., ) * len(shape)
 
@@ -111,8 +118,7 @@ def parse_steps(shape, steps):
 
 
 def parse_origin(shape, origin, bc, bz_n):
-    """ Parse origin of the domain. """
-
+    """Parse origin of the domain. """
     if origin is None:
         origin = tuple([bz_n if bc[2*i] == "A" else 0 for i in range(len(shape))])
 

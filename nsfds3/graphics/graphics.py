@@ -39,6 +39,7 @@ import plotly.graph_objects as _go
 
 from plotly.subplots import make_subplots
 from matplotlib import patches as _patches, path as _path
+from matplotlib.collections import PatchCollection
 from matplotlib.image import PcolorImage
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 
@@ -83,9 +84,9 @@ class MeshViewer:
                    grid=True, buffer=True, obstacles=True, domains=False, N=1,
                    slices = None,
                    kwargs_grid=dict(zorder=5),
-                   kwargs_obstacles=dict(facecolor='k', alpha=0.2, fill=True, hatch='x', zorder=100, annotate=True),
-                   kwargs_domains=dict(facecolor='y', zorder=100, annotate=False),
-                   kwargs_buffer=dict(linewidth=3, edgecolor='k', fill=False, zorder=100))
+                   kwargs_obstacles=dict(facecolor='k', alpha=0.2, hatch='x', zorder=100, annotate=True, rasterized=True),
+                   kwargs_domains=dict(facecolor='y', alpha=0.2, zorder=100, annotate=False, rasterized=True),
+                   kwargs_buffer=dict(linewidth=3, edgecolor='k', facecolor='none', alpha=0.2, zorder=100))
 
     def __init__(self, msh):
 
@@ -235,7 +236,8 @@ class MeshViewer:
         **kwargs : dict
             Keyword Arguments of matplotlib.patches.Rectangle
         """
-        dkwargs = dict(linewidth=3, edgecolor='k', facecolor=None, alpha=1., fill=False, hatch=None, annotate=False)
+        dkwargs = dict(linewidth=3, edgecolor='k', facecolor=None, 
+                       alpha=1., hatch=None, annotate=False, rasterized=True)
         kwargs = dict_update(dkwargs, kwargs)
         annotate = kwargs.pop('annotate')
 
@@ -248,23 +250,26 @@ class MeshViewer:
         else:
             u, v = axes[indices[0]].T, axes[indices[1]].T
 
+        collection = []
         for sub in obj:
             b = [(u[i, sub.cn[indices[1]][0]], v[i, sub.cn[indices[1]][0]]) for i in sub.rn[indices[0]]][::-1]
             l = [(u[sub.cn[indices[0]][0], i], v[sub.cn[indices[0]][0], i]) for i in sub.rn[indices[1]]]
             t = [(u[i, sub.cn[indices[1]][1]], v[i, sub.cn[indices[1]][1]]) for i in sub.rn[indices[0]]]
             r = [(u[sub.cn[indices[0]][1], i], v[sub.cn[indices[0]][1], i]) for i in sub.rn[indices[1]]]
-
             verts = b + l + t + r
             codes = [_path.Path.MOVETO] + \
                     (len(verts)-2)*[_path.Path.LINETO] + \
                     [_path.Path.CLOSEPOLY]
             path = _path.Path(verts, codes)
-            patch = _patches.PathPatch(path, **kwargs)
-            ax.add_patch(patch)
+            collection.append(_patches.PathPatch(path))
             if annotate:
                 ax.annotate(f'{sub.sid}', sub.center(ax=indices, transform=(u, v)),
                             ha='center', va='center',
                             color='gray', weight='bold', style='italic', fontsize=8)
+        
+        collection = PatchCollection(collection)
+        collection.set(**kwargs)
+        ax.add_collection(collection)
 
     @staticmethod
     def grid(ax, axes, indices, N, **kwargs):
@@ -399,9 +404,9 @@ class MPLViewer(MeshViewer):
                    grid=False, buffer=True, obstacles=True, domains=False, probes=True,
                    N=1, slices = None,
                    kwargs_grid=dict(zorder=5),
-                   kwargs_obstacles=dict(facecolor='k', alpha=0.2, fill=False, zorder=100),
-                   kwargs_domains=dict(facecolor='y', zorder=100),
-                   kwargs_buffer=dict(linewidth=3, edgecolor='k', fill=False, zorder=100))
+                   kwargs_obstacles=dict(facecolor='k', alpha=0.2, zorder=100, annotate=True),
+                   kwargs_domains=dict(facecolor='y', alpha=0.2, zorder=100, annotate=True),
+                   kwargs_buffer=dict(linewidth=3, edgecolor='k', facecolor='none', alpha=0.2, zorder=100))
 
     def __init__(self, cfg, msh, data):
 
@@ -539,10 +544,6 @@ class MPLViewer(MeshViewer):
         if not isinstance(self.data, DataExtractor):
             print('movie method only available for DataExtractor')
             sys.exit(1)
-
-        # Nb of iterations and reference
-        nt = self.cfg.sol.nt if not nt else closest_index(nt, self.cfg.sol.ns, self.cfg.sol.nt)
-        ref = 'auto' if not ref else ref
 
         # Create Iterator and make 1st frame
         data = DataIterator(self.data, view=view, nt=nt)

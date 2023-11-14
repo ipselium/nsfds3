@@ -72,7 +72,7 @@ class Solver:
 
     def __init__(self, vsc=True, cpt=True, vrt=True, flt=True, 
                  xnu_n=0.2, xnu_0=0.01, nt=50, ns=10, cfl=0.5,
-                 save=True, comp=False, resume=False):
+                 save=True, resume=False):
 
         self.vsc = vsc
         self.cpt = cpt
@@ -84,7 +84,6 @@ class Solver:
         self._ns = ns
         self.cfl = cfl
         self.save = save
-        self.comp = comp
         self.it = 0
         self.resume = resume
         self._check_filter(self.xnu_n)
@@ -185,7 +184,7 @@ class Geometry:
     """ Helper class used by CfgSetup to setup geometrical parameters. """
 
     def __init__(self, shape, steps=None, origin=None, bc=None, flat=None,
-                 path=None, geofile=None, geoname=None, curvname=None,
+                 path=None, file=None, name=None, kwargs=None, curvname=None,
                  bz_n=20, bz_stretch_factor=2, bz_stretch_order=3, bz_filter_order=3.,
                  stencil=11, free=True):
         
@@ -202,8 +201,9 @@ class Geometry:
                                                                                          bz_n)
         self._flat = flat
         self.path = path
-        self._geofile = geofile
-        self._geoname = geoname
+        self._file = file
+        self._name = name
+        self._kwargs = kwargs if isinstance(kwargs, dict) else dict()
         self._curvname = curvname
         self._update_obstacles()
         self._update_curvilinear_transformation()
@@ -226,26 +226,26 @@ class Geometry:
     def _check_flat(self, flat):
         """ Check that flat is consistent. """
         if not isinstance(flat, (tuple, type(None))):
-            raise ValueError('flat: tuple of None expected')
+            raise ValueError('Geometry.flat: tuple of None expected')
 
         if flat is not None:
             if len(flat) != 2:
-                raise ValueError('flat: length 2 expected (axis, location)')
+                raise ValueError('Geometry.flat: length 2 expected (axis, location)')
 
             flat_ax, flat_idx = self.flat
 
             if flat_ax not in range(3):
-                raise ValueError('flat[0]: 0, 1, or 2 expected')
+                raise ValueError('Geometry.flat[0]: 0, 1, or 2 expected')
 
             if flat_idx not in range(self.shape[flat_ax]):
-                raise ValueError('flat[1]: must be in the domain')
+                raise ValueError('Geometry.flat[1]: must be in the domain')
 
     def _update_obstacles(self):
-        if self.geoname is not None:
-            geofile = '' if self.geofile is None else self.geofile
-            self.obstacles = cputils.get_func(self.path / geofile, self.geoname)
+        if self.name is not None:
+            file = '' if self.file is None else self.file
+            self.obstacles = cputils.get_func(self.path / file, self.name)
             if self.obstacles is not None:
-                self.obstacles = self.obstacles(self.shape)
+                self.obstacles = self.obstacles(self.shape, **self.kwargs)
         else:
             self.obstacles = None
 
@@ -253,8 +253,8 @@ class Geometry:
 
     def _update_curvilinear_transformation(self):
         if self.curvname is not None:
-            geofile = '' if self.geofile is None else self.geofile
-            self.curvfunc = cputils.get_func(self.path / geofile, self.curvname)
+            file = '' if self.file is None else self.file
+            self.curvfunc = cputils.get_func(self.path / file, self.curvname)
         else:
             self.curvfunc = None
 
@@ -320,26 +320,38 @@ class Geometry:
         return self._flat
 
     @property
-    def geofile(self):
-        """ Name of the file in which to search for functions `geoname`,
+    def file(self):
+        """ Name of the file in which to search for functions `name`,
         `curvname`, and functions used for sources.
         """
-        return self._geofile
+        return self._file
 
-    @geofile.setter
-    def geofile(self, value):
-        self._geofile = value
+    @file.setter
+    def file(self, value):
+        self._file = value
         self._update_obstacles()
         self._update_curvilinear_transformation()
 
     @property
-    def geoname(self):
+    def name(self):
         """ Name of the function to be used to set up the `Obstacle` arrangement. """
-        return self._geoname
+        return self._name
 
-    @geoname.setter
-    def geoname(self, value):
-        self._geoname = value
+    @name.setter
+    def name(self, value):
+        self._name = value
+        self._update_obstacles()
+
+    @property
+    def kwargs(self):
+        """ keyword arguments of the function to be used to set up the `Obstacle` arrangement. """
+        return self._kwargs
+
+    @kwargs.setter
+    def kwargs(self, value):
+        if not isinstance(value, dict):
+            raise ValueError('Geometry.kwargs: dict expected')
+        self._kwargs = value
         self._update_obstacles()
 
     @property
@@ -415,7 +427,7 @@ class Geometry:
         return s
 
     def __repr__(self):
-        return self.__str__()
+        return str(self)
 
 
 class Probes:
@@ -536,8 +548,9 @@ class CfgSetup:
 
         [geometry]
         free                        -> self.geo.free = True
-        geofile                     -> self.geo.geofile = None
-        geoname                     -> self.geo.geoname = None
+        file                        -> self.geo.file = None
+        name                        -> self.geo.name = None
+        kwargs                      -> self.geo.kwargs = None
         curvname                    -> self.geo.curvname = None
         bc                          -> self.geo.bc = 'WWWWWW'
         shape                       -> self.geo.shape = (128, 96, 32)
@@ -565,8 +578,8 @@ class CfgSetup:
         components                  -> self.flw.components = (0, 0, 0)
         
         [probes]
-        vars                        -> self.prb.vars = ()
-        locs                        -> self.prb.locs = ()
+        variables                   -> self.prb.vars = ()
+        locations                   -> self.prb.locs = ()
 
         [solver]
         viscous fluxes              -> self.sol.vsc = True
@@ -580,7 +593,6 @@ class CfgSetup:
         cfl                         -> self.sol.cfl = 0.5
         resume                      -> self.sol.resume = False
         save fields                 -> self.sol.save = True
-        comp                        -> self.sol.comp = False
 
         [graphics]
         figures                     -> self.gra.fig = True
@@ -673,8 +685,9 @@ class CfgSetup:
         self._cfg.set('thermophysic', 'gamma', str(self.tp.gamma))
 
         self._cfg.set('geometry', 'free', str(self.geo.free))
-        self._cfg.set('geometry', 'geofile', str(self.geo.geofile))
-        self._cfg.set('geometry', 'geoname', str(self.geo.geoname))
+        self._cfg.set('geometry', 'file', str(self.geo.file))
+        self._cfg.set('geometry', 'name', str(self.geo.name))
+        self._cfg.set('geometry', 'kwargs', str(self.geo.kwargs))
         self._cfg.set('geometry', 'curvname', str(self.geo.curvname))
         self._cfg.set('geometry', 'bc', str(self.geo.bc))
         self._cfg.set('geometry', 'shape', str(self.geo.shape))
@@ -699,15 +712,14 @@ class CfgSetup:
         self._cfg.set('flow', 'type', str(self.flw.ftype))
         self._cfg.set('flow', 'components', str(self.flw.components))
         
-        self._cfg.set('probes', 'vars', str(self.prb.vars))
-        self._cfg.set('probes', 'locs', str(self.prb.locs))
+        self._cfg.set('probes', 'variables', str(self.prb.vars))
+        self._cfg.set('probes', 'locations', str(self.prb.locs))
 
         self._cfg.set('solver', 'nt', str(self.sol.nt))
         self._cfg.set('solver', 'ns', str(self.sol.ns))
         self._cfg.set('solver', 'cfl', str(self.sol.cfl))
         self._cfg.set('solver', 'resume', str(self.sol.resume))
         self._cfg.set('solver', 'save fields', str(self.sol.save))
-        self._cfg.set('solver', 'comp', str(self.sol.comp))
         self._cfg.set('solver', 'viscous fluxes', str(self.sol.vsc))
         self._cfg.set('solver', 'vorticity', str(self.sol.vrt))
         self._cfg.set('solver', 'shock capture', str(self.sol.cpt))
@@ -808,7 +820,7 @@ class CfgSetup:
 
     @property
     def dt(self):
-        """ Time step.
+        """Time step.
 
         Note
         ----
@@ -824,6 +836,16 @@ class CfgSetup:
 
     @property
     def frequencies(self):
+        """
+        Calculate the minimum and maximum frequencies for the simulation.
+    
+        Returns
+        -------
+        tuple
+            A tuple containing the minimum and maximum frequencies.
+            The minimum frequency is calculated as 2 divided by the product of the time step and the number of time steps.
+            The maximum frequency is calculated as the Courant-Friedrichs-Lewy (CFL) condition divided by 10 times the time step.
+        """
         # To get two periods during the simulation
         fmin = 2 / (self.dt * self.sol.nt)
         # To get at least 10 points per wavelength
@@ -853,8 +875,9 @@ class CfgSetup:
                             bc=CFG_GEO.get('bc', 'WWWWWW').upper(), 
                             flat=CFG_GEO.getlit('flat', None),
                             path=self.path, 
-                            geofile=CFG_GEO.getlit('geofile', None), 
-                            geoname=CFG_GEO.getlit('geoname', None), 
+                            file=CFG_GEO.getlit('file', None), 
+                            name=CFG_GEO.getlit('name', None), 
+                            kwargs=CFG_GEO.getlit('kwargs', None),
                             curvname=CFG_GEO.getlit('curvname', None),
                             bz_n=CFG_GEO.getint('bz grid points', 20), 
                             bz_filter_order=CFG_GEO.getfloat('bz filter ordrer', 3.),
@@ -874,7 +897,6 @@ class CfgSetup:
                           ns=CFG_SOL.getint('ns', 10),
                           cfl=CFG_SOL.getfloat('cfl', 0.5),
                           save=CFG_SOL.getboolean('save fields', True),
-                          comp=CFG_SOL.getboolean('compression', False),
                           resume=CFG_SOL.getboolean('resume', False))
         
 
@@ -896,8 +918,8 @@ class CfgSetup:
                                 ndim=self.ndim)
         
         CFG_PRB = self._cfg['probes']
-        self.prb = Probes(vars=CFG_PRB.getlit('vars', ()), 
-                          locs=CFG_PRB.getlit('locs', ()), shape=self.geo.shape)
+        self.prb = Probes(vars=CFG_PRB.getlit('variables', ()), 
+                          locs=CFG_PRB.getlit('locations', ()), shape=self.geo.shape)
 
         CFG_THP = self._cfg['thermophysic']
         self.tp = Air(rho0=CFG_THP.getfloat('rho0', 1.2), 
@@ -913,7 +935,7 @@ class CfgSetup:
                             fps=CFG_FIGS.getint('fps', 24))
 
     def convert_to_2d(self):
-        """ Convert 3d config to 2d. """
+        """Convert 3d config to 2d. """
         ax, _ = self.geo.flat
         self.geo.convert_to_2d()
         self.flw.convert_to_2d(ax)
@@ -921,7 +943,7 @@ class CfgSetup:
         self.prb.convert_to_2d(ax)
 
     def check_version(self):
-        """ Check version of the configuration."""
+        """Check version of the configuration."""
         version = self._cfg['general'].get('version', self._version_base)
         version_ok = _parse_version(version) >= _parse_version(self._version_base)
 
@@ -942,7 +964,7 @@ class CfgSetup:
 
         s = "[System]"
         s += f"\n\t- cpu                 : {self.cpu}/{self.cpu_count}"
-        s += f"\n\t- Estimed ram used    : {formatter(size)}"
+        s += f"\n\t- Estimated ram used    : {formatter(size)}"
         s += self.sol.__str__()
         s += "\n[Time]"
         s += f"\n\t- Physical time    : {self.dt*self.sol.nt:.5e} s."
@@ -955,4 +977,4 @@ class CfgSetup:
         return s
 
     def __repr__(self):
-        return self.__str__()
+        return str(self)

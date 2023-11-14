@@ -64,35 +64,6 @@ def closest_index(n, ns, nt):
     return ns
 
 
-def get_data(fname):
-    """ Get data from hdf5 file named `filename`.
-
-    Parameters
-    ----------
-    fname: str
-        path to data file
-
-    Returns
-    -------
-    data: h5py file
-        The buffer interface to the hdf5 file
-
-    Raises
-    ------
-    OSError
-        If hdf5 file is not valid or does not exist
-    """
-
-    try:
-        fname = pathlib.Path(fname).expanduser()
-        data = h5py.File(fname, 'r')
-    except OSError:
-        print('You must provide a valid hdf5 file')
-        sys.exit(1)
-    else:
-        return data
-
-
 def get_pressure(r=None, ru=None, rv=None, rw=None, re=None, gamma=1.4):
     """ Get pressure from conservative variables.
 
@@ -134,16 +105,21 @@ def get_pressure(r=None, ru=None, rv=None, rw=None, re=None, gamma=1.4):
 
 
 def check_view(view, volumic=True, vorticity=True):
-    """ Displays a message specifying which variables can be plotted.
+    """ Validates the given view parameter and returns it if valid.
 
     Parameters
     ----------
-    view: str
+    view : str
         The name of the variable to consider
-    volumic: bool
+    volumic : bool, optional
         Specifies whether the simulation is 3d or not
-    vorticity:
+    vorticity : bool, optional
         Specifies whether vorticity is calculated or not
+
+    Returns
+    -------
+    str
+        The validated view parameter
     """
 
     views = ['r', 'ru', 'rv', 'rw', 're', 'wx', 'wy', 'wz',
@@ -152,27 +128,24 @@ def check_view(view, volumic=True, vorticity=True):
     if view == 'rho':
         view = 'r'
 
-    if view in ['rw', 'vz', 'wx', 'wy'] and not volumic:
-        print('No z-component for velocity')
-        sys.exit(1)
+    if not volumic and view in ['rw', 'vz', 'wx', 'wy']:
+        raise ValueError('No z-component for velocity')
 
-    if view in ['wx', 'wy', 'wz'] and not vorticity:
-        print('No data for vorticity')
-        sys.exit(1)
+    elif not vorticity and view in ['wx', 'wy', 'wz']:
+        raise ValueError('No data for vorticity')
 
-    if view not in views:
+    elif view not in views:
         vortis = '|wz' if volumic else '|wx|wy|wz'
         msg = 'view must be : {}' + (vortis if vorticity else '')
         var3d = 'p|r|rho|r|ru|rv|rw|re|vx|vy|vz|e'
         var2d = 'p|r|rho|r|ru|rv|re|vx|vy|e'
-        print(msg.format(var3d if volumic else var2d) )
-        sys.exit(1)
+        raise ValueError(msg.format(var3d if volumic else var2d) )
 
     return view
 
 
 class DataIterator:
-    """ Data Generator
+    """ Data Generator.
 
     Parameters
     ----------
@@ -198,10 +171,8 @@ class DataIterator:
         self.view = view
         self.ns = self.data.get_attr('ns')
         self.icur = 0
-        if nt is None:
-            self.nt = self.data.get_attr('nt')
-        else:
-            self.nt = nt
+        self.nt = self.data.get_attr('nt') if nt is None else nt
+        self.nt = closest_index(self.nt, self.ns, self.nt)
 
     def __len__(self):
         return int((self.nt - self.icur) / self.ns)
@@ -212,11 +183,11 @@ class DataIterator:
 
     def __next__(self):
         """ Next element of iterator : (frame_number, variable) """
-        try:
-            if self.icur > self.nt:
-                raise StopIteration
+        if self.icur > self.nt:
+            raise StopIteration
 
-            tmp = [self.icur]
+        try:
+            tmp = [self.icur, ]
             for var in self.view:
                 tmp.append(self.data.get(view=var, iteration=self.icur))
 
@@ -229,22 +200,25 @@ class DataIterator:
 
 
 class DataExtractor:
-    """ Extract data from hdf5 file
+    """ Helper class to extract data from an h5py.File.
 
     Parameters
     ----------
-    data : str, hdf5file
-        Path to hdf5 file or data from hdf5 file.
-
+    data: pathlib.Path, str, or h5py.File
+        The data to be initialized with. If it is a pathlib.Path or str, 
+        the data will be retrieved using the `DataExtractor.get_data` method.
+        Otherwise, the data will be used as is.
     """
 
     def __init__(self, data):
 
         if isinstance(data, (pathlib.Path, str)):
-            self.data = get_data(data)
-        else:
+            self.data = self.get_data(data)
+        elif isinstance(data, h5py.File):
             self.data = data
-
+        else:
+            raise ValueError('pathlib.Path, str, or h5py.File expected')
+        
         self.var = {'e': 're', 'vx': 'ru', 'vy': 'rv', 'vz': 'rw'}
         self.nt = self.get_attr('nt')
         self.ns = self.get_attr('ns')
@@ -254,11 +228,7 @@ class DataExtractor:
 
         self.volumic = self.get_attr('ndim') == 3
         self.vorticity = self.get_attr('vorticity')
-
-        if self.volumic:
-            self.T = (0, 1, 2)
-        else:
-            self.T = (1, 0)
+        self.T = (0, 1, 2) if self.volumic else (1, 0)
 
     def __enter__(self):
         return self
@@ -266,8 +236,36 @@ class DataExtractor:
     def __exit__(self, mtype, value, traceback):
         self.close()
 
+    @staticmethod
+    def get_data(fname):
+        """ Get data from h5py.File (hdf5 file).
+
+        Parameters
+        ----------
+        fname: str, pathlib.Path
+            Path to hdf5.File.
+
+        Returns
+        -------
+        data: h5py.File
+            The buffer interface to the hdf5 file.
+
+        Raises
+        ------
+        OSError
+            If the hdf5 file is not valid or does not exist.
+        """
+
+        try:
+            fname = pathlib.Path(fname).expanduser()
+            data = h5py.File(fname, 'r')
+            return data
+        except OSError:
+            print('You must provide a valid hdf5 file')
+            sys.exit(1)
+        
     def reference(self, view='p', ref=None):
-        """ Generate the references for min/max colormap values
+        """Generate the references for min/max colormap values.
 
         Parameters
         ----------
@@ -275,59 +273,64 @@ class DataExtractor:
             The quantity from which the reference is to be taken
         ref : int, tuple, None, or str
             Can be int (frame index), tuple (int_min, int_max), or 'auto'
+        
+        Returns
+        -------
+        tuple: 
+            The minimum and maximum values of the view
         """
-
         view = check_view(view, self.volumic, self.vorticity)
 
-        if not ref or ref == 'auto':
-            ref = self.autoref(view=view)
+        if ref is None or ref == 'auto':
+            ref = self._autoref(view=view)
 
         if isinstance(ref, int):
-            var = self.get(view=view,
-                           iteration=closest_index(ref, self.ns, self.nt))
+            iteration = closest_index(ref, self.ns, self.nt)
+            var = self.get(view=view, iteration=iteration)
             return _np.nanmin(var), _np.nanmax(var)
 
         if isinstance(ref, tuple):
-            varmin = self.get(view=view,
-                              iteration=closest_index(ref[0], self.ns, self.nt))
-            varmax = self.get(view=view,
-                              iteration=closest_index(ref[1], self.ns, self.nt))
+            iteration_min = closest_index(ref[0], self.ns, self.nt)
+            iteration_max = closest_index(ref[1], self.ns, self.nt)
+            varmin = self.get(view=view, iteration=iteration_min)
+            varmax = self.get(view=view, iteration=iteration_max)
             return _np.nanmin(varmin), _np.nanmax(varmax)
 
-    def autoref(self, view='p'):
-        """ Autoset reference. """
+    def _autoref(self, view='p'):
+        """ Search minimum and maximum value indices of the view.
 
+        Parameter
+        ---------
+        view: str
+            View from which to find reference.
+        
+        Returns
+        -------
+        tuple:
+            References of the minimum and maximum value for the view.
+        """
         view = check_view(view, self.volumic, self.vorticity)
         var = DataIterator(self, view=(view, ))
-
-        maxs = []
-        mins = []
-        for _, v in var:
-            maxs.append(v.max())
-            mins.append(v.min())
-
-        maxs = _np.array(maxs)
-        mins = _np.array(mins)
-
+        mins, maxs = _np.array([(v.max(), v.min()) for _, v in var]).T
+        
         refmax = abs(maxs - maxs.mean()).argmin() * self.ns
         refmin = abs(mins - mins.mean()).argmin() * self.ns
 
         return refmin, refmax
 
     def close(self):
-        """ Close hdf5 file """
+        """Close hdf5 file. """
         self.data.close()
 
     def list(self):
-        """ List all datasets and attributes. """
-
+        """List all datasets and attributes. """
         datasets = [i for i in self.data.keys() if '_it' not in i]
         print('datasets: ', *datasets)
         print('attrs: ', *list(self.data.attrs))
 
     def get(self, view='p', iteration=0):
-        """ Get data at iteration. """
-
+        """Get data of the specified view at the given iteration. """
+        iteration = closest_index(iteration, self.ns, self.nt)
         view = check_view(view, self.volumic, self.vorticity)
 
         if view == 'p':
@@ -351,20 +354,30 @@ class DataExtractor:
             return (self.data[f"{view}_it{iteration}"][...]).transpose(self.T)
 
     def get_attr(self, attr):
-        """ Get attribute from hdf5 file. attr must be string."""
+        """Get attribute from hdf5 file. attr must be string."""
         return self.data.attrs[attr]
 
     def get_dataset(self, dataset):
-        """ Get dataset from hdf5 file. attr must be string."""
+        """Get dataset from hdf5 file. attr must be string."""
         return self.data[dataset][...]
 
 
 class FieldExtractor:
+    """
+    Helper class to extract data from a lbfds.fields.Fields2d or Fields3d.
+
+    Parameters
+    ----------
+        fld: libfds.fields.Fields2d or libfds.fields.Fields3d
+            The field to get data from.
+    
+    Raises
+    ------
+        ValueError: If fld is neither Fields2d nor Fields3d.
+    """
 
     def __init__(self, fld):
-
         self.fld = fld
-
         if isinstance(fld, fields.Fields2d):
             self.volumic = False
             self.T = (1, 0)
@@ -374,21 +387,31 @@ class FieldExtractor:
         else:
             raise ValueError('fld must be Fields2d or Fields3d')
 
-
-        self.vorticity = False if len(fld.wz) == 0 else True
-
+        self.vorticity = bool(fld.wz)
         self.var = {'e': 're', 'vx': 'ru', 'vy': 'rv', 'vz': 'rw'}
 
     def get(self, view='p', iteration=None):
-        """ Get data at iteration. """
+        """
+        Get the specified view.
 
+        Parameters
+        ----------
+        view: str, optional
+            The view to retrieve. Default is 'p'.
+        iteration: int, optional 
+            The iteration number. Default is None.
+
+        Returns
+        -------
+        numpy.ndarray: The field data corresponding to the specified view.
+        """
         view = check_view(view, self.volumic, self.vorticity)
 
         if view == 'p':
             return _np.array(self.fld.p).transpose(self.T) - self.fld.p0
 
-        if view in ['r', 'ru', 'rv', 'rw', 're', 'wx', 'wy', 'wz']:
+        elif view in ['r', 'ru', 'rv', 'rw', 're', 'wx', 'wy', 'wz']:
             return _np.array(getattr(self.fld, view)).transpose(self.T)
 
-        if view in ['vx', 'vy', 'vz', 'e']:
+        elif view in ['vx', 'vy', 'vz', 'e']:
             return _np.array(getattr(self.fld, self.var[view]) / self.fld.r).transpose(self.T)

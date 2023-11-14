@@ -28,7 +28,6 @@ Some utils to
 """
 
 import os
-import sys
 import pickle
 import pathlib
 import time

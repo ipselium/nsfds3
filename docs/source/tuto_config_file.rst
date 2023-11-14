@@ -17,8 +17,6 @@ This file can contain the following entries.
    timings = True|False              # Display timing detail
    quiet = True|False                # Quiet mode
    cpu = 1                           # Number of cpu used by the solver
-   free = True|False                 # Free memory (ComputationDomain intermediate vars)
-   comp = None|lzf                   # Compression of data files
 
    [thermophysic]
    norm = True|False                 # Normalize thermophysical values.
@@ -27,6 +25,7 @@ This file can contain the following entries.
    gamma = 1.4                       # Heat capacity ratio
 
    [geometry]
+   free = True|False                 # Free memory (ComputationDomain intermediate vars)
    geofile = None|path               # Path to .py file (for geoname/curvname and other functions)
    geoname = None|func_name          # Function name for geometry
    curvname = None|func_name         # Function name for curvilinear coordinates
@@ -40,11 +39,9 @@ This file can contain the following entries.
    bz stretch order = 3              # Order of the grid stretching in the BZ
    bz stretch factor = 2             # Factor of the grid stretching in the BZ
 
-   [initial pulses]
-   on = True|False                   # Whether or not to setup initial pulses
-   origins = (),                     # Origins of the pulses (tuple of tuples)
-   amplitudes = ()                   # Amplitudes of the pulses
-   widths = ()                       # widths of the pulses
+   [probes]
+   vars = ()                         # field to get value from.
+   locs = ()                         # Probe locations. Must be tuple of tuples
 
    [sources]
    on = True|False                   # Whether or not to setup sources
@@ -62,7 +59,6 @@ This file can contain the following entries.
    nt = 500                          # Number of time iterations
    ns = 10                           # Field saving frequency
    cfl = 0.5                         # Courant–Friedrichs–Lewy number
-   probes = ()                       # Probe locations. Must be tuple of tuples
    save fields = True|False          # Whether or not to save fields
    viscous fluxes = True|False       # Compute viscous fluxes
    vorticity = True|False            # Compute vorticity

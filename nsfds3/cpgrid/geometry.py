@@ -63,7 +63,7 @@ class Box:
 
     @classmethod
     def from_slices(cls, slices, env, bc=None, inner=False, tag=None):
-        """ Instanciate Box from a list of slices. """
+        """Instanciate Box from a list of slices. """
         origin = tuple(s.start for s in slices)
         size = tuple(s.stop - s.start for s in slices)
         return cls(origin=origin, size=size, env=env, bc=bc, inner=inner, tag=tag)
@@ -71,7 +71,7 @@ class Box:
     @property
     @functools.lru_cache()
     def indices(self):
-        """ Return a set of all indexes contained in the Box. """
+        """Return a set of all indexes contained in the Box. """
         return set(_it.product(*self.rn))
 
     def _get_vertices(self):
@@ -102,7 +102,7 @@ class Box:
 
     @staticmethod
     def _fix_vertices(values):
-        """ Fix flat cuboids. """
+        """Fix flat cuboids. """
         axis = _np.where([v.min() == v.max() for v in values])[0]
         if axis.any():
             axis = axis[0]
@@ -412,17 +412,19 @@ class Face(Box):
                 import numpy as np
                 t = np.linspace(0, nt * dt, nt + 1)
 
-            where Nt is the number of time iterations and dt the timestep. set_source must return a
-            1d ndarray containing Nt + 1 points that describe the time evolution of the wall source.
+            where nt is the number of time iterations and dt the timestep. set_source must return a
+            1d ndarray containing nt + 1 points that describe the time evolution of the wall source.
         profile : str, 'tukey' by default.
-            Spacial profile. must be "sine" or "tukey"
+            Spacial profile. must be "sine" or "tukey".
         """
         if not callable(func):
             raise ValueError('func must be callable')
+        
         self.source_evolution = _np.array([])
         self.source_function = func
         self.source_name = func.__name__
         self.source_alpha = alpha
+
         if profile.lower() not in ['sine', 'tukey']:
             self.source_profile = 'tukey'
         else:

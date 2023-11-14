@@ -215,34 +215,18 @@ class FDTD:
         self.sfile.attrs['itmax'] = self.cfg.sol.it
 
         if self.cfg.sol.save:
-            self.sfile.create_dataset(f'r_it{self.cfg.sol.it}',
-                                      data=self.fld.r,
-                                      compression=self.cfg.sol.comp)
-            self.sfile.create_dataset(f'ru_it{self.cfg.sol.it}',
-                                      data=self.fld.ru,
-                                      compression=self.cfg.sol.comp)
-            self.sfile.create_dataset(f'rv_it{self.cfg.sol.it}',
-                                      data=self.fld.rv,
-                                      compression=self.cfg.sol.comp)
-            self.sfile.create_dataset(f're_it{self.cfg.sol.it}',
-                                      data=self.fld.re,
-                                      compression=self.cfg.sol.comp)
+            self.sfile.create_dataset(f'r_it{self.cfg.sol.it}', data=self.fld.r)
+            self.sfile.create_dataset(f'ru_it{self.cfg.sol.it}', data=self.fld.ru)
+            self.sfile.create_dataset(f'rv_it{self.cfg.sol.it}', data=self.fld.rv)
+            self.sfile.create_dataset(f're_it{self.cfg.sol.it}', data=self.fld.re)
             if self.msh.ndim == 3:
-                self.sfile.create_dataset(f'rw_it{self.cfg.sol.it}',
-                                          data=self.fld.rw,
-                                          compression=self.cfg.sol.comp)
+                self.sfile.create_dataset(f'rw_it{self.cfg.sol.it}', data=self.fld.rw)
 
             if self.cfg.sol.vrt:
-                self.sfile.create_dataset(f'wz_it{self.cfg.sol.it}',
-                                        data=self.fld.wz,
-                                        compression=self.cfg.sol.comp)
+                self.sfile.create_dataset(f'wz_it{self.cfg.sol.it}', data=self.fld.wz)
                 if self.msh.ndim == 3:
-                    self.sfile.create_dataset(f'wx_it{self.cfg.sol.it}',
-                                            data=self.fld.wx,
-                                            compression=self.cfg.sol.comp)
-                    self.sfile.create_dataset(f'wy_it{self.cfg.sol.it}',
-                                            data=self.fld.wy,
-                                            compression=self.cfg.sol.comp)
+                    self.sfile.create_dataset(f'wx_it{self.cfg.sol.it}', data=self.fld.wx)
+                    self.sfile.create_dataset(f'wy_it{self.cfg.sol.it}', data=self.fld.wy)
         if self.cfg.prb:
             self.sfile['probe_values'][:, self.cfg.sol.it - self.cfg.sol.ns:self.cfg.sol.it] = self.probes
 
@@ -272,8 +256,8 @@ class FDTD:
 
         # Not necessary ?
         self.sfile.attrs['obstacles'] = self.msh.get_obstacles()
-        self.sfile.create_dataset('x', data=self.msh.x, compression=self.cfg.sol.comp)
-        self.sfile.create_dataset('y', data=self.msh.y, compression=self.cfg.sol.comp)
+        self.sfile.create_dataset('x', data=self.msh.x)
+        self.sfile.create_dataset('y', data=self.msh.y)
         self.sfile.attrs['dx'] = self.msh.dx
         self.sfile.attrs['dy'] = self.msh.dy
         self.sfile.attrs['dt'] = self.cfg.dt
@@ -289,22 +273,21 @@ class FDTD:
         if self.msh.ndim == 3:
             self.sfile.attrs['dz'] = self.msh.dz
             self.sfile.attrs['nz'] = self.msh.nz
-            self.sfile.create_dataset('z', data=self.msh.z, compression=self.cfg.sol.comp)
+            self.sfile.create_dataset('z', data=self.msh.z)
 
         probes = _np.zeros((len(self.cfg.prb), self.cfg.sol.nt))
         self.sfile.create_dataset('probe_locations', data=self.cfg.prb.locs)
-        self.sfile.create_dataset('probe_values', data=probes,
-                                  compression=self.cfg.sol.comp)
+        self.sfile.create_dataset('probe_values', data=probes)
 
         if self.msh.mesh_type.lower() == 'curvilinear':
-            self.sfile.create_dataset('J', data=self.msh.J, compression=self.cfg.sol.comp)
-            #self.sfile.create_dataset('xn', data=self.msh.xn, compression=self.cfg.sol.comp)
-            #self.sfile.create_dataset('yn', data=self.msh.yn, compression=self.cfg.sol.comp)
-            self.sfile.create_dataset('xp', data=self.msh.xp, compression=self.cfg.sol.comp)
-            self.sfile.create_dataset('yp', data=self.msh.yp, compression=self.cfg.sol.comp)
+            self.sfile.create_dataset('J', data=self.msh.J)
+            #self.sfile.create_dataset('xn', data=self.msh.xn)
+            #self.sfile.create_dataset('yn', data=self.msh.yn)
+            self.sfile.create_dataset('xp', data=self.msh.xp)
+            self.sfile.create_dataset('yp', data=self.msh.yp)
             if self.msh.ndim == 3:
-                #self.sfile.create_dataset('zn', data=self.msh.yn, compression=self.cfg.sol.comp)
-                self.sfile.create_dataset('zp', data=self.msh.yp, compression=self.cfg.sol.comp)
+                #self.sfile.create_dataset('zn', data=self.msh.yn)
+                self.sfile.create_dataset('zp', data=self.msh.yp)
 
     def show(self, view='p', vmin=None, vmax=None, **kwargs):
         """ Show results. """
