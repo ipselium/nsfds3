@@ -5,6 +5,7 @@ results/
 *TODO*
 *.hdf5
 *.cfg
+*.pkl
 *.msh
 *.mkv
 *.html
@@ -20,4 +21,3 @@ nsfds3/.vscode
 tests/test.npy.npz
 *.npz
 *.npy
-*.msh

@@ -83,6 +83,19 @@ def secs_to_dhms(secs):
            (h if dhms.hour > 0 else '') + m + s + ms
 
 
+def secs_to_hms(seconds):
+    """Format seconds to a str like XXh YYm ZZs. """
+    hours = int(seconds // 3600)
+    minuts = int((seconds % 3600) // 60)
+    seconds = int(seconds % 60)
+    
+    hours = f'{hours}h' if hours else ''
+    minuts = f'{minuts}m' if minuts else ''
+    seconds = f'{seconds}s' if seconds else ''
+
+    return f'{hours}{minuts}{seconds}'
+
+
 def timer(func):
     """ Time method of a class instance containing:
 

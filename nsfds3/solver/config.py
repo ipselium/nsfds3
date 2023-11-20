@@ -70,7 +70,7 @@ class Graphics:
 class Solver:
     """ Helper class used by CfgSetup to setup solver options. """
 
-    def __init__(self, vsc=True, cpt=True, vrt=True, flt=True, 
+    def __init__(self, vsc=True, cpt=True, vrt=True, flt=True,
                  xnu_n=0.2, xnu_0=0.01, nt=50, ns=10, cfl=0.5,
                  save=True, resume=False):
 
@@ -175,7 +175,7 @@ class Solver:
         s += f"\n\t- Shock capture    : {self.cpt}"
         s += f"\n\t- Vorticity        : {self.vrt}"
         return s
-    
+
     def __repr__(self):
         return self.__str__()
 
@@ -187,7 +187,7 @@ class Geometry:
                  path=None, file=None, name=None, kwargs=None, curvname=None,
                  bz_n=20, bz_stretch_factor=2, bz_stretch_order=3, bz_filter_order=3.,
                  stencil=11, free=True):
-        
+
         self.stencil = stencil
         self.free = free
         self.bz_n = bz_n
@@ -386,7 +386,7 @@ class Geometry:
         if not isinstance(other, Geometry):
             raise ValueError('Can only compare Geometry objects together')
 
-        attrs = ['shape', 'steps', 'origin', 'bc', 'obstacles', 
+        attrs = ['shape', 'steps', 'origin', 'bc', 'obstacles',
                  'bz_n', "bz_stretch_factor", "bz_stretch_order", 'bz_filter_order',
                  "stencil", "free", "curvfunc"]
 
@@ -423,7 +423,7 @@ class Geometry:
             s += f"\n\t- Obstacles           : {self.obstacles}"
         if hasattr(self, 'curvfunc'):
             s += f"\n\t- Curvilinear         : {self.curvfunc}"
-        
+
         return s
 
     def __repr__(self):
@@ -431,18 +431,18 @@ class Geometry:
 
 
 class Probes:
-    """ Helper class used by CfgSetup to setup probes parameters. 
-    
+    """ Helper class used by CfgSetup to setup probes parameters.
+
     Parameters
     ----------
     vars: tuple
         Variables to get value from. Can be p, vx, vy[, vz], rho.
     locs: tuple
-        Locations of the probes. Must be a sequence containing length n tuples 
+        Locations of the probes. Must be a sequence containing length n tuples
         with n being the number of dimensions of the domain (2d/3d).
     shape: tuple
         Shape of the domain.
-    
+
     Example
     -------
 
@@ -452,7 +452,7 @@ class Probes:
         prb = Probes(vars=(p, vx), locs=((34, 49), (44, 59)), shape=(200, 200))
     """
     def __init__(self, vars, locs, shape):
-        
+
         self.shape = shape
         self.ndim = len(shape)
         self._vars = vars
@@ -496,7 +496,7 @@ class Probes:
                 raise ValueError(f'Probes.locs: tuple of length {self.ndim} expected')
             if any(not 0 <= c < s for c, s in zip(loc, self.shape)):
                 raise ValueError(f'Probes.locs[{i}]: out of bounds')
-    
+
     def __len__(self):
         if not any(self.locs):
             return 0
@@ -504,10 +504,10 @@ class Probes:
 
     def __iter__(self):
         return iter(self.locs)
-    
+
     def __str__(self):
         return f'[Probes] {self.locs}'
-    
+
     def __repr__(self):
         return self.__str__()
 
@@ -538,7 +538,7 @@ class CfgSetup:
         data file                   -> self.datafile = 'tmp'
         timings                     -> self.timings = False
         quiet                       -> self.quiet = False
-        cpu                         -> self.cpu = 1
+        mp                          -> self.mp = False
 
         [thermophysics]
         norm                        -> self.tp.norm = False
@@ -576,7 +576,7 @@ class CfgSetup:
         [flow]
         type                        -> self.flw.ftype = None
         components                  -> self.flw.components = (0, 0, 0)
-        
+
         [probes]
         variables                   -> self.prb.vars = ()
         locations                   -> self.prb.locs = ()
@@ -587,7 +587,7 @@ class CfgSetup:
         shock capture               -> self.sol.cpt = True
         selective filter            -> self.sol.flt = True
         selective filter n-strength -> self.sol.xnu_n = 0.2
-        selective filter 0-strength -> self.sol.xnu_0 = 0.01        
+        selective filter 0-strength -> self.sol.xnu_0 = 0.01
         nt                          -> self.sol.nt = 50
         ns                          -> self.sol.ns = 10
         cfl                         -> self.sol.cfl = 0.5
@@ -677,7 +677,7 @@ class CfgSetup:
         self._cfg.set('general', 'data file', str(self.datafile))
         self._cfg.set('general', 'timings', str(self.timings))
         self._cfg.set('general', 'quiet', str(self.quiet))
-        self._cfg.set('general', 'cpu', str(self.cpu))
+        self._cfg.set('general', 'mp', str(self.mp))
 
         self._cfg.set('thermophysic', 'norm', str(self.tp.norm))
         self._cfg.set('thermophysic', 'rho0', str(self.tp.rho0))
@@ -711,7 +711,7 @@ class CfgSetup:
 
         self._cfg.set('flow', 'type', str(self.flw.ftype))
         self._cfg.set('flow', 'components', str(self.flw.components))
-        
+
         self._cfg.set('probes', 'variables', str(self.prb.vars))
         self._cfg.set('probes', 'locations', str(self.prb.locs))
 
@@ -748,7 +748,7 @@ class CfgSetup:
         return self.geo.grid_configuration
 
     def get_grid_backup(self):
-        """ Return existing `CartesianGrid` or `CurvilinearGrid` object for this grid configuration 
+        """ Return existing `CartesianGrid` or `CurvilinearGrid` object for this grid configuration
         if found, else return None. """
         cfg, msh = files.get_objects(self.datadir, self.datafile)
         if self.geo == cfg.geo:
@@ -838,7 +838,7 @@ class CfgSetup:
     def frequencies(self):
         """
         Calculate the minimum and maximum frequencies for the simulation.
-    
+
         Returns
         -------
         tuple
@@ -865,47 +865,47 @@ class CfgSetup:
         self._datafile = _pathlib.Path(CFG_GNL.get('data file', self.cfgfile.stem)).with_suffix('.hdf5')
         self.timings = CFG_GNL.getboolean('timings', False)
         self.quiet = CFG_GNL.getboolean('quiet', False)
-        self.cpu = CFG_GNL.getint('cpu', max(1, self.cpu_count - 2))
+        self.mp = CFG_GNL.getboolean('mp', True)
         files.mkdir(self.datadir, self.verbose)
 
         CFG_GEO = self._cfg['geometry']
-        self.geo = Geometry(shape=CFG_GEO.getlit('shape', (128, 96, 32)), 
-                            steps=CFG_GEO.getlit('steps', (1., 1., 1.)), 
-                            origin=CFG_GEO.getlit('origin', None), 
-                            bc=CFG_GEO.get('bc', 'WWWWWW').upper(), 
+        self.geo = Geometry(shape=CFG_GEO.getlit('shape', (128, 96, 32)),
+                            steps=CFG_GEO.getlit('steps', (1., 1., 1.)),
+                            origin=CFG_GEO.getlit('origin', None),
+                            bc=CFG_GEO.get('bc', 'WWWWWW').upper(),
                             flat=CFG_GEO.getlit('flat', None),
-                            path=self.path, 
-                            file=CFG_GEO.getlit('file', None), 
-                            name=CFG_GEO.getlit('name', None), 
+                            path=self.path,
+                            file=CFG_GEO.getlit('file', None),
+                            name=CFG_GEO.getlit('name', None),
                             kwargs=CFG_GEO.getlit('kwargs', None),
                             curvname=CFG_GEO.getlit('curvname', None),
-                            bz_n=CFG_GEO.getint('bz grid points', 20), 
+                            bz_n=CFG_GEO.getint('bz grid points', 20),
                             bz_filter_order=CFG_GEO.getfloat('bz filter ordrer', 3.),
-                            bz_stretch_factor=CFG_GEO.getfloat('bz stretch order', 3.), 
-                            bz_stretch_order=CFG_GEO.getfloat('bz stretch factor', 2.), 
-                            stencil=self.stencil, 
+                            bz_stretch_factor=CFG_GEO.getfloat('bz stretch order', 3.),
+                            bz_stretch_order=CFG_GEO.getfloat('bz stretch factor', 2.),
+                            stencil=self.stencil,
                             free=CFG_GEO.getboolean('free', True))
 
         CFG_SOL = self._cfg['solver']
-        self.sol = Solver(vsc=CFG_SOL.getboolean('viscous fluxes', True), 
-                          cpt=CFG_SOL.getboolean('shock capture', True), 
-                          vrt=CFG_SOL.getboolean('vorticity', True), 
-                          flt=CFG_SOL.getboolean('selective filter', True), 
-                          xnu_n=CFG_SOL.getfloat('selective filter n-strength', 0.2), 
-                          xnu_0=CFG_SOL.getfloat('selective filter 0-strength', 0.01), 
+        self.sol = Solver(vsc=CFG_SOL.getboolean('viscous fluxes', True),
+                          cpt=CFG_SOL.getboolean('shock capture', True),
+                          vrt=CFG_SOL.getboolean('vorticity', True),
+                          flt=CFG_SOL.getboolean('selective filter', True),
+                          xnu_n=CFG_SOL.getfloat('selective filter n-strength', 0.2),
+                          xnu_0=CFG_SOL.getfloat('selective filter 0-strength', 0.01),
                           nt=CFG_SOL.getint('nt', 50),
                           ns=CFG_SOL.getint('ns', 10),
                           cfl=CFG_SOL.getfloat('cfl', 0.5),
                           save=CFG_SOL.getboolean('save fields', True),
                           resume=CFG_SOL.getboolean('resume', False))
-        
+
 
         CFG_SRC = self._cfg['sources']
-        self.src = sources.SourceSet(origins=CFG_SRC.getlit('origins', ((), )), 
+        self.src = sources.SourceSet(origins=CFG_SRC.getlit('origins', ((), )),
                                      radii=CFG_SRC.getlit('radii', ((), )),
-                                     amplitudes=CFG_SRC.getlit('amplitudes', ()), 
+                                     amplitudes=CFG_SRC.getlit('amplitudes', ()),
                                      widths=CFG_SRC.getlit('widths', ()),
-                                     orders=CFG_SRC.getlit('orders', ()), 
+                                     orders=CFG_SRC.getlit('orders', ()),
                                      alphas=CFG_SRC.getlit('alphas', ()),
                                      types=CFG_SRC.getlit('types', ()),
                                      on=CFG_SRC.getboolean('on', ()),
@@ -916,15 +916,15 @@ class CfgSetup:
         self.flw = sources.Flow(ftype=CFG_FLW.get('type', 'None').lower(),
                                 components=CFG_FLW.getlit('components', (0, ) * self.ndim),
                                 ndim=self.ndim)
-        
+
         CFG_PRB = self._cfg['probes']
-        self.prb = Probes(vars=CFG_PRB.getlit('variables', ()), 
+        self.prb = Probes(vars=CFG_PRB.getlit('variables', ()),
                           locs=CFG_PRB.getlit('locations', ()), shape=self.geo.shape)
 
         CFG_THP = self._cfg['thermophysic']
-        self.tp = Air(rho0=CFG_THP.getfloat('rho0', 1.2), 
-                      T0=CFG_THP.getfloat('T0', 20), 
-                      gamma=CFG_THP.getfloat('gamma', 1.4), 
+        self.tp = Air(rho0=CFG_THP.getfloat('rho0', 1.2),
+                      T0=CFG_THP.getfloat('T0', 20),
+                      gamma=CFG_THP.getfloat('gamma', 1.4),
                       norm=CFG_THP.getboolean('norm', False))
 
         CFG_FIGS = self._cfg['graphics']
@@ -963,7 +963,7 @@ class CfgSetup:
         formatter = EngFormatter('B')
 
         s = "[System]"
-        s += f"\n\t- cpu                 : {self.cpu}/{self.cpu_count}"
+        s += f"\n\t- Multiprocessing       : {self.mp} [max {self.cpu_count} cpu(s)]"
         s += f"\n\t- Estimated ram used    : {formatter(size)}"
         s += self.sol.__str__()
         s += "\n[Time]"

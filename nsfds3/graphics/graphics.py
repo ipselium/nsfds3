@@ -267,6 +267,9 @@ class MeshViewer:
                             ha='center', va='center',
                             color='gray', weight='bold', style='italic', fontsize=8)
         
+        # Adding the collection to ax is much more faster than adding sequentially the paths
+        # This can be improved furthermore using PolyCollection :
+        # https://stackoverflow.com/questions/54463269/avoid-slow-looping-when-plotting-irregular-raster-plot-using-patches-rectangle
         collection = PatchCollection(collection)
         collection.set(**kwargs)
         ax.add_collection(collection)
@@ -306,6 +309,13 @@ class MeshViewer:
 
         ax.plot(u[:, -1], v[:, -1], **kwargs)
         ax.plot(u[-1, :], v[-1, :], **kwargs)
+
+    def __str__(self):
+        s = f'{type(self).__name__}\n'
+        return s
+
+    def __repr__(self):
+        return str(self)
 
 
 class CPViewer(MeshViewer):
@@ -455,7 +465,7 @@ class MPLViewer(MeshViewer):
         fig, ax, ax_bar = self._frame2d(cbar=True, **kwargs)
 
         # Fill figure (im : matplotlib.image.QuadMesh)
-        im = ax.pcolorfast(self.x, self.y, var[:-1, :-1].T, cmap=cmap, norm=norm)
+        im = ax.pcolorfast(self.x, self.y, var[:-1, :-1].T, cmap=cmap, norm=norm, animated=True)
 
         # Colorbar
         midpoint = _np.nanmean(var) if norm.vmin > 0 and norm.vmax > 0 else 0
@@ -536,7 +546,7 @@ class MPLViewer(MeshViewer):
 
         return metadata
 
-    def movie(self, view='p', nt=None, ref=None, xlim=None, ylim=None, zlim=None, **kwargs):
+    def movie(self, view='p', nt=None, ref=None, xlim=None, ylim=None, zlim=None, codec='libx264', **kwargs):
         """ Make movie. """
 
         kwargs = dict_update(self.dkwargs, kwargs)
@@ -554,7 +564,7 @@ class MPLViewer(MeshViewer):
 
         # Movie parameters
         metadata = self._init_movie(view)
-        writer = _ani.FFMpegWriter(fps=kwargs.get('fps'), metadata=metadata, bitrate=-1, codec="libx264")
+        writer = _ani.FFMpegWriter(fps=kwargs.get('fps'), metadata=metadata, bitrate=-1, codec=codec)        
         with writer.saving(fig, self.cfg.datadir / metadata['filename'], dpi=kwargs.get('dpi')):
 
             writer.grab_frame()
@@ -575,6 +585,11 @@ class MPLViewer(MeshViewer):
                     im.set_array(var[:-1, :-1].T)
                     axes[0].set_title(metadata['var'] + f' (n={i})')
 
+                # grab_frame() takes 90% of the time to make the animation. 
+                # the self.fig.canvas.draw() in writer.grab_frame() is responsible of this !
+                # TODO: rewrite a FasterFFmpegWriter that uses blit (and multiprocessing ?)
+                # Note: the time/iteration is the same as the time to execute fig.savefig('test.jpg') !
+                # Note: Another way to gain some time is to decimate data... 
                 writer.grab_frame()
 
     def probes(self, figsize=(9, 4)):
