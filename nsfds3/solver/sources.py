@@ -32,13 +32,13 @@ import itertools as _it
 
 
 class Source:
-    r""" Pressure source :
+    r"""Pressure source :
 
-    .. math:: 
-    
+    .. math::
+
         p_{\text{point}} = S_0 e^{- \alpha ((x - x_0)^{\beta} + (y - y_0)^{\beta}) / (B_x \delta x))^{\beta}}
 
-    or 
+    or
 
     .. math::
 
@@ -111,7 +111,7 @@ class Source:
             self.radius = tuple(s for i, s in enumerate(self.radius) if i != ax)
 
     def set_evolution(self, t):
-        """ Set time evolution of the source. 
+        """ Set time evolution of the source.
         If this parameter is not set, the source is an initial condition
 
         Parameter
@@ -136,36 +136,36 @@ class Source:
 
 
 class SourceSet:
-    """ Set of pressure sources. 
+    """ Set of pressure sources.
 
     Sources can be declared as initial conditions or time evolving pressure fluctuations.
     To declare time evolving source, the evolution argument must be provided.
 
     Parameters
     ----------
-    
+
     origins: tuple or (tuple, )
         Coordinates of the center. Can be a tuple or (tuple, ).
         If a tuple of tuples is provided, all tuples must have the same length.
     radii: tuple or (tuple, ). Optional.
         Radii of the sources used for ring source type. Can be a tuple or (tuple, ).
         Parameter radius is (0., 0.[, 0.]) by default for each source.
-        If a tuple of tuples is provided, all tuples must have the same length. 
+        If a tuple of tuples is provided, all tuples must have the same length.
         Note that for now, only circular rings can be generated, not ellipsoidal ones.
     amplitudes: float or (float, ). Optional.
         Amplitudes of the sources.
         Parameter amplitude is 1 by default for each source.
         Can be float for a single source or tuple of floats for multiple sources.
     widths: int or (int, ). Optional.
-        Width of the sources. 
+        Width of the sources.
         Parameter width is 5 by default for each source.
         Can be int for a single source or tuple of positive ints for multiple sources.
     orders: int or (int, ). Optional.
-        Order of the sources. Must be positive (if not, absolute is taken). 
+        Order of the sources. Must be positive (if not, absolute is taken).
         Parameter order is 2 by default for each source.
         Can be int for a single source or tuple of positive ints for multiple sources.
     alphas: float or (float, ). Optional.
-        Decrease of the sources. Must be positive (if not, absolute is taken). 
+        Decrease of the sources. Must be positive (if not, absolute is taken).
         Parameter alpha is log(2) by default for each source.
         Can be float for a single source or tuple of floats for multiple sources.
     types: str or (str, ). Optional.
@@ -173,7 +173,7 @@ class SourceSet:
         Parameter type is 'point' by default for each source.
         Can be str for a single source or tuple of strings for multiple sources.
     on: bool or (bool, ). Optional
-        Whether source is on or not. 
+        Whether source is on or not.
         Parameter on is False by default for each source.
         Can be bool for a single source or tuple of bool for multiple sources.
     evolutions: float/func, or (float/func, ). Optional.
@@ -199,176 +199,142 @@ class SourceSet:
 
     """
 
-    KEYS = ('origin', 'radius', 'amplitude', 'width', 'order', 'alpha', 'stype', 'on', 'evolution')
+    KEYS = {'origins': 'origin', 'radii': 'radius',
+            'amplitudes': 'amplitude', 'widths': 'width',
+            'orders': 'order', 'alphas': 'alpha',
+            'types': 'stype', 'on': 'on', 'evolutions': 'evolution'}
 
-    def __init__(self, origins, radii=(), amplitudes=(), widths=(), orders=(), alphas=(), types=(), on=(), evolutions=(), ndim=None):
-        
-        self.ndim = ndim
-        self._on = on
-        self._origins = origins
-        self._radii = radii
-        self._widths = widths
-        self._amplitudes = amplitudes
-        self._orders = orders
-        self._alphas = alphas
-        self._types = types
-        self._evolutions = evolutions
-        self._update()
+    def __init__(self, origins, **kwargs):
+
+        self.ndim = kwargs.pop('ndim', 3)
+        self._origins = self.parse_origins(origins=origins)
+        self._kwargs = {key: value if isinstance(value, tuple) else (value, ) for key, value in kwargs.items()}
+        self.update()
+
+    def update(self):
+        """Update parameters. """
+        self.ics = []
+        self.tes = []
+        for origin, kwargs in zip(self.origins, self.kwargs):
+            if kwargs.pop('on', False) and len(origin):
+                self.ics.append(Source(origin, **kwargs))
 
     def convert_to_2d(self, ax):
-        """ Convert 3d sources to 2d. ax is the axis where to do the transformation. """
+        """Convert 3d sources to 2d. ax is the axis where to do the transformation. """
         if self.ndim == 3:
             self.ndim = 2
             for src in self:
                 src.convert_to_2d(ax)
 
-    def _update(self):
-        """ Update parameters. """
-        self.ics = []
-        self.tes = []
-        self._check()
-        for kwargs in self.kwargs:
-            if kwargs.pop('on', False):
-                if kwargs.get('evolution', None) is None:
-                    self.ics.append(Source(**kwargs))
-                else:
-                    self.tes.append(Source(**kwargs))
-
-    def _check(self):
-        """ Check that parameters are consistents. """
-
-        # Check origins
-        if not isinstance(self._origins, (tuple, list)):
-            raise ValueError(f'{type(self).__name__}.origins: tuple expected')
-        
-        if not any(isinstance(o, (tuple, list)) for o in self._origins):
-            self._origins = self._origins,
-
-        if self.ndim is None:
-            self.ndim = len(self._origins[0])
-
-        if not all(len(o) in (0, self.ndim) for o in self._origins):
-            raise ValueError(f'{type(self).__name__}.origins: inner tuples of length {self.ndim} expected')
-
-        # Check radii
-        if not isinstance(self._radii, (tuple, list)):
-            raise ValueError(f'{type(self).__name__}.radii: tuple expected')
-
-        if not any(isinstance(o, (tuple, list)) for o in self._radii):
-            self._radii = self._radii,
-        else:
-            self._radii = self._radii[:min(len(self._radii), len(self._origins))]
-
-        if not all(len(o) in (0, self.ndim) for o in self._radii):
-            raise ValueError(f'{type(self).__name__}.radii: inner tuples of length {self.ndim} expected')
-
-        # Other parameters
-        prms = ('_amplitudes', '_widths', '_orders', '_alphas', '_types', '_on', '_evolutions')
-        for prm in prms:
-            value = getattr(self, prm)
-            if not isinstance(value, (tuple, list)):
-                setattr(self, prm, (value, ))
-            else:
-                setattr(self, prm, value[:min(len(value), len(self._origins))])
-
-        self._on = tuple(bool(v) for v in self._on)
-
-    @property
-    def kwargs(self):
-        """ Return a list of dictionnaries providing keyword arguments of the sources. """
-        prms = _it.zip_longest(self.origins, self.radii, self.amplitudes, self.widths, 
-                               self.orders, self.alphas, self.types, self.on, self.evolutions)
-        return [{key: value for key, value in zip(self.KEYS, values) if value is not None} for values in prms]
+    def parse_origins(self, origins):
+        """Check if origin is relevant."""
+        if not isinstance(origins, tuple):
+            raise ValueError('SourceSet.origins: tuple expected')
+        try:
+            if not all(len(o) in (0, self.ndim) for o in origins):
+                raise ValueError(f'{type(self).__name__}.origins: inner tuples of length (0, {self.ndim}) expected')
+        except TypeError:
+            origins = (origins, )
+        return origins
 
     @property
     def origins(self):
-        """ Origins of the source. """
         return self._origins
 
     @origins.setter
     def origins(self, value):
-        self._origins = value
-        self._update()
-
-    @property
-    def on(self):
-        """ Report whether sources must be activated or not. """
-        return self._on
-    
-    @on.setter
-    def on(self, value):
-        self._on = value
-        self._update()
+        value = self.parse_origins(origins=value)
+        self._origins = value if isinstance(value[0], tuple) else (value,)
+        self.update()
 
     @property
     def radii(self):
-        """ Radii of the ring sources. """
-        return self._radii
+        """Radii of the ring sources. """
+        return self._kwargs.get('radii', ())
 
     @radii.setter
     def radii(self, value):
-        self._radii = value
-        self._update()
+        if not isinstance(value, tuple):
+            raise ValueError(f'SourceSet.origins: tuple expected')
+        self._kwargs['radii'] = tuple(value) if hasattr(value[0], '__iter__') else (value,)
+        self.update()
+
+    @property
+    def on(self):
+        """Report whether sources must be activated or not. """
+        return self._kwargs.get('on', ())
+
+    @on.setter
+    def on(self, value):
+        self._kwargs['on'] = tuple(value) if hasattr(value, '__iter__') else (value,)
+        self.update()
 
     @property
     def amplitudes(self):
-        """ Amplitudes of the source. """
-        return self._amplitudes
+        """Amplitudes of the source. """
+        return self._kwargs.get('amplitudes', ())
 
     @amplitudes.setter
     def amplitudes(self, value):
-        self._amplitudes = value
-        self._update()
+        self._kwargs['amplitudes'] = tuple(value) if hasattr(value, '__iter__') else (value,)
+        self.update()
 
     @property
     def widths(self):
-        """ Widths of the source. Will be converted to positive integer if not. """
-        return self._widths
+        """Widths of the source. Will be converted to positive integer if not. """
+        return self._kwargs.get('widths', ())
 
     @widths.setter
     def widths(self, value):
-        self._widths = value
-        self._update()
+        self._kwargs['widths'] = tuple(value) if hasattr(value, '__iter__') else (value,)
+        self.update()
 
     @property
     def orders(self):
-        """ Order of the source. Will be converted to positive integer if not. """
-        return self._orders
+        """Order of the source. Will be converted to positive integer if not. """
+        return self._kwargs.get('orders', ())
 
     @orders.setter
     def orders(self, value):
-        self._orders = value
-        self._update()
+        self._kwargs['orders'] = tuple(value) if hasattr(value, '__iter__') else (value,)
+        self.update()
 
     @property
     def alphas(self):
-        """ Decreasing of the source. Will be converted in positive float if not.  """
-        return self._alphas
+        """Decreasing of the source. Will be converted in positive float if not.  """
+        return self._kwargs.get('alphas', ())
 
     @alphas.setter
     def alphas(self, value):
-        self._alphas = value
-        self._update()
+        self._kwargs['alphas'] = tuple(value) if hasattr(value, '__iter__') else (value,)
+        self.update()
 
     @property
     def types(self):
-        """ Type of the source. Can be "ring" or "point". """
-        return self._types
+        """Type of the source. Can be "ring" or "point". """
+        return self._kwargs.get('stypes', ())
 
     @types.setter
     def types(self, value):
-        self._types = value
-        self._update()
+        self._kwargs['types'] = tuple(value) if hasattr(value, '__iter__') else (value,)
+        self.update()
 
     @property
     def evolutions(self):
-        """ Time evolutions of the sources. """
-        return self._evolutions
+        """Time evolutions of the sources. """
+        return self._kwargs.get('evolutions', ())
 
     @evolutions.setter
     def evolutions(self, value):
-        self._evolutions = value
-        self._update()
+        self._kwargs['evolutions'] = tuple(value) if hasattr(value, '__iter__') else (value,)
+        self.update()
+
+    @property
+    def kwargs(self):
+        """Return a list of dictionnaries providing keyword arguments of the sources. """
+        prms = _it.zip_longest(*self._kwargs.values())
+        return [{SourceSet.KEYS[key]: value for key, value in zip(self._kwargs.keys(), values) 
+                                                if value is not None} for values in prms]
 
     def __iter__(self):
         return iter(self.tes + self.ics)
@@ -386,12 +352,12 @@ class SourceSet:
         return s
 
     def __repr__(self):
-        return self.__str__()
+        return str(self)
 
 
 class Flow:
-    """ Mean flow source. 
-    
+    """ Mean flow source.
+
     Parameters
     ----------
     ftype: str or None, optional
@@ -469,4 +435,4 @@ if __name__ == "__main__":
     ics = SourceSet(origins=(1, 2, 3), amplitudes=1, widths=5, orders=2, alphas=1, on=(True, ), types='ring')
     print('Test 2: ', ics)
     ics = SourceSet(origins=((1, 2, 3), (4, 5, 6)), amplitudes=1, widths=5, orders=2, alphas=1, on=(True, ), types=('point', 'ring'))
-    print('Test 2: ', ics)    
+    print('Test 2: ', ics)

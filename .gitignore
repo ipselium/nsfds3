@@ -21,3 +21,4 @@ nsfds3/.vscode
 tests/test.npy.npz
 *.npz
 *.npy
+tests/configurations/data/*
