@@ -795,8 +795,8 @@ class CfgSetup:
 
     @datafile.setter
     def datafile(self, value):
-        if not isinstance(value, str):
-            raise ValueError('datafile: str expected')
+        if not isinstance(value, (str, _pathlib.Path)):
+            raise ValueError('datafile: str or pathlib.Path expected')
         self._datafile = _pathlib.Path(value).with_suffix('.hdf5')
 
     @property
@@ -963,6 +963,8 @@ class CfgSetup:
         formatter = EngFormatter('B')
 
         s = "[System]"
+        s += f"\n\t- Data path             : {self.datapath}"
+        s += f"\n\t- Current path          : {self.path}"
         s += f"\n\t- Multiprocessing       : {self.mp} [max {self.cpu_count} cpu(s)]"
         s += f"\n\t- Estimated ram used    : {formatter(size)}"
         s += self.sol.__str__()
