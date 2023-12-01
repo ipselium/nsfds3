@@ -564,17 +564,20 @@ class CfgSetup:
 
         [sources]
         on                          -> self.src.on = False
-        origins                     -> self.src.origins = (),
-        radii                       -> self.src.radii = (),
-        amplitudes                  -> self.src.amplitudes = ()
-        widths                      -> self.src.widths = ()
-        orders                      -> self.src.orders = ()
-        alphas                      -> self.src.alphas = ()
-        types                       -> self.src.types = ()
-        evolutions                  -> self.src.evolutions = ()
+        origin                      -> self.src.origin = (),
+        S0                          -> self.src.S0 = ()
+        Bx                          -> self.src.Bx = ()
+        By                          -> self.src.By = ()
+        Bz                          -> self.src.Bz = ()
+        kx                          -> self.src.kx = ()
+        ky                          -> self.src.ky = ()
+        kz                          -> self.src.kz = ()
+        k                           -> self.src.k = ()
+        R                           -> self.src.Rx = ()
+        evolution                   -> self.src.evolution = ()
 
         [flow]
-        type                        -> self.flw.ftype = None
+        type                        -> self.flw.kind = None
         components                  -> self.flw.components = (0, 0, 0)
 
         [probes]
@@ -700,16 +703,19 @@ class CfgSetup:
         self._cfg.set('geometry', 'bz stretch factor', str(self.geo.bz_stretch_factor))
 
         self._cfg.set('sources', 'on', str(self.src.on))
-        self._cfg.set('sources', 'origins', str(self.src.origins))
-        self._cfg.set('sources', 'radii', str(self.src.radii))
-        self._cfg.set('sources', 'amplitudes', str(self.src.amplitudes))
-        self._cfg.set('sources', 'widths', str(self.src.widths))
-        self._cfg.set('sources', 'orders', str(self.src.orders))
-        self._cfg.set('sources', 'alphas', str(self.src.alphas))
-        self._cfg.set('sources', 'types', str(self.src.types))
-        self._cfg.set('sources', 'evolutions', str(self.src.evolutions))
+        self._cfg.set('sources', 'origin', str(self.src.origin))
+        self._cfg.set('sources', 'S0', str(self.src.S0))
+        self._cfg.set('sources', 'Bx', str(self.src.Bx))
+        self._cfg.set('sources', 'By', str(self.src.By))
+        self._cfg.set('sources', 'Bz', str(self.src.Bz))
+        self._cfg.set('sources', 'kx', str(self.src.kx))
+        self._cfg.set('sources', 'ky', str(self.src.ky))
+        self._cfg.set('sources', 'kz', str(self.src.kz))
+        self._cfg.set('sources', 'k', str(self.src.k))
+        self._cfg.set('sources', 'R', str(self.src.Rx))
+        self._cfg.set('sources', 'evolution', str(self.src.evolution))
 
-        self._cfg.set('flow', 'type', str(self.flw.ftype))
+        self._cfg.set('flow', 'kind', str(self.flw.kind))
         self._cfg.set('flow', 'components', str(self.flw.components))
 
         self._cfg.set('probes', 'variables', str(self.prb.vars))
@@ -828,7 +834,7 @@ class CfgSetup:
         `sol.cfl`, `tp.c0` or `flw.components` attributes is modified.
 
         """
-        if self.flw.ftype is not None:
+        if self.flw.kind is not None:
             c = self.tp.c0 + max([abs(u) for u in self.flw.components])
         else:
             c = self.tp.c0
@@ -901,19 +907,22 @@ class CfgSetup:
 
 
         CFG_SRC = self._cfg['sources']
-        self.src = sources.SourceSet(origins=CFG_SRC.getlit('origins', ((), )),
-                                     radii=CFG_SRC.getlit('radii', ((), )),
-                                     amplitudes=CFG_SRC.getlit('amplitudes', ()),
-                                     widths=CFG_SRC.getlit('widths', ()),
-                                     orders=CFG_SRC.getlit('orders', ()),
-                                     alphas=CFG_SRC.getlit('alphas', ()),
-                                     types=CFG_SRC.getlit('types', ()),
+        self.src = sources.SourceSet(origin=CFG_SRC.getlit('origin', ((), )),
+                                     S0=CFG_SRC.getlit('S0', ()),
+                                     Bx=CFG_SRC.getlit('Bx', ()),
+                                     By=CFG_SRC.getlit('By', ()),
+                                     Bz=CFG_SRC.getlit('Bz', ()),
+                                     kx=CFG_SRC.getlit('kx', ()),
+                                     ky=CFG_SRC.getlit('ky', ()),
+                                     kz=CFG_SRC.getlit('kz', ()),
+                                     k=CFG_SRC.getlit('k', ()),
+                                     Rx=CFG_SRC.getlit('R', ()),
                                      on=CFG_SRC.getboolean('on', ()),
                                      ndim=self.ndim,
-                                     evolutions=CFG_SRC.getlit('evolutions', ()))
+                                     evolution=CFG_SRC.getlit('evolution', ()))
 
         CFG_FLW = self._cfg['flow']
-        self.flw = sources.Flow(ftype=CFG_FLW.get('type', 'None').lower(),
+        self.flw = sources.Flow(kind=CFG_FLW.get('type', 'None').lower(),
                                 components=CFG_FLW.getlit('components', (0, ) * self.ndim),
                                 ndim=self.ndim)
 
