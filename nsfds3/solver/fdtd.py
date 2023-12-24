@@ -78,10 +78,10 @@ class FDTD:
     ----------
 
     .. [1] C. Bogey, C. Bailly, "A family of low dispersive and low dissipative explicit schemes for
-           flow and noise computations", Journal of Computational Physics, Volume 194, Issue 1, 2004, 
+           flow and noise computations", Journal of Computational Physics, Volume 194, Issue 1, 2004,
            Pages 194-214.
 
-    .. [2] C. Bogey, N. de Cacqueray, C. Bailly, "A shock-capturing methodology based on adaptative 
+    .. [2] C. Bogey, N. de Cacqueray, C. Bailly, "A shock-capturing methodology based on adaptative
            spatial filtering for high-order non-linear computations", Journal of Computational Physics,
            Volume 228, Issue 5, 2009, Pages 1447-1465.
     """
@@ -148,7 +148,8 @@ class FDTD:
         """ Run simulation. """
         ti = _pc()
         try:
-            for self.cfg.sol.it in track(range(self.cfg.sol.it, self.cfg.sol.nt + 1),
+            self.sfile = _h5py.File(self.cfg.datapath, 'a')
+            for self.cfg.sol.it in track(range(self.cfg.sol.it + 1, self.cfg.sol.nt + 1),
                                          disable=self.quiet):
                 self._eulerian_fluxes()
                 self._viscous_fluxes()
@@ -204,7 +205,7 @@ class FDTD:
     @misc.timer
     def _update_probes(self):
         """ Update probes. """
-        if self.cfg.prb:         
+        if self.cfg.prb:
             for n, c in enumerate(self.cfg.prb):
                 self.probes[n, self.cfg.sol.it % self.cfg.sol.ns] = self.fld.p[tuple(c)]
 
@@ -288,6 +289,10 @@ class FDTD:
             if self.msh.ndim == 3:
                 #self.sfile.create_dataset('zn', data=self.msh.yn)
                 self.sfile.create_dataset('zp', data=self.msh.yp)
+
+        # Save initial fields
+        self._save()
+        self.sfile.close()
 
     def show(self, view='p', vmin=None, vmax=None, **kwargs):
         """ Show results. """

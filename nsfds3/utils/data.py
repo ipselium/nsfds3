@@ -1,26 +1,25 @@
-#! /usr/bin/env python3
-# -*- coding: utf-8 -*-
+#! /usr/bin/env python3 -*- coding: utf-8 -*-
 #
 # Copyright © 2016-2020 Cyril Desjouy <cyril.desjouy@univ-lemans.fr>
 #
 # This file is part of nsfds3
 #
-# nsfds3 is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
+# nsfds3 is free software: you can redistribute it and/or modify it under the
+# terms of the GNU General Public License as published by the Free Software
+# Foundation, either version 3 of the License, or (at your option) any later
+# version.
 #
-# nsfds3 is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-# GNU General Public License for more details.
+# nsfds3 is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE. See the GNU General Public License for more details.
 #
-# You should have received a copy of the GNU General Public License
-# along with nsfds3. If not, see <http://www.gnu.org/licenses/>.
+# You should have received a copy of the GNU General Public License along with
+# nsfds3. If not, see <http://www.gnu.org/licenses/>.
 #
 # Creation Date : 2022-07-21 - 09:00:24
 """
-The module `data` provides some helper class or function to retrieve data from nsfds3 simulations.
+The module `data` provides some helper class or function to retrieve data from
+nsfds3 simulations.
 """
 
 
@@ -48,6 +47,8 @@ def closest_index(n, ns, nt):
     ns: int
         The index closest to n
     """
+    if n == 0:
+        return 0
 
     if n > nt:
         return nt
@@ -82,7 +83,8 @@ def get_pressure(r=None, ru=None, rv=None, rw=None, re=None, gamma=1.4):
     Examples
     --------
 
-    The pressure is not directly provided. To access acoustic pressure, one can use::
+    The pressure is not directly provided. To access acoustic pressure, one can
+    use::
 
         from nsfds3.utils import get_pressure
 
@@ -205,8 +207,8 @@ class DataExtractor:
     Parameters
     ----------
     data: pathlib.Path, str, or h5py.File
-        The data to be initialized with. If it is a pathlib.Path or str, 
-        the data will be retrieved using the `DataExtractor.get_data` method.
+        The data to be initialized with. If it is a pathlib.Path or str, the
+        data will be retrieved using the `DataExtractor.get_data` method.
         Otherwise, the data will be used as is.
     """
 
@@ -218,7 +220,7 @@ class DataExtractor:
             self.data = data
         else:
             raise ValueError('pathlib.Path, str, or h5py.File expected')
-        
+
         self.var = {'e': 're', 'vx': 'ru', 'vy': 'rv', 'vz': 'rw'}
         self.nt = self.get_attr('nt')
         self.ns = self.get_attr('ns')
@@ -263,7 +265,7 @@ class DataExtractor:
         except OSError:
             print('You must provide a valid hdf5 file')
             sys.exit(1)
-        
+
     def reference(self, view='p', ref=None):
         """Generate the references for min/max colormap values.
 
@@ -273,10 +275,10 @@ class DataExtractor:
             The quantity from which the reference is to be taken
         ref : int, tuple, None, or str
             Can be int (frame index), tuple (int_min, int_max), or 'auto'
-        
+
         Returns
         -------
-        tuple: 
+        tuple:
             The minimum and maximum values of the view
         """
         view = check_view(view, self.volumic, self.vorticity)
@@ -303,7 +305,7 @@ class DataExtractor:
         ---------
         view: str
             View from which to find reference.
-        
+
         Returns
         -------
         tuple:
@@ -312,7 +314,7 @@ class DataExtractor:
         view = check_view(view, self.volumic, self.vorticity)
         var = DataIterator(self, view=(view, ))
         mins, maxs = _np.array([(v.max(), v.min()) for _, v in var]).T
-        
+
         refmax = abs(maxs - maxs.mean()).argmin() * self.ns
         refmin = abs(mins - mins.mean()).argmin() * self.ns
 
@@ -370,7 +372,7 @@ class FieldExtractor:
     ----------
         fld: libfds.fields.Fields2d or libfds.fields.Fields3d
             The field to get data from.
-    
+
     Raises
     ------
         ValueError: If fld is neither Fields2d nor Fields3d.
@@ -398,7 +400,7 @@ class FieldExtractor:
         ----------
         view: str, optional
             The view to retrieve. Default is 'p'.
-        iteration: int, optional 
+        iteration: int, optional
             The iteration number. Default is None.
 
         Returns
