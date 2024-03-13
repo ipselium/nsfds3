@@ -181,7 +181,7 @@ class Solver:
 
 
 class Geometry:
-    """ Helper class used by CfgSetup to setup geometrical parameters. """
+    """Helper class used by CfgSetup to setup geometrical parameters. """
 
     def __init__(self, shape, steps=None, origin=None, bc=None, flat=None,
                  path=None, file=None, name=None, kwargs=None, curvname=None,
@@ -210,7 +210,7 @@ class Geometry:
 
     @staticmethod
     def to_2d_tuple(var, ax):
-        """ Return a 2d version of the tuple `var` removing the ax-th value. """
+        """Return a 2d version of the tuple `var` removing the ax-th value. """
         return tuple(s for i, s in enumerate(var) if i != ax)
 
     def convert_to_2d(self):
@@ -224,7 +224,7 @@ class Geometry:
         self.obstacles = [obs.flatten(ax) for obs in self.obstacles if idx in obs.rn[ax]]
 
     def _check_flat(self, flat):
-        """ Check that flat is consistent. """
+        """Check that flat is consistent. """
         if not isinstance(flat, (tuple, type(None))):
             raise ValueError('Geometry.flat: tuple of None expected')
 
@@ -260,7 +260,7 @@ class Geometry:
 
     @property
     def shape(self):
-        """ Shape of the computation domain. """
+        """Shape of the computation domain. """
         return self._shape
 
     @shape.setter
@@ -270,7 +270,7 @@ class Geometry:
 
     @property
     def steps(self):
-        """ Spatial steps (dx, dy[, dz]).
+        """Spatial steps (dx, dy[, dz]).
 
         Note
         ----
@@ -285,7 +285,7 @@ class Geometry:
 
     @property
     def origin(self):
-        """ Origin of the computation domain. """
+        """Origin of the computation domain. """
         return self._origin
 
     @origin.setter
@@ -295,7 +295,7 @@ class Geometry:
 
     @property
     def bc(self):
-        """ Boundary condition of the computation domain. """
+        """Boundary condition of the computation domain. """
         return self._bc
 
     @bc.setter
@@ -305,7 +305,7 @@ class Geometry:
 
     @property
     def flat(self):
-        """ Describe how a 3d configuration parameters are converted to a 2d configuration.
+        """Describe how a 3d configuration parameters are converted to a 2d configuration.
 
         flat: tuple (ax, idx)
             ax corresponds to the dimension to be removed, and idx to the index following
@@ -321,7 +321,7 @@ class Geometry:
 
     @property
     def file(self):
-        """ Name of the file in which to search for functions `name`,
+        """Name of the file in which to search for functions `name`,
         `curvname`, and functions used for sources.
         """
         return self._file
@@ -334,7 +334,7 @@ class Geometry:
 
     @property
     def name(self):
-        """ Name of the function to be used to set up the `Obstacle` arrangement. """
+        """Name of the function to be used to set up the `Obstacle` arrangement. """
         return self._name
 
     @name.setter
@@ -344,7 +344,7 @@ class Geometry:
 
     @property
     def kwargs(self):
-        """ keyword arguments of the function to be used to set up the `Obstacle` arrangement. """
+        """Keyword arguments of the function to be used to set up the `Obstacle` arrangement. """
         return self._kwargs
 
     @kwargs.setter
@@ -356,7 +356,7 @@ class Geometry:
 
     @property
     def curvname(self):
-        """ Name of the function to be used to set up the curvilinear transformation. """
+        """Name of the function to be used to set up the curvilinear transformation. """
         return self._curvname
 
     @curvname.setter
@@ -366,7 +366,7 @@ class Geometry:
 
     @property
     def grid_configuration(self):
-        """ Return (arg, kwargs) needed to instanciate `CartesianGrid` or `CurvilinearGrid`. """
+        """Return (arg, kwargs) needed to instantiate `CartesianGrid` or `CurvilinearGrid`. """
         args = self.shape, self.steps
         kwargs = {'origin': self.origin,
                   'bc': self.bc,
@@ -382,7 +382,7 @@ class Geometry:
         return args, kwargs
 
     def __eq__(self, other):
-        """ Report whether self and other have same grid configuration or not. """
+        """Report whether self and other have same grid configuration or not. """
         if not isinstance(other, Geometry):
             raise ValueError('Can only compare Geometry objects together')
 
@@ -673,7 +673,7 @@ class CfgSetup:
         return None, None
 
     def write(self, fname):
-        """ Write a configuration file with current configuration. """
+        """Write a configuration file with current configuration."""
 
         self._cfg.set('general', 'version', str(self.version)) #str(nsfds3.__version__))
         self._cfg.set('general', 'data dir', str(self.datadir))
@@ -750,12 +750,12 @@ class CfgSetup:
 
     @property
     def grid_configuration(self):
-        """ Return (arg, kwargs) needed to instanciate `CartesianGrid` or `CurvilinearGrid`. """
+        """Return (arg, kwargs) needed to instantiate `CartesianGrid` or `CurvilinearGrid`."""
         return self.geo.grid_configuration
 
     def get_grid_backup(self):
-        """ Return existing `CartesianGrid` or `CurvilinearGrid` object for this grid configuration
-        if found, else return None. """
+        """Return existing `CartesianGrid` or `CurvilinearGrid` object for this grid configuration
+        if found, else return None."""
         cfg, msh = files.get_objects(self.datadir, self.datafile)
         if self.geo == cfg.geo:
             return msh
@@ -781,12 +781,12 @@ class CfgSetup:
 
     @property
     def version(self):
-        """ Version of configuration file. """
+        """Version of configuration file."""
         return self._version
 
     @property
     def datapath(self):
-        """ Absolute path to datafile.
+        """Absolute path to datafile.
 
         Note
         ----
@@ -796,7 +796,7 @@ class CfgSetup:
 
     @property
     def datafile(self):
-        """ Data filename used to save fields. """
+        """Data filename used to save fields."""
         return self._datafile
 
     @datafile.setter
@@ -807,7 +807,7 @@ class CfgSetup:
 
     @property
     def datadir(self):
-        """ Directory where to save data files.
+        """Directory where to save data files.
 
         Note
         ----

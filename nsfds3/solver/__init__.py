@@ -49,6 +49,6 @@ The `solver` package contains the following main objects:
 
 from nsfds3.solver.config import CfgSetup
 from nsfds3.solver.fdtd import FDTD
-from nsfds3.solver.sources import Source, SourceSet
+from nsfds3.solver.sources import Source, SourceSet, CustomInitialConditions
 
-__all__ = ['CfgSetup', 'FDTD', 'Source', 'SourceSet']
+__all__ = ['CfgSetup', 'FDTD', 'Source', 'SourceSet', 'CustomInitialConditions']

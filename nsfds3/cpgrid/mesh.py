@@ -174,8 +174,8 @@ class CartesianGrid:
     def paxis(self):
         """ Physical axis. """
         if self.ndim == 3:
-            return np.meshgrid(self.x, self.y, self.z, indexing='ij')
-        return np.meshgrid(self.x, self.y, indexing='ij')
+            return self.xp, self.yp, self.zp
+        return self.xp, self.yp
 
     @property
     def axis(self):
@@ -219,6 +219,11 @@ class CartesianGrid:
                 self.z[-self.bz_n:] *= stretch
             self.z *= self.dz
             self.z -= self.z[self.origin[2]]
+
+        if self.ndim == 3:
+            self.xp, self.yp, self.zp = np.meshgrid(self.x, self.y, self.z, indexing='ij')
+        else:
+            self.xp, self.yp = np.meshgrid(self.x, self.y, indexing='ij')
 
     def show(self, **kwargs):
         """ Plot grid.
@@ -309,12 +314,6 @@ class CurvilinearGrid(CartesianGrid):
     @staticmethod
     def _curvfunc(*args):
         return tuple([v.copy() for v in args])
-
-    @property
-    def paxis(self):
-        if self.ndim == 3:
-            return self.xp, self.yp, self.zp
-        return self.xp, self.yp
 
     def make_grid(self):
         """ Make curvilinear grid.

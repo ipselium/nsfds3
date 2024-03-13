@@ -28,17 +28,112 @@ The module `sources` provides :
 """
 
 import numpy as _np
+import matplotlib.pyplot as _plt
 import itertools as _it
+from nsfds3.graphics.utils import cmap_jet, MidPointNorm
+from libfds.cmaths import super_gaussian2d, super_gaussian3d
 
+
+class CustomInitialConditions:
+
+    varnames = ('p', 'vx', 'vy', 'vz')
+
+    def __init__(self, cfg, msh):
+
+        self.cfg = cfg
+        self.msh = msh
+
+        self.p = None
+        self.vx = None
+        self.vy = None
+        self.vz = None
+
+        self.super_gaussian.__func__.__doc__ = super_gaussian3d.__doc__
+        self.__post_init__()
+        self.check()
+
+    def __post_init__(self):
+        """One can override this method to provide custom initial condition for:
+
+            * acoustic pressure (self.p) (without static pressure !)
+            * x-component of velocity (self.vx)
+            * y-component of velocity (self.vy)
+            * z-component of velocity (self.vz)
+
+            Note that super_gaussian() method is available here for convenience.
+        """
+        pass
+
+    def super_gaussian(self, origin, kx=2, ky=2, kz=2, k=1, 
+                                     Bx=None, By=None, Bz=None, Rx=0):
+        """Docstring from libfds.cmaths.super_gaussian3d."""
+
+        if len(origin) != self.msh.ndim:
+            raise ValueError(f'origin must be length {self.msh.origin} tuple')
+
+        Bx = Bx if Bx else self.msh.dx * 5
+        By = By if By else Bx
+
+        if self.msh.ndim == 3:
+            Bz = Bz if Bz else Bx
+            return super_gaussian3d(*self.msh.paxis,
+                                    *origin, kx, ky, kz, k, Bx, By, Bz, Rx)
+
+        return super_gaussian2d(*self.msh.paxis, *origin, kx, ky, k, Bx, By, Rx)
+
+    def check(self):
+        """Check the initial conditions."""
+        for varname, var in self.vars.items():
+            if not isinstance(var, _np.ndarray) or var.shape != self.msh.shape:
+                raise ValueError(f'{varname} must be a numpy.ndarray of dim {self.msh.shape}')
+
+    @property
+    def custom(self):
+        """Report wether initial conditions are provided or not."""
+        return bool(self.vars)
+
+    @property
+    def vars(self):
+        """Return initial conditions that have been provided."""
+        return {varname:getattr(self, varname) for varname in self.varnames
+                if getattr(self, varname) is not None}
+
+    def show(self):
+        """Show initial conditions."""
+        number = len(self.vars)
+        if not number:
+            print('Nothing to show')
+        else:
+            self._show(number)
+
+    def _show(self, number):
+        cmap = cmap_jet()
+        fig, axes = _plt.subplots(1, number, tight_layout=True)
+        if number == 1:
+            axes = _np.array([axes, ])
+        for ax, (varname, value) in zip(axes, self.vars.items()):
+            norm = MidPointNorm(vmin=value.min(), vmax=value.max(), midpoint=0)
+            ax.pcolormesh(self.msh.x, self.msh.y, value.T, cmap=cmap, norm=norm)
+            ax.set_title(varname)
+            ax.set_xlabel('x [m]')
+            ax.set_ylabel('y [m]')
+            ax.set_aspect('equal')
+        _plt.show()
+
+    def __str__(self):
+        if self.custom:
+            vars = [varname for varname in self.varnames if isinstance(getattr(self, varname), _np.ndarray)]
+            vars = '/'.join(vars)
+            return f'ics : {self.custom} ({vars})'
+        return f'ics : {self.custom}'
+
+    def __repr__(self):
+        return str(self)
 
 class Source:
-    r"""Pressure source :
-
-    .. math::
-
-        p_{\text{point}} = S_0 e^{- ((x - x_0)^{\beta} + (y - y_0)^{\beta}) / (B_x \delta x))^{\beta}}
-
-    or
+    r"""Pressure sources can be declared as initial conditions or time evolving 
+    pressure fluctuations.
+    To declare time evolving source, the evolution argument must be provided.
 
     .. math::
 
@@ -58,7 +153,7 @@ class Source:
     S0: float, optional
         Amplitude :math:`S_0` of the pulse in Pa. 1 by default.
     Bx, By, Bz: int, optional
-        Widths :math:`B_x, B_y, B_z` of the pulse in number of spatial steps. 5 by default.
+        Widths :math:`B_x, B_y, B_z` of the pulse. 5 by default.
     kx, ky, kz, k: int, optional
         Orders :math:`\beta` of the pulse. Order 2 by default for axis and 1 for global.
     R: float, optional
@@ -75,11 +170,14 @@ class Source:
 
         where `nt` and `dt` are the number of time step and the time step
         setup in the configuration, respectively.
+
+    Example
+    -------
+    s1 = Source(origin=(100, 100), S0=10, Bx=0.1)
+    s2 = Source(origin=(150, 150), S0=3, Bx=0.2)
     """
 
-    KINDS = ('point', 'ring')
-
-    def __init__(self, origin, S0=1., Bx=5, By=5, Bz=5, kx=2, ky=2, kz=2, k=1, Rx=0, evolution=None):
+    def __init__(self, origin, S0=1., Bx=0.1, By=0.1, Bz=0.1, kx=2, ky=2, kz=2, k=1, Rx=0, evolution=None):
 
         if len(origin) not in (2, 3):
             raise ValueError(f'{type(self).__name__}.origin: length 2 or 3 expected')
@@ -88,14 +186,14 @@ class Source:
         self.origin = origin
 
         self.S0 = S0
-        self.Bx = int(abs(Bx))
-        self.By = int(abs(By))
-        self.Bz = int(abs(Bz))
+        self.Bx = abs(Bx)
+        self.By = abs(By)
+        self.Bz = abs(Bz)
         self.kx = kx
         self.ky = ky
         self.kz = kz
         self.k = k
-        self.Rx = Rx
+        self.Rx = abs(Rx)
         self.evolution = None
         self._f = evolution
 
@@ -161,9 +259,9 @@ class SourceSet:
         Amplitudes of the sources.
         Parameter amplitude is 1 by default for each source.
         Can be float for a single source or tuple of floats for multiple sources.
-    Bx, By, Bz: int or (int, ). Optional.
-        Width of the sources in number of points.
-        Parameter width is 5 by default for each source.
+    Bx, By, Bz: float or (float, ). Optional.
+        Width of the sources.
+        Parameter width is 0.1 by default for each source.
         Can be positive int for a single source or tuple of positive ints for multiple sources.
     k1, k2, k3, k: int or (int, ). Optional.
         Order of the sources. Must be positive (if not, absolute is taken).
@@ -193,9 +291,9 @@ class SourceSet:
     Example
     -------
     # Declare 2 initial conditions, the first one located at (100, 100) with an amplitude of 10
-    # and a x-width of 5 grid points. The second source is located at (150, 150) with the same 
-    # amplitude and a x-width of 10 grid points
-    s = SourceSet(origin=((100, 100), (150, 150)), S0=10, Bx=(5, 10))
+    # and a x-width of 0.1 grid points. The second source is located at (150, 150) with the same 
+    # amplitude and a x-width of 0.2 grid points
+    s = SourceSet(origin=((100, 100), (150, 150)), S0=10, Bx=(0.1, 0.2))
 
     """
 
@@ -458,4 +556,4 @@ if __name__ == "__main__":
     ics = SourceSet(origin=(1, 2, 3), S0=1, Bx=5, on=(True, ))
     print('Test 2: ', ics)
     ics = SourceSet(origin=((1, 2, 3), (4, 5, 6)), S0=1, Bx=5, on=(True, ))
-    print('Test 2: ', ics)
+    print('Test 3: ', ics)

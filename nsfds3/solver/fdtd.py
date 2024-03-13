@@ -47,6 +47,7 @@ from rich.color import ANSI_COLOR_NAMES
 from nsfds3.graphics import MPLViewer
 from nsfds3.utils import misc
 from nsfds3.solver import CfgSetup
+from nsfds3.solver.sources import CustomInitialConditions
 
 
 
@@ -59,6 +60,8 @@ class FDTD:
         Configuration of the simulation
     msh: CartesianGrid, CurvilinearGrid
         Grid used for the simulation
+    ics: CustomInitialConditions
+        Custom Initial conditions
     quiet: bool
         If True, display informations on the standard output
     timings: bool
@@ -86,22 +89,16 @@ class FDTD:
            Volume 228, Issue 5, 2009, Pages 1447-1465.
     """
 
-    def __init__(self, cfg, msh, quiet=None, timings=None):
+    def __init__(self, cfg, msh, ics=None, quiet=None, timings=None):
 
         # Initialize configuration & mesh
         self.cfg = cfg
         self.msh = msh
+        self.ics = ics if ics is not None else CustomInitialConditions(cfg, msh)
 
         # Arguments
-        if isinstance(quiet, bool):
-            self.quiet = quiet
-        else:
-            self.quiet = self.cfg.quiet
-
-        if isinstance(timings, bool):
-            self.timings = timings
-        else:
-            self.timings = self.cfg.timings
+        self.quiet = quiet if isinstance(quiet, bool) else self.cfg.quiet
+        self.timings = timings if isinstance(timings, bool) else self.cfg.timings
 
         # Initialize sources (boundaries and domain)
         time = _np.linspace(0, cfg.sol.nt * cfg.dt, cfg.sol.nt + 1)
@@ -112,7 +109,7 @@ class FDTD:
             source.set_evolution(time)
 
         # Initialize solver
-        self.fld = Fields(self.cfg, self.msh)
+        self.fld = Fields(self.cfg, self.msh, ics=self.ics)
         self.efluxes = EulerianFluxes(self.fld)
         if self.cfg.sol.vsc:
             self.vfluxes = ViscousFluxes(self.fld)
@@ -124,6 +121,8 @@ class FDTD:
             self.wxyz = Vorticity(self.fld)
         if self.cfg.prb:
             self.probes = _np.zeros((len(cfg.prb), cfg.sol.ns))
+            for n, c in enumerate(self.cfg.prb):
+                self.probes[n, 0] = self.fld.p[tuple(c)]
 
         # Initialize save
         self._init_save()
@@ -252,43 +251,14 @@ class FDTD:
         self.sfile = _h5py.File(self.cfg.datapath, 'w')
         self.sfile.attrs['vorticity'] = self.cfg.sol.vrt
         self.sfile.attrs['ndim'] = self.msh.ndim
-        self.sfile.attrs['p0'] = self.cfg.tp.p0
-        self.sfile.attrs['gamma'] = self.cfg.tp.gamma
-
-        # Not necessary ?
-        self.sfile.attrs['obstacles'] = self.msh.get_obstacles()
-        self.sfile.create_dataset('x', data=self.msh.x)
-        self.sfile.create_dataset('y', data=self.msh.y)
-        self.sfile.attrs['dx'] = self.msh.dx
-        self.sfile.attrs['dy'] = self.msh.dy
-        self.sfile.attrs['dt'] = self.cfg.dt
-        self.sfile.attrs['nx'] = self.msh.nx
-        self.sfile.attrs['ny'] = self.msh.ny
         self.sfile.attrs['nt'] = self.cfg.sol.nt
         self.sfile.attrs['ns'] = self.cfg.sol.ns
-        self.sfile.attrs['rho0'] = self.cfg.tp.rho0
-        self.sfile.attrs['bz_n'] = self.cfg.geo.bz_n
-        self.sfile.attrs['mesh'] = self.msh.mesh_type
-        self.sfile.attrs['bc'] = self.cfg.geo.bc
-        self.sfile.attrs['itmax'] = self.cfg.sol.it
-        if self.msh.ndim == 3:
-            self.sfile.attrs['dz'] = self.msh.dz
-            self.sfile.attrs['nz'] = self.msh.nz
-            self.sfile.create_dataset('z', data=self.msh.z)
+        self.sfile.attrs['p0'] = self.cfg.tp.p0
+        self.sfile.attrs['gamma'] = self.cfg.tp.gamma
 
         probes = _np.zeros((len(self.cfg.prb), self.cfg.sol.nt))
         self.sfile.create_dataset('probe_locations', data=self.cfg.prb.locs)
         self.sfile.create_dataset('probe_values', data=probes)
-
-        if self.msh.mesh_type.lower() == 'curvilinear':
-            self.sfile.create_dataset('J', data=self.msh.J)
-            #self.sfile.create_dataset('xn', data=self.msh.xn)
-            #self.sfile.create_dataset('yn', data=self.msh.yn)
-            self.sfile.create_dataset('xp', data=self.msh.xp)
-            self.sfile.create_dataset('yp', data=self.msh.yp)
-            if self.msh.ndim == 3:
-                #self.sfile.create_dataset('zn', data=self.msh.yn)
-                self.sfile.create_dataset('zp', data=self.msh.yp)
 
         # Save initial fields
         self._save()
