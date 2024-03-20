@@ -22,19 +22,57 @@
 """
 The module `sources` provides :
 
+    * The `CustomInitialConditions` class: Describes initial conditions
     * The `Source` class: Describes an pressure source
     * The `SourceSet` class: Describes a set of pressure sources
     * The `Flow` class: Describes a mean flow
 """
 
+import sys
 import numpy as _np
 import matplotlib.pyplot as _plt
 import itertools as _it
+from rich import print
+from rich.prompt import IntPrompt, Prompt
 from nsfds3.graphics.utils import cmap_jet, MidPointNorm
+from nsfds3.utils.data import DataExtractor
+from nsfds3.utils.files import get_objects
+from nsfds3.utils.misc import Confirm
 from libfds.cmaths import super_gaussian2d, super_gaussian3d
 
 
 class CustomInitialConditions:
+    """Customize initial conditions for acoustic pressure and/or velocities.
+
+    Parameters
+    ----------
+    cfg: CfgSetup
+        Configuration of the simulation
+    msh: CartesianGrid, CurvilinearGrid
+        Grid used for the simulation
+
+    Notes
+    -----
+    To setup custom initial conditions, one must override the
+    `CustomInitialConditions.__post_init__` method.
+    The following attributes can be customized:
+
+            * `self.p`: acoustic pressure (without static pressure)
+            * `self.vx`: x-component of velocity
+            * `self.vy`: y-component of velocity
+            * `self.vz`: z-component of velocity
+    Example
+    -------
+
+    ::
+
+        class Ring(CustomInitialConditions):
+
+            def __post_init__(self):
+                origin = 100, 100
+                k = 12
+                self.p = self.super_gaussian(origin, k=12)
+    """
 
     varnames = ('p', 'vx', 'vy', 'vz')
 
@@ -48,9 +86,13 @@ class CustomInitialConditions:
         self.vy = None
         self.vz = None
 
-        self.super_gaussian.__func__.__doc__ = super_gaussian3d.__doc__
-        self.__post_init__()
-        self.check()
+        self._has_old_conf = self.check_older_run()
+        if self._has_old_conf:
+            self._prompt_for_resume()
+
+        if not self.has_old_fields:
+            self.__post_init__()
+            self.check()
 
     def __post_init__(self):
         """One can override this method to provide custom initial condition for:
@@ -64,9 +106,56 @@ class CustomInitialConditions:
         """
         pass
 
-    def super_gaussian(self, origin, kx=2, ky=2, kz=2, k=1, 
+    def check_older_run(self):
+        """Report whether there is an older run or not."""
+        if self.cfg.files.data_path.is_file():
+            cfg, _ = get_objects(self.cfg.files.directory, self.cfg.files.name)
+            if cfg == self.cfg and cfg.sol.itmax !=0:
+                if not self.cfg.quiet and (self.cfg.sol.resume or cfg.sol.itmax < cfg.sol.nt):
+                    print(f'[bold bright_magenta]Previous run found for {cfg.cfgfile.stem} until iteration {cfg.sol.itmax}/{cfg.sol.nt}.')
+                return True
+        return False
+
+    def _prompt_for_resume(self):
+        cfg, _ = get_objects(self.cfg.files.directory, self.cfg.files.name)
+        if cfg.sol.itmax < self.cfg.sol.nt:
+            if not self.cfg.sol.resume:
+                resume = Confirm.ask(f'[bold bright_magenta][blink]Continue last simulation[/] (if not simulation will start from scratch) ? ')
+            else:
+                resume = True
+        elif self.cfg.sol.resume:
+            self.cfg.sol.nt = int(max(cfg.sol.itmax, self.cfg.sol.nt))
+            nt = IntPrompt.ask(f'[bold bright_magenta][blink]Number of additional iterations? ', default=0)
+            self.cfg.sol.nt += nt
+            resume = True
+        else:
+            resume = False
+
+        if resume:
+            self.resume()
+
+    def resume(self):
+        """Setup fields to resume last simulation with the current config.
+        Set r, ru, rv[, rw], re instance attributes to the values at the last 
+        iteration itmax reached during last simulation."""
+        if not self._has_old_conf:
+            print('[bold bright_magenta]Old configuration not found.')
+            return
+
+        with DataExtractor(self.cfg.files.data_path) as data:
+            self.cfg.sol.itmax = data.get_attr('itmax')
+            self._r = data.get_dataset(f'r_it{self.cfg.sol.itmax}')
+            self._ru = data.get_dataset(f'ru_it{self.cfg.sol.itmax}')
+            self._rv = data.get_dataset(f'rv_it{self.cfg.sol.itmax}')
+            self._re = data.get_dataset(f're_it{self.cfg.sol.itmax}')
+            if self.msh.ndim == 3:
+                self._rw = data.get_dataset(f'rw_it{self.cfg.sol.itmax}')
+        self.cfg.overwrite()
+        if not self.cfg.quiet:
+            print(f'[bold bright_cyan]Fields at iteration {self.cfg.sol.itmax}/{self.cfg.sol.nt} loaded!')
+
+    def super_gaussian(self, origin, kx=2, ky=2, kz=2, k=1,
                                      Bx=None, By=None, Bz=None, Rx=0):
-        """Docstring from libfds.cmaths.super_gaussian3d."""
 
         if len(origin) != self.msh.ndim:
             raise ValueError(f'origin must be length {self.msh.origin} tuple')
@@ -82,15 +171,20 @@ class CustomInitialConditions:
         return super_gaussian2d(*self.msh.paxis, *origin, kx, ky, k, Bx, By, Rx)
 
     def check(self):
-        """Check the initial conditions."""
+        """Check that initial conditions are valid ones."""
         for varname, var in self.vars.items():
             if not isinstance(var, _np.ndarray) or var.shape != self.msh.shape:
                 raise ValueError(f'{varname} must be a numpy.ndarray of dim {self.msh.shape}')
 
     @property
     def custom(self):
-        """Report wether initial conditions are provided or not."""
+        """Report whether initial conditions are provided or not."""
         return bool(self.vars)
+
+    @property
+    def has_old_fields(self):
+        """Report whether old fields have been initialized or not."""
+        return hasattr(self, '_r') and hasattr(self, '_re')
 
     @property
     def vars(self):
@@ -99,10 +193,10 @@ class CustomInitialConditions:
                 if getattr(self, varname) is not None}
 
     def show(self):
-        """Show initial conditions."""
+        """Show initial conditions graphically."""
         number = len(self.vars)
         if not number:
-            print('Nothing to show')
+            print('[bold bright_magenta]Nothing to show')
         else:
             self._show(number)
 
@@ -130,20 +224,20 @@ class CustomInitialConditions:
     def __repr__(self):
         return str(self)
 
+
+CustomInitialConditions.super_gaussian.__doc__ = super_gaussian3d.__doc__
+
+
 class Source:
-    r"""Pressure sources can be declared as initial conditions or time evolving 
-    pressure fluctuations.
-    To declare time evolving source, the evolution argument must be provided.
-
-    .. math::
-
-        p_{\text{ring}} = S_0 e^{- (\sqrt{(x - x_0)^2 + (y - y_0)^2} + \sqrt{x_r^2 + y_r^2})^{\beta} / (B_x \delta x))^{\beta}}
+    r"""Parameters for Super Gaussian Acoustic sources. This class is not 
+    intended to be instantiated or modified directly. It is used by SourceSet to
+    set a set of source parameters.
 
     References
     ----------
 
-    .. [1] S. Kang et al. « A Physics-Based Approach to Oversample Multi-Satellite, 
-        Multi-Species Observations to a Common Grid ». Preprint. Gases/Remote Sensing/Data 
+    .. [1] S. Kang et al. « A Physics-Based Approach to Oversample Multi-Satellite,
+        Multi-Species Observations to a Common Grid ». Preprint. Gases/Remote Sensing/Data
         Processing and Information Retrieval, 23 août 2018. https://doi.org/10.5194/amt-2018-253.
 
     Parameters
@@ -156,60 +250,85 @@ class Source:
         Widths :math:`B_x, B_y, B_z` of the pulse. 5 by default.
     kx, ky, kz, k: int, optional
         Orders :math:`\beta` of the pulse. Order 2 by default for axis and 1 for global.
-    R: float, optional
+    Rx: float, optional
         Radius following x for annular source
-    evolution : float or func, optional
+    evolution: float/func, or (float/func, ). Optional.
         Time evolution of the source.
-        If evolution is None, the source will be an initial condition.
-        If evolution is a float, it will describe the frequency of a sinusoidal time evolution.
-        If evolution is a function, the time evolution of the source will be the result of
-        `evolution(t)` where `t` is the time axis calculated as follows::
-
-            import numpy as np
-            t = np.linspace(0, nt * dt, nt + 1)
-
-        where `nt` and `dt` are the number of time step and the time step
-        setup in the configuration, respectively.
-
-    Example
-    -------
-    s1 = Source(origin=(100, 100), S0=10, Bx=0.1)
-    s2 = Source(origin=(150, 150), S0=3, Bx=0.2)
     """
 
-    def __init__(self, origin, S0=1., Bx=0.1, By=0.1, Bz=0.1, kx=2, ky=2, kz=2, k=1, Rx=0, evolution=None):
+    def __init__(self, origin, S0=1., Bx=0.1, By=0.1, Bz=0.1, kx=2, ky=2, kz=2, k=1,
+                 Rx=0, evolution=None):
 
-        if len(origin) not in (2, 3):
-            raise ValueError(f'{type(self).__name__}.origin: length 2 or 3 expected')
-
-        self.ndim = len(origin)
-        self.origin = origin
-
-        self.S0 = S0
-        self.Bx = abs(Bx)
-        self.By = abs(By)
-        self.Bz = abs(Bz)
-        self.kx = kx
-        self.ky = ky
-        self.kz = kz
-        self.k = k
-        self.Rx = abs(Rx)
-        self.evolution = None
+        self._origin = origin
+        self._S0 = S0
+        self._Bx = Bx
+        self._By = By
+        self._Bz = Bz
+        self._kx = kx
+        self._ky = ky
+        self._kz = kz
+        self._k = k
+        self._Rx = Rx
+        self._evolution = None
         self._f = evolution
 
     @property
     def tag(self):
-        """ Report whether the source is initial or temporal. """
+        """Report whether the source is initial or temporal."""
         return 'temporal' if self._f is not None else 'initial'
 
-    def convert_to_2d(self, ax):
-        """ Convert 3d source to 2d. """
-        if self.ndim == 3:
-            self.ndim = 2
-            self.origin = tuple(s for i, s in enumerate(self.origin) if i != ax)
+    @property
+    def origin(self):
+        """Read-only origin of the source."""
+        return self._origin
+
+    @property
+    def S0(self):
+        """Read-only amplitude of the source."""
+        return self._S0
+
+    @property
+    def Bx(self):
+        """Read-only x-width of the source."""
+        return self._Bx
+
+    @property
+    def By(self):
+        """Read-only y-width of the source."""
+        return self._By
+
+    @property
+    def Bz(self):
+        """Read-only z-width of the source."""
+        return self._By
+
+    @property
+    def kx(self):
+        """Read-only x-order of the source."""
+        return self._kx
+
+    @property
+    def ky(self):
+        """Read-only y-order of the source."""
+        return self._ky
+
+    @property
+    def kz(self):
+        """Read-only z-order of the source."""
+        return self._kz
+
+    @property
+    def k(self):
+        """Read-only global order of the source."""
+        return self._k
+
+    @property
+    def Rx(self):
+        """Read-only radius of the source."""
+        return self._Rx
 
     def set_evolution(self, t):
-        """ Set time evolution of the source.
+        """Set time evolution of the source.
         If this parameter is not set, the source is an initial condition
 
         Parameter
@@ -223,10 +342,10 @@ class Source:
             self.evolution = self.amplitude * self.evolution(t)
 
     def __str__(self):
-        s = f'{self.tag.title()} {type(self).__name__} @ {self.origin} '
-        widths = (self.Bx, self.By) if self.ndim == 2 else (self.Bx, self.By, self.Bz)
-        orders = (self.kx, self.ky, self.k) if self.ndim == 2 else (self.kx, self.ky, self.kz, self.k)
-        s += f'[amplitudes={self.S0}/widths=({widths}/orders={orders}/radius={self.Rx}]'
+        s = f'{self.tag.title()} Source @ {self.origin} '
+        widths = (self.Bx, self.By) if len(self.origin) == 2 else (self.Bx, self.By, self.Bz)
+        orders = (self.kx, self.ky, self.k) if len(self.origin) == 2 else (self.kx, self.ky, self.kz, self.k)
+        s += f'[amplitudes={self.S0}/widths={widths}/orders={orders}/radius={self.Rx}]'
         return s
 
     def __repr__(self):
@@ -234,33 +353,41 @@ class Source:
 
 
 class SourceSet:
-    """ Set of pressure sources.
+    r"""Set of pressure sources in Super Gaussian form.
 
-    Sources can be declared as initial conditions or time evolving pressure fluctuations.
+    Super Gaussian [1] can be declared as initial conditions or time evolving pressure fluctuations.
     To declare time evolving source, the evolution argument must be provided.
 
-    Sources can be super Gaussian [1] or Gaussian ring sources.
+
+    .. math::
+
+        p_{\text{ring}} = S_0 e^{- (\sqrt{(x - x_0)^2 + (y - y_0)^2} + \sqrt{x_r^2 + y_r^2})^{\beta} / (B_x \delta x))^{\beta}}
+
 
     References
     ----------
 
-    .. [1] S. Kang et al. « A Physics-Based Approach to Oversample Multi-Satellite, 
-        Multi-Species Observations to a Common Grid ». Preprint. Gases/Remote Sensing/Data 
+    .. [1] S. Kang et al. « A Physics-Based Approach to Oversample Multi-Satellite,
+        Multi-Species Observations to a Common Grid ». Preprint. Gases/Remote Sensing/Data
         Processing and Information Retrieval, 23 août 2018. https://doi.org/10.5194/amt-2018-253.
 
 
     Parameters
     ----------
-
+    shape: tuple
+        Shape of the computational domain.
     origin: tuple or (tuple, )
         Coordinates of the center. Can be a tuple or (tuple, ).
         If a tuple of tuples is provided, all tuples must have the same length.
+    flat: tuple or None
+        Whether geometry is flattened or not.
+        If a tuple is provided, it must provide (flat axis, flat index).
     S0: float or (float, ). Optional.
-        Amplitudes of the sources.
+        Amplitude :math:`S_0` of the pulse in Pa. 1 by default.
         Parameter amplitude is 1 by default for each source.
         Can be float for a single source or tuple of floats for multiple sources.
     Bx, By, Bz: float or (float, ). Optional.
-        Width of the sources.
+        Width :math:`B_x, B_y, B_z` of the sources.
         Parameter width is 0.1 by default for each source.
         Can be positive int for a single source or tuple of positive ints for multiple sources.
     k1, k2, k3, k: int or (int, ). Optional.
@@ -291,58 +418,74 @@ class SourceSet:
     Example
     -------
     # Declare 2 initial conditions, the first one located at (100, 100) with an amplitude of 10
-    # and a x-width of 0.1 grid points. The second source is located at (150, 150) with the same 
+    # and a x-width of 0.1 grid points. The second source is located at (150, 150) with the same
     # amplitude and a x-width of 0.2 grid points
     s = SourceSet(origin=((100, 100), (150, 150)), S0=10, Bx=(0.1, 0.2))
 
     """
 
-    def __init__(self, origin, **kwargs):
+    def __init__(self, shape, origin, flat=None, **kwargs):
 
-        self.ndim = kwargs.pop('ndim', 3)
-        self._origin = self.parse_origin(origin=origin)
+        self._shape = shape
+        self._ndim = len(self._shape)
+        self._flat = flat
+        if self._ndim != 3 and self._flat:
+            raise ValueError("SourceSet: length 3 expected for shape")
+
+        self._origin = self._parse_origin(origin=origin)
         self._kwargs = {key: value if isinstance(value, tuple) else (value, ) for key, value in kwargs.items()}
         self.update()
 
     def update(self):
-        """Update parameters. """
+        """Update parameters."""
         self.ics = []
         self.tes = []
         for origin, kwargs in zip(self.origin, self.kwargs):
             if kwargs.pop('on', False) and len(origin):
                 self.ics.append(Source(origin, **kwargs))
 
-    def convert_to_2d(self, ax):
-        """Convert 3d sources to 2d. ax is the axis where to do the transformation. """
-        if self.ndim == 3:
-            self.ndim = 2
-            for src in self:
-                src.convert_to_2d(ax)
-
-    def parse_origin(self, origin):
-        """Check if origin is relevant."""
+    def _parse_origin(self, origin):
+        """Parse origin parameter."""
+        # is tuple ?
         if not isinstance(origin, tuple):
             raise ValueError('SourceSet.origin: tuple expected')
-        try:
-            if not all(len(o) in (0, self.ndim) for o in origin):
-                raise ValueError(f'{type(self).__name__}.origin: inner tuples of length (0, {self.ndim}) expected')
-        except TypeError:
-            origin = (origin, )
+
+        # is tuple of tuples ?
+        if not any(isinstance(p, (tuple, list)) for p in origin):
+            origin = origin,
+        origin = tuple(tuple(c) for c in origin)
+
+        # is length ok and location in the domain ?
+        if hasattr(self, '_origin'):
+            ndims = (2, 3) if self._flat else (self._ndim, )
+        else:
+            ndims = (self._ndim, )
+        for i, loc in enumerate(origin):
+            if len(loc) not in ndims:
+                raise ValueError(f"SourceSet.origin: tuples of length {'|'.join(str(c) for c in ndims)} expected")
+            if any(not 0 <= c < s for c, s in zip(loc, self._shape)):
+                raise ValueError(f'SourceSet.origin[{i}]: out of bounds')
         return origin
 
     @property
     def origin(self):
+        if self._flat:
+            ax, _ = self._flat
+            return tuple(tuple(c for i, c in enumerate(loc) if i != ax) for loc in self._origin)
         return self._origin
 
     @origin.setter
     def origin(self, value):
-        value = self.parse_origin(origin=value)
-        self._origin = value if isinstance(value[0], tuple) else (value,)
+        value = self._parse_origin(origin=value)
+        if self._flat and any(len(c) == 2 for c in value):
+            ax, idx = self._flat
+            value = tuple(c[:ax] + (idx, ) + c[ax:] for c in value)
+        self._origin = value
         self.update()
 
     @property
     def on(self):
-        """Report whether sources must be activated or not. """
+        """Report whether sources must be activated or not."""
         return self._kwargs.get('on', ())
 
     @on.setter
@@ -352,7 +495,7 @@ class SourceSet:
 
     @property
     def S0(self):
-        """Amplitudes of the source. """
+        """Amplitudes of the source."""
         return self._kwargs.get('S0', ())
 
     @S0.setter
@@ -362,7 +505,7 @@ class SourceSet:
 
     @property
     def Bx(self):
-        """x-widths of the source. Will be converted to positive integer if not. """
+        """x-widths of the source. Will be converted to positive integer if not."""
         return self._kwargs.get('Bx', ())
 
     @Bx.setter
@@ -372,7 +515,7 @@ class SourceSet:
 
     @property
     def By(self):
-        """y-widths of the source. Will be converted to positive integer if not. """
+        """y-widths of the source. Will be converted to positive integer if not."""
         return self._kwargs.get('By', ())
 
     @By.setter
@@ -382,7 +525,7 @@ class SourceSet:
 
     @property
     def Bz(self):
-        """z-widths of the source. Will be converted to positive integer if not. """
+        """z-widths of the source. Will be converted to positive integer if not."""
         return self._kwargs.get('Bz', ())
 
     @Bz.setter
@@ -392,7 +535,7 @@ class SourceSet:
 
     @property
     def kx(self):
-        """Order of the source following x. Will be converted to positive integer if not. """
+        """Order of the source following x. Will be converted to positive integer if not."""
         return self._kwargs.get('kx', ())
 
     @kx.setter
@@ -402,7 +545,7 @@ class SourceSet:
 
     @property
     def ky(self):
-        """Order of the source following y. Will be converted to positive integer if not. """
+        """Order of the source following y. Will be converted to positive integer if not."""
         return self._kwargs.get('ky', ())
 
     @ky.setter
@@ -412,7 +555,7 @@ class SourceSet:
 
     @property
     def kz(self):
-        """Order of the source following z. Will be converted to positive integer if not. """
+        """Order of the source following z. Will be converted to positive integer if not."""
         return self._kwargs.get('kz', ())
 
     @kz.setter
@@ -422,7 +565,7 @@ class SourceSet:
 
     @property
     def k(self):
-        """Global order of the source. Will be converted to positive integer if not. """
+        """Global order of the source. Will be converted to positive integer if not."""
         return self._kwargs.get('k', ())
 
     @k.setter
@@ -432,7 +575,7 @@ class SourceSet:
 
     @property
     def Rx(self):
-        """Radius in the case of annular source. """
+        """Radius in the case of annular source."""
         return self._kwargs.get('Rx', ())
 
     @Rx.setter
@@ -442,7 +585,7 @@ class SourceSet:
 
     @property
     def evolution(self):
-        """Time evolution of the sources. """
+        """Time evolution of the sources."""
         return self._kwargs.get('evolution', ())
 
     @evolution.setter
@@ -452,9 +595,9 @@ class SourceSet:
 
     @property
     def kwargs(self):
-        """Return a list of dictionnaries providing keyword arguments of the sources. """
+        """Return a list of dictionnaries providing keyword arguments of the sources."""
         prms = _it.zip_longest(*self._kwargs.values())
-        return [{key: value for key, value in zip(self._kwargs.keys(), values) 
+        return [{key: value for key, value in zip(self._kwargs.keys(), values)
                                                 if value is not None} for values in prms]
 
     def __iter__(self):
@@ -477,52 +620,42 @@ class SourceSet:
 
 
 class Flow:
-    """ Mean flow source.
+    """Mean flow source.
 
     Parameters
     ----------
-    kind: str or None, optional
-        Kind of the flow. Can be one of the Flow.TYPES.
+    shape: tuple
+        Shape of the computational domain.
+    ftype: str or None, optional
+        Type of the flow. Can be one of the Flow.TYPES.
     components: tuple, optional
         Components of the flow.
-    ndim: int, optional
-        Can only be 2 or 3 for 2d flow or 3d flow, respectively.
+    flat: tuple or None, optional
+        Whether geometry is flattened or not. 
+        If a tuple is provided, it must provide (flat axis, flat index).
     """
     TYPES = (None, 'mean flow', )
 
-    def __init__(self, kind=None, components=(0, 0, 0), ndim=3):
+    def __init__(self, shape, ftype=None, components=(0, 0, 0), ndim=None, flat=None):
 
-        self.ndim = ndim
-        self._kind = kind if kind in Flow.TYPES else None
-        self._components = components
-        self._check()
+        self._shape = shape
+        self._ndim = len(shape)
+        self._flat = flat
+        if self._ndim != 3 and self._flat:
+            raise ValueError("Flow: with flat, ndim must be 3")
 
-    def convert_to_2d(self, ax):
-        """ Convert 3d mean flow to 2d. ax is the axis where to do the transformation. """
-        if self.ndim == 3:
-            self.ndim = 2
-            self.components = tuple(s for i, s in enumerate(self.components) if i != ax)
-
-    def _check(self):
-        """ Check that flow parameters are set correctly. """
-        if not isinstance(self._components, tuple):
-            raise ValueError(f'{type(self).__name__}.components: tuple expected')
-
-        if len(self._components) != self.ndim:
-            raise ValueError(f'{type(self).__name__}.components: {self.ndim}-length tuple expected')
-
-        if self._kind not in Flow.TYPES:
-            raise ValueError(f'{type(self).__name__}.kind: must be in {Flow.TYPES}')
+        self._ftype = self._parse_ftype(ftype)
+        self._components = self._parse_components(components)
 
     @property
-    def kind(self):
-        """Kind of mean flow. """
-        return self._kind
+    def ftype(self):
+        """Type of the mean flow."""
+        return self._ftype
 
-    @kind.setter
-    def kind(self, value):
-        self._kind = value
-        self._check()
+    @ftype.setter
+    def ftype(self, value):
+        value = self._parse_ftype(value)
+        self._ftype = value
 
     @property
     def components(self):
@@ -530,23 +663,50 @@ class Flow:
 
         Note
         ----
-        If `components` is modified, the time step `dt` is modified too if `kind` is set to an actual flow.
+        If `components` is modified, the time step `dt` is modified too if `ftype` is set to an actual flow.
         """
+        if self._flat:
+            ax, _ = self._flat
+            return tuple(s for i, s in enumerate(self._components) if i != ax)
         return self._components
 
     @components.setter
     def components(self, value):
+        value = self._parse_components(value)
+        if self._flat and len(value) == 2:
+            ax, _ = self._flat
+            value = value[:ax] + (self._components[ax], ) + value[ax:]
         self._components = value
-        self._check()
+
+    def _parse_components(self, value):
+        """Check that flow parameters are set correctly."""
+        if not isinstance(value, tuple):
+            raise ValueError(f'Flow.components: tuple expected')
+
+        if hasattr(self, '_components'):
+            ndims = (2, 3) if self._flat else (self._ndim, )
+        else:
+            ndims  = (self._ndim, )
+        if len(value) not in ndims:
+            raise ValueError(f"Flow.components: {'|'.join(str(c) for c in ndims)}-length tuple expected")
+
+        return value
+
+    def _parse_ftype(self, value):
+        """Parse flow type."""
+        if isinstance(value, str):
+            value = value.lower()
+        if value not in Flow.TYPES:
+            raise ValueError(f'{type(self).__name__}.ftype: must be in {Flow.TYPES}')
+        return value
 
     def __str__(self):
-        if self.kind:
-            return f"\n[Flow]    {self.kind} {self.components}.\n"
+        if self.ftype:
+            return f"\n[Flow]    {self.ftype} {self.components}.\n"
         return f"\n[Flow]    None.\n"
 
-
     def __repr__(self):
-        return self.__str__()
+        return str(self)
 
 
 if __name__ == "__main__":

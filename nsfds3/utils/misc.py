@@ -37,9 +37,21 @@ import scipy.signal as _sps
 import scipy.io.wavfile as _wf
 from time import perf_counter as _pc
 from rich.color import ANSI_COLOR_NAMES
+from rich import prompt
 
 
 font_colors = list(ANSI_COLOR_NAMES.keys())[30:]
+
+
+class Confirm(prompt.Confirm):
+
+    choices = ["y", "yes", "n", "no"]
+
+    def process_response(self, value: str) -> bool:
+        value = value.strip().lower()
+        if value not in self.choices:
+            raise prompt.InvalidResponse(self.validate_error_message)
+        return True if value in ["y", "yes"] else False
 
 
 def getsizeof(obj, seen=None, unit=None):
@@ -62,6 +74,25 @@ def getsizeof(obj, seen=None, unit=None):
     elif hasattr(obj, '__iter__') and not isinstance(obj, (str, bytes, bytearray)):
         size += sum(getsizeof(i, seen=seen, unit=unit) for i in obj)
     return size
+
+
+def are_equals(inst1, inst2, attrs):
+    """Check for equallity between attrs of inst1 and ins2."""
+    if not isinstance(inst2, inst1.__class__):
+        raise ValueError(f'Can only compare {inst1.__class__.__name__} objects together')
+
+    for attr in attrs:
+
+        a1 = getattr(inst1, attr, None)
+        a2 = getattr(inst2, attr, None)
+
+        if callable(a1) and callable(a2):
+            if a1.__name__ != a2.__name__:
+                return False
+        elif a1 != a2:
+            return False
+
+    return True
 
 
 def secs_to_dhms(secs):
@@ -88,7 +119,7 @@ def secs_to_hms(seconds):
     hours = int(seconds // 3600)
     minuts = int((seconds % 3600) // 60)
     seconds = int(seconds % 60)
-    
+
     hours = f'{hours}h' if hours else ''
     minuts = f'{minuts}m' if minuts else ''
     seconds = f'{seconds}s' if seconds else ''

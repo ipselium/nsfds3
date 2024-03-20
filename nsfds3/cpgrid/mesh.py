@@ -29,7 +29,7 @@ The `mesh` module provides tools to build meshes:
 
 import re
 import numpy as np
-from rich.console import Console
+from rich import print
 from nsfds3.cpgrid.cdomain import ComputationDomains
 from nsfds3.cpgrid.geometry import ObstacleSet
 from nsfds3.cpgrid import utils
@@ -39,18 +39,23 @@ from libfds.cmaths import curvilinear2d_trans, curvilinear3d_trans
 from libfds.cmaths import curvilinear2d_metrics, curvilinear3d_metrics
 
 
-console = Console()
-
-
 def build_mesh(cfg):
-    """ Return Grid from :py:class:`nsfds3.solver.CfgSetup` configuration. """
+    """Return Grid from :py:class:`nsfds3.solver.CfgSetup` configuration."""
+    if cfg.files.data_path.is_file() and not cfg.geo.force:
+        msh = cfg.get_grid_backup()
+        if msh is not None:
+            if not cfg.quiet:
+                print('[bold bright_cyan]Existing Grid backup[bold bright_magenta] loaded.')
+            return msh
+
     if getattr(cfg.geo, 'curvfunc', None):
         return CurvilinearGrid.from_cfg(cfg)
+
     return CartesianGrid.from_cfg(cfg)
 
 
 class CartesianGrid:
-    """ Build cartesian grid
+    """Build cartesian grid
 
     Parameters
     ----------
@@ -100,11 +105,7 @@ class CartesianGrid:
         self.bz_filter_order = bz_filter_order
         self.stencil = stencil
         self.free = free
-        self.shape, self.steps, self.origin, self.bc = utils.parse_grid_parameters(shape,
-                                                                                   steps,
-                                                                                   origin,
-                                                                                   bc,
-                                                                                   bz_n)
+        self.shape, self.steps, self.origin, self.bc = utils.parse_geo(shape, steps, origin, bc, bz_n)
 
         self.ndim = len(shape)
         self._set_attributes(('nx', 'ny', 'nz'), self.shape)
@@ -127,23 +128,23 @@ class CartesianGrid:
 
     @classmethod
     def from_cfg(cls, cfg):
-        """ Build grid from configuration. """
-        args, kwargs = cfg.grid_configuration
+        """Build grid from configuration."""
+        args, kwargs = cfg.geo.args
         return cls(*args, **kwargs)
 
     def _set_attributes(self, names, values):
-        """ Helper method to set attributes. """
+        """Helper method to set attributes."""
         _ = [setattr(self, attr, val) for attr, val in zip(names, values)]
 
     def _set_axis_flags(self):
-        """ Set flag to specify if axis has regular (s) or irregular (v) spacing. """
+        """Set flag to specify if axis has regular (s) or irregular (v) spacing."""
         self.flag_x = 's' if np.allclose(np.diff(self.x), self.dx) else 'v'
         self.flag_y = 's' if np.allclose(np.diff(self.y), self.dy) else 'v'
         if self.ndim == 3:
             self.flag_z = 's' if np.allclose(np.diff(self.z), self.dz) else 'v'
 
     def find_subdomains(self):
-        """ Divide the computation domain into subdomains. """
+        """Divide the computation domain into subdomains."""
 
         self._computation_domains = ComputationDomains(self.shape, self.obstacles,
                                                        self.bc, self.bz_n, self.stencil,
@@ -159,7 +160,7 @@ class CartesianGrid:
 
     @property
     def stretched_axis(self):
-        """ Return a string specifying the axis that are not regularly spaced. """
+        """Return a string specifying the axis that are not regularly spaced."""
         s = ''
         if self.flag_x == 'v':
             s += 'x'
@@ -172,24 +173,24 @@ class CartesianGrid:
 
     @property
     def paxis(self):
-        """ Physical axis. """
+        """Physical axis."""
         if self.ndim == 3:
             return self.xp, self.yp, self.zp
         return self.xp, self.yp
 
     @property
     def axis(self):
-        """ Numerical axis. """
+        """Numerical axis."""
         if self.ndim == 3:
             return self.x, self.y, self.z
         return self.x, self.y
 
     def get_obstacles(self):
-        """ Get obstacles coordinates. """
+        """Get obstacles coordinates."""
         return [o.cn for o in self.obstacles]
 
     def make_grid(self):
-        """ Build grid. """
+        """Build grid."""
         stretch = 1 + max(self.bz_stretch_factor - 1, 0)  * np.linspace(0, 1, self.bz_n) ** self.bz_stretch_order
 
         self.x = np.arange(self.nx, dtype=float) - int(self.nx/2)
@@ -226,7 +227,7 @@ class CartesianGrid:
             self.xp, self.yp = np.meshgrid(self.x, self.y, indexing='ij')
 
     def show(self, **kwargs):
-        """ Plot grid.
+        """Plot grid.
 
         todo :
             - BC profiles
@@ -258,7 +259,7 @@ class CartesianGrid:
 
 
 class CurvilinearGrid(CartesianGrid):
-    """ Build curvilinear grid
+    """Build curvilinear grid
 
     Parameters
     ----------
@@ -316,7 +317,7 @@ class CurvilinearGrid(CartesianGrid):
         return tuple([v.copy() for v in args])
 
     def make_grid(self):
-        """ Make curvilinear grid.
+        """Make curvilinear grid.
 
         Note
         ----
@@ -342,7 +343,7 @@ class CurvilinearGrid(CartesianGrid):
             self.J, self.dx_du, self.dx_dv, self.dy_du, self.dy_dv = J
 
     def check_metrics(self, rtol=1e-8):
-        """ Check metrics. """
+        """Check metrics."""
         msg = f'Warning : Metric invariants > {rtol}\n'
 
         if self.ndim == 3:
@@ -357,12 +358,13 @@ class CurvilinearGrid(CartesianGrid):
         if not np.allclose(np.array(self.invariants), 0., rtol=rtol):
             inv = [f'Max {ax}-invariant {inv}\n' for ax, inv in zip(('x', 'y', 'z'), self.invariants)]
             msg += ''.join(inv)
-            console.print(msg)
+            print('[bold bright_magenta]' + msg)
 
     def __getstate__(self):
         attributes = self.__dict__.copy()
+        if hasattr(self, 'curvfunc'):
+            del attributes['curvfunc']
         # can't picke external function, so delete it from instance...
-        del attributes['curvfunc']
         return attributes
 
 

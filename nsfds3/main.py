@@ -134,16 +134,16 @@ def show(args, cfg, msh):
         msh._computation_domains.show(domains=True)
 
     elif args.show_command == 'frame':
-        plt = MPLViewer(cfg, msh, cfg.datapath)
-        plt.show(view=args.view, iteration=cfg.nt,
+        plt = MPLViewer(cfg, msh, cfg.files.data_path)
+        plt.show(view=args.view, iteration=cfg.sol.nt,
                    buffer=cfg.show_bz, probes=cfg.show_prb)
 
     elif args.show_command == 'probes':
-        plt = MPLViewer(cfg, msh, cfg.datapath)
+        plt = MPLViewer(cfg, msh, cfg.files.data_path)
         plt.probes()
 
     elif args.show_command == 'spectrogram':
-        plt = MPLViewer(cfg, msh, cfg.datapath)
+        plt = MPLViewer(cfg, msh, cfg.files.data_path)
         plt.spectrogram()
 
     else:
@@ -155,13 +155,13 @@ def make(args, cfg, msh):
 
     if args.make_command == 'movie':
 
-        plt = MPLViewer(cfg, msh, cfg.datapath)
+        plt = MPLViewer(cfg, msh, cfg.files.data_path)
         plt.movie(view=args.view, nt=cfg.nt, ref=args.ref,
                   buffer=cfg.show_bz, probes=cfg.show_prb,
                   fps=cfg.fps)
 
     elif args.make_command == 'sound':
-        _ = probes_to_wavfile(cfg.datapath)
+        _ = probes_to_wavfile(cfg.files.data_path)
 
 
 def solve(args, cfg, msh):
@@ -172,9 +172,9 @@ def solve(args, cfg, msh):
     fdtd.run()
 
     if cfg.show_fig:
-        plt = MPLViewer(cfg, msh, cfg.datapath)
+        plt = MPLViewer(cfg, msh, cfg.files.data_path)
         if cfg.save_fld:
-            plt.show(iteration=cfg.nt)
+            plt.show(iteration=cfg.sol.nt)
         if cfg.prb:
             plt.probes()
 
@@ -195,9 +195,9 @@ def main():
     if hasattr(args, 'quiet'):
         cfg.quiet = args.quiet if args.quiet is not None else cfg.quiet
     if hasattr(args, 'timing'):
-        cfg.timings = args.timings if args.timings is not None else cfg.timings
+        cfg.sol.timings = args.timings if args.timings is not None else cfg.sol.timings
     if hasattr(args, 'nt'):
-        cfg.nt = args.nt if args.nt is not None else cfg.nt
+        cfg.sol.nt = args.nt if args.nt is not None else cfg.sol.nt
 
     # legacy : nsfds2 allowed for multiple views on the same frame, not nsfds3!
     if hasattr(args, 'view'):

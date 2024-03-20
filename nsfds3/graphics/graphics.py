@@ -45,7 +45,7 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 #from progressbar import ProgressBar, Bar, ETA
 from rich.progress import track
-from nsfds3.utils.data import DataExtractor, FieldExtractor, DataIterator, closest_index
+from nsfds3.utils.data import DataExtractor, FieldExtractor, DataIterator
 from nsfds3.graphics.utils import MidPointNorm, cmap_jet, cmap_mask, dict_update, fig_scale
 from libfds.fields import Fields2d, Fields3d
 
@@ -54,11 +54,11 @@ cmap = cmap_jet()
 
 
 class ViewerError(Exception):
-    """ Exception raised when grid parameters are wrong. """
+    """Exception raised from the viewer."""
 
 
 class MeshViewer:
-    """ Graphical tool to visualize Mesh objects graphically.
+    """Graphical tool to visualize Mesh objects graphically.
 
     Parameters
     ----------
@@ -221,7 +221,7 @@ class MeshViewer:
 
     @staticmethod
     def objects(ax, axes, indices, obj, **kwargs):
-        """ Plot objects on ax.
+        """Plot objects on ax.
 
         Parameters
         ----------
@@ -236,7 +236,7 @@ class MeshViewer:
         **kwargs : dict
             Keyword Arguments of matplotlib.patches.Rectangle
         """
-        dkwargs = dict(linewidth=3, edgecolor='k', facecolor=None, 
+        dkwargs = dict(linewidth=3, edgecolor='k', facecolor=None,
                        alpha=1., hatch=None, annotate=False, rasterized=True)
         kwargs = dict_update(dkwargs, kwargs)
         annotate = kwargs.pop('annotate')
@@ -266,7 +266,7 @@ class MeshViewer:
                 ax.annotate(f'{sub.sid}', sub.center(ax=indices, transform=(u, v)),
                             ha='center', va='center',
                             color='gray', weight='bold', style='italic', fontsize=8)
-        
+
         # Adding the collection to ax is much more faster than adding sequentially the paths
         # This can be improved furthermore using PolyCollection :
         # https://stackoverflow.com/questions/54463269/avoid-slow-looping-when-plotting-irregular-raster-plot-using-patches-rectangle
@@ -276,7 +276,7 @@ class MeshViewer:
 
     @staticmethod
     def grid(ax, axes, indices, N, **kwargs):
-        """ Plot grid on ax.
+        """Plot grid on ax.
 
         Parameters
         ----------
@@ -319,7 +319,7 @@ class MeshViewer:
 
 
 class CPViewer(MeshViewer):
-    """ MeshViewer specialization adapted to ComputationDomains. """
+    """MeshViewer specialization adapted to ComputationDomains."""
 
     def __init__(self, cpdomain):
 
@@ -408,7 +408,7 @@ class CPViewer(MeshViewer):
 
 
 class MPLViewer(MeshViewer):
-    """ MeshViewer specialization adapted to libfds.Fields or hdf5 files. """
+    """MeshViewer specialization adapted to libfds.Fields or hdf5 files."""
 
     dkwargs = dict(figsize=(10, 10), dpi=100, fps=24,
                    grid=False, buffer=True, obstacles=True, domains=False, probes=True,
@@ -421,7 +421,10 @@ class MPLViewer(MeshViewer):
     def __init__(self, cfg, msh, data):
 
         super().__init__(msh)
+
         self.cfg = cfg
+        self._data = data
+        self.closed = False
 
         if isinstance(data, (Fields2d, Fields3d)):
             self.data = FieldExtractor(data)
@@ -430,10 +433,10 @@ class MPLViewer(MeshViewer):
         elif isinstance(data, DataExtractor):
             self.data = data
         else:
-            raise ValueError('fld can be Fields2d, Fields3d, DataExtractor, or path to hdf5 file')
+            raise ValueError('data can be Fields2d, Fields3d, DataExtractor, or path to hdf5 file')
 
     def show(self, view='p', vmin=None, vmax=None,  iteration=0, **kwargs):
-
+        """Show view at a given iteration."""
 
         kwargs = dict_update(self.dkwargs, kwargs)
 
@@ -460,7 +463,7 @@ class MPLViewer(MeshViewer):
             return self._fields2d(var, norm, **kwargs)
 
     def _fields2d(self, var, norm, **kwargs):
-        """ Show 2d results. """
+        """Show 2d results."""
 
         fig, ax, ax_bar = self._frame2d(cbar=True, **kwargs)
 
@@ -490,7 +493,7 @@ class MPLViewer(MeshViewer):
         return fig, im
 
     def _fields3d(self, var, norm, **kwargs):
-        """ Show 3d results. """
+        """Show 3d results."""
 
         fig, ax_xy, ax_xz, ax_zy, ax_bar = self._frame3d(cbar=True, **kwargs)
 
@@ -526,7 +529,7 @@ class MPLViewer(MeshViewer):
 
     def _init_movie(self, view):
 
-        title = os.path.basename(self.cfg.datafile).split('.')[0]
+        title = os.path.basename(self.cfg.files.name).split('.')[0]
         views = {'p': r'$p_a$ [Pa]',
                  'e': r'$e$ [kg.m$^2$.s$^{-2}$]',
                  'rho': r'$\rho$ [kg.m$^3$]',
@@ -547,7 +550,7 @@ class MPLViewer(MeshViewer):
         return metadata
 
     def movie(self, view='p', nt=None, ref=None, xlim=None, ylim=None, zlim=None, codec='libx264', **kwargs):
-        """ Make movie. """
+        """Make movie."""
 
         kwargs = dict_update(self.dkwargs, kwargs)
 
@@ -564,8 +567,8 @@ class MPLViewer(MeshViewer):
 
         # Movie parameters
         metadata = self._init_movie(view)
-        writer = _ani.FFMpegWriter(fps=kwargs.get('fps'), metadata=metadata, bitrate=-1, codec=codec)        
-        with writer.saving(fig, self.cfg.datadir / metadata['filename'], dpi=kwargs.get('dpi')):
+        writer = _ani.FFMpegWriter(fps=kwargs.get('fps'), metadata=metadata, bitrate=-1, codec=codec)
+        with writer.saving(fig, self.cfg.files.directory / metadata['filename'], dpi=kwargs.get('dpi')):
 
             writer.grab_frame()
 
@@ -585,15 +588,15 @@ class MPLViewer(MeshViewer):
                     im.set_array(var[:-1, :-1].T)
                     axes[0].set_title(metadata['var'] + f' (n={i})')
 
-                # grab_frame() takes 90% of the time to make the animation. 
+                # grab_frame() takes 90% of the time to make the animation.
                 # the self.fig.canvas.draw() in writer.grab_frame() is responsible of this !
                 # TODO: rewrite a FasterFFmpegWriter that uses blit (and multiprocessing ?)
                 # Note: the time/iteration is the same as the time to execute fig.savefig('test.jpg') !
-                # Note: Another way to gain some time is to decimate data... 
+                # Note: Another way to gain some time is to decimate data...
                 writer.grab_frame()
 
     def probes(self, figsize=(9, 4)):
-        """ Plot pressure at probes. """
+        """Plot pressure at probes."""
 
         if not isinstance(self.data, DataExtractor):
             print('probes method only available for DataExtractor')
@@ -602,7 +605,7 @@ class MPLViewer(MeshViewer):
         probes = self.data.get_dataset('probe_locations').tolist()
 
         if not probes:
-            raise ValueError("No probes !")
+            raise ViewerError("No probes !")
 
         p = self.data.get_dataset('probe_values')
         t = _np.arange(self.cfg.sol.nt) * self.cfg.dt
@@ -619,7 +622,7 @@ class MPLViewer(MeshViewer):
         _plt.show()
 
     def spectrogram(self, M=None, figsize=(9, 4)):
-        """ Plot spectograms at probes.
+        """Plot spectograms at probes.
 
         Parameters
         ----------
@@ -630,7 +633,7 @@ class MPLViewer(MeshViewer):
         probes = self.data.get_dataset('probe_locations').tolist()
 
         if not probes:
-            raise ValueError("No probes !")
+            raise ViewerError("No probes !")
 
         if not M:
             M = min(int(self.cfg.sol.nt/20), 256)
@@ -660,9 +663,21 @@ class MPLViewer(MeshViewer):
         ax[0].set_title('Square spectrum magitude')
         _plt.show()
 
+    def close(self):
+        """Close hdf5 file if one is open."""
+        if isinstance(self.data, DataExtractor):
+            self.data.close()
+            self.closed = True
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, mtype, value, traceback):
+        self.close()
+
 
 class PlyViewer:
-    """ Legacy Mesh/ComputationDomain viewer using Plotly. """
+    """Legacy Mesh/ComputationDomain viewer using Plotly."""
 
     def __init__(self, obj):
         self.shape = obj.shape
@@ -682,7 +697,7 @@ class PlyViewer:
 
     @staticmethod
     def _grid_traces(ax1, ax2):
-        """ Make grid traces. """
+        """Make grid traces."""
         traces = []
         kwargs = dict(mode='lines', line={'color': 'rgba(0,0,0,0.1)'})
 
@@ -697,7 +712,7 @@ class PlyViewer:
         return traces
 
     def _object_traces(self, ax1, ax2, side=None, reverse=None, kind='obstacle', bounds=False):
-        """ Make obstacles traces. """
+        """Make obstacles traces."""
         traces = []
 
         if kind == 'domains':
@@ -730,7 +745,7 @@ class PlyViewer:
         return traces
 
     def show(self, dpi=800, obstacles=True, domains=False, bounds=True, only_mesh=False):
-        """ Plot grid.
+        """Plot grid.
 
         todo :
             - BC profiles, figsize, Buffer Zone, probes, filename
@@ -750,7 +765,7 @@ class PlyViewer:
         fig.show()
 
     def _grid2d(self, obstacles=True, domains=False, bounds=False):
-        """ Show 2d grid. """
+        """Show 2d grid."""
         fig = _go.Figure()
         fig.add_traces(self._grid_traces(self.x, self.y))
         if self.obstacles and obstacles:
@@ -769,7 +784,7 @@ class PlyViewer:
         return fig
 
     def _grid3d(self, obstacles=True, domains=False, bounds=False, only_mesh=False):
-        """ Show 3d grid. """
+        """Show 3d grid."""
         # Figure
         if only_mesh:
             fig = _go.Figure()

@@ -97,7 +97,6 @@ def mkdir(directory, verbose=False):
         time.sleep(0.5)
 
 
-
 def write_file(fname, content, verbose=False):
     """ Write content into fname.
 

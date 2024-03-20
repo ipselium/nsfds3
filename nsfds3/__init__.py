@@ -25,10 +25,15 @@
 Init package
 ------------
 """
-import sys as _sys
+import sys
+from rich import print
 
-#if _sys.platform == 'darwin':
+#if sys.platform == 'darwin':
 #    import matplotlib
 #    matplotlib.use("TkAgg")
 
 __version__ = "0.2.1"
+
+if sys.version_info < (3, 8):
+    print('[bold red][blink]nsfds3 needs python > 3.8 to run')
+    sys.exit(0)

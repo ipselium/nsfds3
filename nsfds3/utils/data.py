@@ -147,7 +147,7 @@ def check_view(view, volumic=True, vorticity=True):
 
 
 class DataIterator:
-    """ Data Generator.
+    """Data Generator.
 
     Parameters
     ----------
@@ -157,7 +157,6 @@ class DataIterator:
         The variable(s) to display.
     nt : int
         The last frame to consider.
-
     """
 
     def __init__(self, data, view=('p'), nt=None):
@@ -198,26 +197,29 @@ class DataIterator:
             return tmp
 
         except KeyError:
+            self.data.close()
             raise StopIteration
 
 
 class DataExtractor:
-    """ Helper class to extract data from an h5py.File.
+    """Helper class to extract data from an h5py.File.
 
     Parameters
     ----------
-    data: pathlib.Path, str, or h5py.File
+    obj: pathlib.Path or str
         The data to be initialized with. If it is a pathlib.Path or str, the
         data will be retrieved using the `DataExtractor.get_data` method.
         Otherwise, the data will be used as is.
     """
 
-    def __init__(self, data):
+    def __init__(self, obj):
 
-        if isinstance(data, (pathlib.Path, str)):
-            self.data = self.get_data(data)
-        elif isinstance(data, h5py.File):
-            self.data = data
+        self._obj = obj
+
+        if isinstance(obj, (pathlib.Path, str)):
+            self.data = self.get_data(obj)
+        elif isinstance(obj, h5py.File):
+            self.data = obj
         else:
             raise ValueError('pathlib.Path, str, or h5py.File expected')
 
@@ -321,17 +323,17 @@ class DataExtractor:
         return refmin, refmax
 
     def close(self):
-        """Close hdf5 file. """
+        """Close hdf5 file."""
         self.data.close()
 
     def list(self):
-        """List all datasets and attributes. """
+        """List all datasets and attributes."""
         datasets = [i for i in self.data.keys() if '_it' not in i]
         print('datasets: ', *datasets)
         print('attrs: ', *list(self.data.attrs))
 
     def get(self, view='p', iteration=0):
-        """Get data of the specified view at the given iteration. """
+        """Get data of the specified view at the given iteration."""
         iteration = closest_index(iteration, self.ns, self.nt)
         view = check_view(view, self.volumic, self.vorticity)
 
@@ -361,12 +363,11 @@ class DataExtractor:
 
     def get_dataset(self, dataset):
         """Get dataset from hdf5 file. attr must be string."""
-        return self.data[dataset][...]
+        return (self.data[dataset][...])
 
 
 class FieldExtractor:
-    """
-    Helper class to extract data from a lbfds.fields.Fields2d or Fields3d.
+    """Helper class to extract data from a lbfds.fields.Fields2d or Fields3d.
 
     Parameters
     ----------

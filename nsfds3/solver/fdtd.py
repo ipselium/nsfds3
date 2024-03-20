@@ -33,10 +33,12 @@ import pickle as _pkl
 from time import perf_counter as _pc
 import numpy as _np
 import h5py as _h5py
+import pathlib as _pathlib
 
 from libfds.fields import Fields
 from libfds.fluxes import EulerianFluxes, ViscousFluxes, Vorticity
 from libfds.filters import SelectiveFilter, ShockCapture
+from libfds.cmaths import nan_check
 
 from rich import print
 from rich.prompt import Prompt
@@ -45,14 +47,30 @@ from rich.progress import track
 from rich.color import ANSI_COLOR_NAMES
 
 from nsfds3.graphics import MPLViewer
-from nsfds3.utils import misc
-from nsfds3.solver import CfgSetup
-from nsfds3.solver.sources import CustomInitialConditions
+from nsfds3.utils import misc, get_objects
+from nsfds3.solver import CfgSetup, CustomInitialConditions
 
+
+def resume(directory, basename, nt_new=None):
+    """Resume simulation.
+
+    Parameters
+    ----------
+    directory: str
+        Directory of the cfg/msh/hdf5 files.
+    basename: str
+        Basename of the files.
+    nt_new: int
+        New number of time iteration to take into account.
+    """
+    cfg, msh = get_objects(directory, basename)
+    ics = CustomInitialConditions(cfg, msh)
+
+    return FDTD(cfg, msh, ics=ics)
 
 
 class FDTD:
-    """ Solve Navier-Stokes equations using Finite Difference Time Domain (FDTD) technique.
+    """Solve Navier-Stokes equations using Finite Difference Time Domain (FDTD) technique.
 
     Parameters
     ----------
@@ -66,6 +84,10 @@ class FDTD:
         If True, display informations on the standard output
     timings: bool
         If True, display complete timings during the simulation
+    overwrite: bool
+        If True, automatically overwrite files
+    nan_check: bool
+        If True, exit simulation when nan are encountered. This option may degrade computation time.
 
     Notes
     -----
@@ -89,16 +111,21 @@ class FDTD:
            Volume 228, Issue 5, 2009, Pages 1447-1465.
     """
 
-    def __init__(self, cfg, msh, ics=None, quiet=None, timings=None):
+    def __init__(self, cfg, msh, ics=None, quiet=None, timings=None, overwrite=None):
 
-        # Initialize configuration & mesh
+        # Initialize configuration, mesh & ICS
         self.cfg = cfg
         self.msh = msh
         self.ics = ics if ics is not None else CustomInitialConditions(cfg, msh)
 
         # Arguments
         self.quiet = quiet if isinstance(quiet, bool) else self.cfg.quiet
-        self.timings = timings if isinstance(timings, bool) else self.cfg.timings
+        self.timings = timings if isinstance(timings, bool) else self.cfg.sol.timings
+        self.overwrite = overwrite if isinstance(overwrite, bool) else self.cfg.files.overwrite
+        self.nan_check = nan_check if isinstance(nan_check, bool) else self.cfg.sol.nan_check
+
+        # Initialize timer
+        self._timings = {}
 
         # Initialize sources (boundaries and domain)
         time = _np.linspace(0, cfg.sol.nt * cfg.dt, cfg.sol.nt + 1)
@@ -127,27 +154,44 @@ class FDTD:
         # Initialize save
         self._init_save()
 
-        # Initialize timer
-        self._timings = {}
+    @classmethod
+    def from_cfg(cls, cfg):
+        if isinstance(cfg, (str, _pathlib.Path)):
+            cfg = CfgSetup(cfg)
+        elif not isinstance(cfg, CfgSetup):
+            raise ValueError('cfg must be str, pathlib.Path, or CfgSetup instance')
+        msh = build_mesh(cfg)
+        return cls(cfg, msh)
 
     def _log(self):
-        """ Display informations about the simulation. """
+        """Display informations about the simulation."""
+
+        res = None
 
         if self.timings:
             desc, time_per_iteration = misc.unload_timings(self._timings)
+            if not self.quiet:
+                res = self.fld.residual()
+                txt = f"Iteration: [red]{self.cfg.sol.it:>6}\t[/]|\t"
+                txt += f"Residuals: [green]{res:>.4f}\t[/]|\t"
+                txt += f"Time: {time_per_iteration:>.4f}"
+                print(Panel(txt))
+                print(f"{desc}")
 
-        if self.timings and not self.quiet:
-            txt = f"Iteration: [red]{self.cfg.sol.it:>6}\t[/]|\t"
-            txt += f"Residuals: [green]{self.fld.residual():>.4f}\t[/]|\t"
-            txt += f"Time: {time_per_iteration:>.4f}"
-            print(Panel(txt))
-            print(f"{desc}")
+        if self.nan_check:
+            if res is None:
+                res = self.fld.residual()
+            if not isinstance(res, float):
+                print('[bold bright_magenta]NaN encountered : exiting simulation')
+                print(nan_check(self.fld.p))
+                _sys.exit(0)
+
 
     def run(self):
-        """ Run simulation. """
+        """Run simulation."""
         ti = _pc()
         try:
-            self.sfile = _h5py.File(self.cfg.datapath, 'a')
+            self.sfile = _h5py.File(self.cfg.files.data_path, 'a')
             for self.cfg.sol.it in track(range(self.cfg.sol.it + 1, self.cfg.sol.nt + 1),
                                          disable=self.quiet):
                 self._eulerian_fluxes()
@@ -161,9 +205,9 @@ class FDTD:
                 self._update_probes()
 
             if not self.quiet:
-                msg = 'Simulation completed in [red]{}[/].\n'
-                msg += 'Final residuals of [red]{:>.4f}[/].\n'
-                msg += 'End at physical time [red]t = {:.4f} sec.'
+                msg = 'Simulation completed in [bold bright_cyan]{}[/].\n'
+                msg += 'Final residuals of [bold bright_cyan]{:>.4f}[/].\n'
+                msg += 'End at physical time [bold bright_cyan]t = {:.4f} sec.'
                 print(Panel(msg.format(misc.secs_to_dhms(_pc() - ti),
                                        self.fld.residual(),
                                        self.cfg.dt * self.cfg.sol.it)))
@@ -173,47 +217,49 @@ class FDTD:
 
     @misc.timer
     def _eulerian_fluxes(self):
-        """ Compute Eulerian fluxes. """
+        """Compute Eulerian fluxes."""
         self.efluxes.rk4()
 
     @misc.timer
     def _viscous_fluxes(self):
-        """ Compute viscous fluxes. """
+        """Compute viscous fluxes."""
         if self.cfg.sol.vsc:
             self.vfluxes.integrate()
             self.efluxes.cout()
 
     @misc.timer
     def _selective_filter(self):
-        """ Apply selective filter. """
+        """Apply selective filter."""
         if self.cfg.sol.flt:
             self.sfilter.apply()
 
     @misc.timer
     def _shock_capture(self):
-        """ Apply shock capture procedure. """
+        """Apply shock capture procedure."""
         if self.cfg.sol.cpt:
             self.scapture.apply()
 
     @misc.timer
     def _vorticity(self):
-        """ Compute vorticity """
+        """Compute vorticity """
         if self.cfg.sol.vrt:
             self.wxyz.compute()
 
     @misc.timer
     def _update_probes(self):
-        """ Update probes. """
+        """Update probes."""
         if self.cfg.prb:
             for n, c in enumerate(self.cfg.prb):
                 self.probes[n, self.cfg.sol.it % self.cfg.sol.ns] = self.fld.p[tuple(c)]
 
     @misc.timer
     def _save(self):
-        """ Save data. """
+        """Save data."""
 
+        self.cfg.sol.itmax = self.cfg.sol.it
         self.sfile.attrs['itmax'] = self.cfg.sol.it
 
+        # Save fields
         if self.cfg.sol.save:
             self.sfile.create_dataset(f'r_it{self.cfg.sol.it}', data=self.fld.r)
             self.sfile.create_dataset(f'ru_it{self.cfg.sol.it}', data=self.fld.ru)
@@ -227,45 +273,69 @@ class FDTD:
                 if self.msh.ndim == 3:
                     self.sfile.create_dataset(f'wx_it{self.cfg.sol.it}', data=self.fld.wx)
                     self.sfile.create_dataset(f'wy_it{self.cfg.sol.it}', data=self.fld.wy)
+
+        # Unload probe values
         if self.cfg.prb:
             self.sfile['probe_values'][:, self.cfg.sol.it - self.cfg.sol.ns:self.cfg.sol.it] = self.probes
 
     def save_objects(self):
-        """ Save cfg and msh objects. """
+        """Save cfg and msh objects."""
 
-        with open(self.cfg.datapath.with_suffix('.cfg'), 'wb') as pkl:
-            _pkl.dump(self.cfg, pkl, protocol=5)
+        with open(self.cfg.files.data_path.with_suffix('.cfg'), 'wb') as pkl:
+            _pkl.dump(self.cfg, pkl, protocol=_pkl.HIGHEST_PROTOCOL)
 
-        with open(self.cfg.datapath.with_suffix('.msh'), 'wb') as pkl:
-            _pkl.dump(self.msh, pkl, protocol=5)
+        with open(self.cfg.files.data_path.with_suffix('.msh'), 'wb') as pkl:
+            _pkl.dump(self.msh, pkl, protocol=_pkl.HIGHEST_PROTOCOL)
 
     def _init_save(self):
-        """ Init save. """
+        """Init save file."""
+        if self.ics.has_old_fields:
+            self._init_save_old()
+        else:
+            self._init_save_new()
 
-        if self.cfg.datapath.is_file():
-            msg = f'[bold red]{self.cfg.datapath}[/] already exists. \n[blink]Overwrite ?'
-            overwrite = Prompt.ask(msg, choices=['yes', 'no'], default='no')
-            if overwrite.lower() == 'no':
+    def _init_save_old(self):
+        """Init old save file."""
+        if not self.overwrite:
+            overwrite = misc.Confirm.ask(f'[blink]Confirm appending results to {self.cfg.files.data_path}[/] ?')
+            if not overwrite:
                 _sys.exit(0)
 
-        self.sfile = _h5py.File(self.cfg.datapath, 'w')
-        self.sfile.attrs['vorticity'] = self.cfg.sol.vrt
-        self.sfile.attrs['ndim'] = self.msh.ndim
-        self.sfile.attrs['nt'] = self.cfg.sol.nt
-        self.sfile.attrs['ns'] = self.cfg.sol.ns
-        self.sfile.attrs['p0'] = self.cfg.tp.p0
-        self.sfile.attrs['gamma'] = self.cfg.tp.gamma
+        with _h5py.File(self.cfg.files.data_path, 'r+') as self.sfile:
+            self.sfile.attrs['nt'] = self.cfg.sol.nt
+            self.cfg.sol.it = self.sfile.attrs['itmax']
+            probes = _np.zeros((len(self.cfg.prb), self.cfg.sol.nt))
+            probes[:, :self.cfg.sol.it] = self.sfile['probe_values'][:, :self.cfg.sol.it]
+            del self.sfile['probe_values']
+            self.sfile.create_dataset('probe_values', data=probes)
 
-        probes = _np.zeros((len(self.cfg.prb), self.cfg.sol.nt))
-        self.sfile.create_dataset('probe_locations', data=self.cfg.prb.locs)
-        self.sfile.create_dataset('probe_values', data=probes)
+    def _init_save_new(self):
+        """Init new save file."""
+        if self.cfg.files.data_path.is_file() and not self.overwrite:
+            msg1 = f'[bold red]{self.cfg.files.data_path}[/] already exists. \n'
+            msg2 = f'[blink]Overwrite to start new simulation ?'
+            overwrite = misc.Confirm.ask(msg1 + msg2)
+            if not overwrite:
+                _sys.exit(0)
 
-        # Save initial fields
-        self._save()
-        self.sfile.close()
+        with _h5py.File(self.cfg.files.data_path, 'w') as self.sfile:
+            self.sfile.attrs['vorticity'] = self.cfg.sol.vrt
+            self.sfile.attrs['ndim'] = self.msh.ndim
+            self.sfile.attrs['nt'] = self.cfg.sol.nt
+            self.sfile.attrs['ns'] = self.cfg.sol.ns
+            self.sfile.attrs['p0'] = self.cfg.tp.p0
+            self.sfile.attrs['gamma'] = self.cfg.tp.gamma
+
+            probes = _np.zeros((len(self.cfg.prb), self.cfg.sol.nt))
+            self.sfile.create_dataset('probe_locations', data=self.cfg.prb.locs)
+            self.sfile.create_dataset('probe_values', data=probes)
+
+            # Save initial fields
+            self._save()
+
 
     def show(self, view='p', vmin=None, vmax=None, **kwargs):
-        """ Show results. """
+        """Show results."""
         viewer = MPLViewer(self.cfg, self.msh, self.fld)
         viewer.show(view=view, vmin=vmin, vmax=vmax, **kwargs)
 

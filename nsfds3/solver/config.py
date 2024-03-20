@@ -41,10 +41,9 @@ Example
 
 import os
 import ast
-import pickle
-import sys as _sys
-import pathlib as _pathlib
-import numpy as _np
+import sys
+import pathlib
+import numpy
 from rich import print
 from configparser import ConfigParser
 from pkg_resources import parse_version as _parse_version
@@ -55,8 +54,66 @@ from nsfds3.cpgrid import utils as cputils
 from matplotlib.ticker import EngFormatter
 
 
+class Files:
+
+    def __init__(self, path, directory, name, overwrite=False, verbose=False):
+
+        self.path = path
+        self._directory = directory
+        self._name = name
+        self.overwrite = overwrite
+        self.verbose = verbose
+        files.mkdir(self.directory, self.verbose)
+
+    @property
+    def data_path(self):
+        """Absolute path to data file.
+
+        Note
+        ----
+        data_path is read only. It cannot be set directly. Instead, set `directory` and `name`.
+        """
+        return self.directory / self.name
+
+    @property
+    def name(self):
+        """Data filename used to save fields."""
+        return self._name
+
+    @name.setter
+    def name(self, value):
+        if not isinstance(value, (str, pathlib.Path)):
+            raise ValueError('files.name: str or pathlib.Path expected')
+        self._name = pathlib.Path(value).with_suffix('.hdf5')
+
+    @property
+    def directory(self):
+        """Directory where to save data files.
+
+        Note
+        ----
+        If directory does not exist, create it.
+        """
+        return self._directory
+
+    @directory.setter
+    def directory(self, value):
+        if not isinstance(value, (str, pathlib.Path)):
+            raise ValueError('directory: str or pathlib.Path expected')
+        if isinstance(value, str):
+            value = pathlib.Path(value)
+        self._directory = self.path / value
+        files.mkdir(self.directory, self.verbose)
+
+    def __str__(self):
+        return 'Files'
+
+    def __repr__(self):
+        return str(self)
+
+
 class Graphics:
-    """ Helper class used by CfgSetup to setup graphical options. """
+    """Helper class used by CfgSetup to setup graphical options."""
 
     def __init__(self, fig=True, prb=True, bz=True, bc=True, fps=24):
 
@@ -68,11 +125,11 @@ class Graphics:
 
 
 class Solver:
-    """ Helper class used by CfgSetup to setup solver options. """
+    """Helper class used by CfgSetup to setup solver options."""
 
     def __init__(self, vsc=True, cpt=True, vrt=True, flt=True,
                  xnu_n=0.2, xnu_0=0.01, nt=50, ns=10, cfl=0.5,
-                 save=True, resume=False):
+                 save=True, mp=False, nan_check=False, resume=False, timings=False):
 
         self.vsc = vsc
         self.cpt = cpt
@@ -85,12 +142,16 @@ class Solver:
         self.cfl = cfl
         self.save = save
         self.it = 0
+        self.itmax = 0
+        self.mp = mp
+        self.nan_check = nan_check
         self.resume = resume
+        self.timings = timings
         self._check_filter(self.xnu_n)
         self._check_filter(self.xnu_0)
 
     def _check_filter(self, strength):
-        """ Check that the strength of the filter is set correctly. """
+        """Check that the strength of the filter is set correctly."""
         if not isinstance(strength, float):
             raise ValueError('Solver.xnu: float expected')
 
@@ -99,7 +160,7 @@ class Solver:
 
     @property
     def nt(self):
-        """ Number of time iterations.
+        """Number of time iterations.
 
         Note
         ----
@@ -118,7 +179,7 @@ class Solver:
 
     @property
     def ns(self):
-        """ Field backup frequency.
+        """Field backup frequency.
 
         Note
         ----
@@ -135,7 +196,7 @@ class Solver:
 
     @property
     def xnu_n(self):
-        """ Selective filter strength.
+        """Selective filter strength.
 
         Note
         ----
@@ -150,7 +211,7 @@ class Solver:
 
     @property
     def xnu_0(self):
-        """ Selective filter strength for points close to boundaries.
+        """Selective filter strength for points close to boundaries.
 
         Note
         ----
@@ -164,9 +225,13 @@ class Solver:
         self._xnu_0 = value
 
     def adjust_nt(self):
-        """ Adjust the number of time iterations `nt` to be a multiple of `ns`. """
+        """Adjust the number of time iterations `nt` to be a multiple of `ns`."""
         if self._nt % self._ns:
             self._nt -= self._nt % self._ns
+
+    def __eq__(self, other):
+        """Report whether self and other are the same."""
+        return misc.are_equals(self, other, attrs=['ns', 'cfl'])
 
     def __str__(self):
         s = "\n[Solver]"
@@ -177,131 +242,114 @@ class Solver:
         return s
 
     def __repr__(self):
-        return self.__str__()
+        return str(self)
 
 
 class Geometry:
-    """Helper class used by CfgSetup to setup geometrical parameters. """
+    """Helper class used by CfgSetup to setup geometrical parameters."""
 
     def __init__(self, shape, steps=None, origin=None, bc=None, flat=None,
                  path=None, file=None, name=None, kwargs=None, curvname=None,
                  bz_n=20, bz_stretch_factor=2, bz_stretch_order=3, bz_filter_order=3.,
-                 stencil=11, free=True):
+                 stencil=11, force=False, free=True):
 
         self.stencil = stencil
         self.free = free
+        self.force = force
         self.bz_n = bz_n
         self.bz_filter_order = bz_filter_order
         self.bz_stretch_order = bz_stretch_order
         self.bz_stretch_factor = bz_stretch_factor
-        self._shape, self._steps, self._origin, self._bc = cputils.parse_grid_parameters(shape,
-                                                                                         steps,
-                                                                                         origin,
-                                                                                         bc,
-                                                                                         bz_n)
+        self._parse_geo(shape, steps, origin, bc, bz_n)
+
         self._flat = flat
-        self.path = path
+        self._check_flat()
+
+        self.path = pathlib.Path(path) if path else pathlib.Path()
         self._file = file
         self._name = name
         self._kwargs = kwargs if isinstance(kwargs, dict) else dict()
         self._curvname = curvname
+
+        self._obstacles = None
         self._update_obstacles()
         self._update_curvilinear_transformation()
 
-    @staticmethod
-    def to_2d_tuple(var, ax):
-        """Return a 2d version of the tuple `var` removing the ax-th value. """
-        return tuple(s for i, s in enumerate(var) if i != ax)
-
-    def convert_to_2d(self):
-
-        self._check_flat(self.flat)
-        ax, idx = self.flat
-        self._shape = self.to_2d_tuple(self.shape, ax)
-        self._steps = self.to_2d_tuple(self.steps, ax)
-        self._origin = self.to_2d_tuple(self.origin, ax)
-        self._bc = ''.join(bc for i, bc in enumerate(self.bc) if i not in [2*ax, 2*ax + 1])
-        self.obstacles = [obs.flatten(ax) for obs in self.obstacles if idx in obs.rn[ax]]
-
-    def _check_flat(self, flat):
-        """Check that flat is consistent. """
-        if not isinstance(flat, (tuple, type(None))):
-            raise ValueError('Geometry.flat: tuple of None expected')
-
-        if flat is not None:
-            if len(flat) != 2:
-                raise ValueError('Geometry.flat: length 2 expected (axis, location)')
-
-            flat_ax, flat_idx = self.flat
-
-            if flat_ax not in range(3):
-                raise ValueError('Geometry.flat[0]: 0, 1, or 2 expected')
-
-            if flat_idx not in range(self.shape[flat_ax]):
-                raise ValueError('Geometry.flat[1]: must be in the domain')
-
-    def _update_obstacles(self):
-        if self.name is not None:
-            file = '' if self.file is None else self.file
-            self.obstacles = cputils.get_func(self.path / file, self.name)
-            if self.obstacles is not None:
-                self.obstacles = self.obstacles(self.shape, **self.kwargs)
-        else:
-            self.obstacles = None
-
-        self.obstacles = [] if self.obstacles is None else self.obstacles
-
-    def _update_curvilinear_transformation(self):
-        if self.curvname is not None:
-            file = '' if self.file is None else self.file
-            self.curvfunc = cputils.get_func(self.path / file, self.curvname)
-        else:
-            self.curvfunc = None
-
     @property
     def shape(self):
-        """Shape of the computation domain. """
+        """Shape of the computation domain."""
+        if self.flat:
+            ax, _ = self.flat
+            return self._to_2d_tuple(self._shape, ax)
         return self._shape
 
     @shape.setter
     def shape(self, value):
-        value = cputils.parse_shape(value)
-        self._shape = value
+        value = self._parse_tuple(value, 'shape')
+        self._parse_geo(value, self._steps, self._origin, self._bc, self.bz_n)
 
     @property
     def steps(self):
-        """Spatial steps (dx, dy[, dz]).
+        """Spatial steps (dx, dy[, dz]). Must be >= 1e6 m.
+
+        Note
+        ----
+        For simulation with thermoviscous effects, a small spatial step can lead
+        to instabilities.
 
         Note
         ----
         If `steps` is modified, the time step `dt` is modified too.
         """
+        if self.flat:
+            ax, _ = self.flat
+            return self._to_2d_tuple(self._steps, ax)
         return self._steps
 
     @steps.setter
     def steps(self, value):
-        value = cputils.parse_steps(self.shape, value)
-        self._steps = value
+        value = self._parse_tuple(value, 'steps')
+        self._parse_geo(self._shape, value, self._origin, self._bc, self.bz_n)
 
     @property
     def origin(self):
-        """Origin of the computation domain. """
+        """Origin of the computation domain."""
+        if self.flat:
+            ax, _ = self.flat
+            return self._to_2d_tuple(self._origin, ax)
         return self._origin
 
     @origin.setter
     def origin(self, value):
-        value = cputils.parse_origin(self.shape, value, self.bc, self.bz_n)
-        self._origin = value
+        value = self._parse_tuple(value, 'origin')
+        self._parse_geo(self._shape, self._steps, value, self._bc, self.bz_n)
 
     @property
     def bc(self):
-        """Boundary condition of the computation domain. """
+        """Boundary condition of the computation domain."""
+        if self.flat:
+            ax, _ = self.flat
+            return ''.join(bc for i, bc in enumerate(self._bc) if i not in [2*ax, 2*ax + 1])
         return self._bc
 
     @bc.setter
     def bc(self, value):
-        value = cputils.parse_bc(self.shape, value)
-        self._bc = value
+        if not isinstance(value, str):
+            raise ValueError(f'Geometry.shape: str expected')
+        if self.flat and len(value) == 4:
+            ax, _ = self.flat
+            value = value[:2*ax] + self._bc[2*ax:2*ax+2] + value[2*ax:]
+        if len(value) != len(self._bc):
+            raise ValueError(f'Geometry.bc must be of length {len(self._bc)}')
+        self._parse_geo(self._shape, self._steps, self._origin, value, self.bz_n)
+
+    @property
+    def obstacles(self):
+        """Obstacles in presence."""
+        if self.flat and self._obstacles:
+            ax, idx = self.flat
+            return [obs.flatten(ax) for obs in self._obstacles if idx in obs.rn[ax]]
+        return self._obstacles
 
     @property
     def flat(self):
@@ -334,7 +382,7 @@ class Geometry:
 
     @property
     def name(self):
-        """Name of the function to be used to set up the `Obstacle` arrangement. """
+        """Name of the function to be used to set up the `Obstacle` arrangement."""
         return self._name
 
     @name.setter
@@ -344,7 +392,7 @@ class Geometry:
 
     @property
     def kwargs(self):
-        """Keyword arguments of the function to be used to set up the `Obstacle` arrangement. """
+        """Keyword arguments of the function to be used to set up the `Obstacle` arrangement."""
         return self._kwargs
 
     @kwargs.setter
@@ -356,7 +404,7 @@ class Geometry:
 
     @property
     def curvname(self):
-        """Name of the function to be used to set up the curvilinear transformation. """
+        """Name of the function to be used to set up the curvilinear transformation."""
         return self._curvname
 
     @curvname.setter
@@ -365,8 +413,8 @@ class Geometry:
         self._update_curvilinear_transformation()
 
     @property
-    def grid_configuration(self):
-        """Return (arg, kwargs) needed to instantiate `CartesianGrid` or `CurvilinearGrid`. """
+    def args(self):
+        """Return (arg, kwargs) needed to instantiate `CartesianGrid` or `CurvilinearGrid`."""
         args = self.shape, self.steps
         kwargs = {'origin': self.origin,
                   'bc': self.bc,
@@ -381,27 +429,70 @@ class Geometry:
             kwargs['curvfunc'] = self.curvfunc
         return args, kwargs
 
+    def _parse_geo(self, shape, steps, origin, bc, bz_n):
+        self._shape, self._steps, self._origin, self._bc = cputils.parse_geo(shape, steps, origin, bc, bz_n)
+
+    def _parse_tuple(self,value, name):
+        var = getattr(self, f'_{name}')
+        if not isinstance(value, (tuple, list)):
+            raise ValueError(f'Geometry.{name}: tuple expected')
+        if self.flat and len(value) == 2:
+            ax, _ = self.flat
+            value = value[:ax] + (var[ax], ) + value[ax:]
+        if len(value) != len(var):
+            raise ValueError(f'Geometry.{name} must be of length {len(var)}')
+        return value
+
+    @staticmethod
+    def _to_2d_tuple(var, ax):
+        """Return a 2d version of the tuple `var` removing the ax-th value."""
+        return tuple(s for i, s in enumerate(var) if i != ax)
+
+    def _check_flat(self):
+        """Check that flat is consistent."""
+        if not isinstance(self._flat, (tuple, type(None))):
+            raise ValueError('Geometry.flat: tuple of None expected')
+
+        if self._flat is not None:
+
+            if len(self._flat) != 2:
+                raise ValueError('Geometry.flat: length 2 expected (axis, location)')
+
+            if len(self._shape) != 3:
+                raise ValueError('Geometry.shape: length 3 expected')
+
+            flat_ax, flat_idx = self.flat
+
+            if flat_ax not in range(3):
+                raise ValueError('Geometry.flat[0]: 0, 1, or 2 axis expected')
+
+            if flat_idx not in range(self._shape[flat_ax]):
+                raise ValueError('Geometry.flat[1]: index must be in the domain')
+
+    def _update_obstacles(self):
+        if self.name is not None:
+            file = '' if self.file is None else self.file
+            self._obstacles = cputils.get_func(self.path / file, self.name)
+            if self._obstacles is not None:
+                self._obstacles = self._obstacles(self._shape, **self.kwargs)
+
+        self._obstacles = [] if self._obstacles is None else self._obstacles
+
+    def _update_curvilinear_transformation(self):
+        if self.curvname is not None:
+            file = '' if self.file is None else self.file
+            self.curvfunc = cputils.get_func(self.path / file, self.curvname)
+        else:
+            self.curvfunc = None
+
     def __eq__(self, other):
-        """Report whether self and other have same grid configuration or not. """
-        if not isinstance(other, Geometry):
-            raise ValueError('Can only compare Geometry objects together')
+        """Report whether self and other have same grid configuration or not."""
 
         attrs = ['shape', 'steps', 'origin', 'bc', 'obstacles',
                  'bz_n', "bz_stretch_factor", "bz_stretch_order", 'bz_filter_order',
-                 "stencil", "free", "curvfunc"]
+                 "stencil", "curvfunc"]
 
-        for attr in attrs:
-
-            a1 = getattr(self, attr, None)
-            a2 = getattr(other, attr, None)
-
-            if callable(a1) and callable(a2):
-                if a1.__name__ != a2.__name__:
-                    return False
-            elif a1 != a2:
-                return False
-
-        return True
+        return misc.are_equals(self, other, attrs)
 
     def __str__(self):
 
@@ -431,7 +522,7 @@ class Geometry:
 
 
 class Probes:
-    """ Helper class used by CfgSetup to setup probes parameters.
+    """Helper class used by CfgSetup to setup probes parameters.
 
     Parameters
     ----------
@@ -442,6 +533,9 @@ class Probes:
         with n being the number of dimensions of the domain (2d/3d).
     shape: tuple
         Shape of the domain.
+    flat: tuple or None
+        Whether geometry is flattened or not.
+        If a tuple is provided, it must provide (flat axis, flat index).
 
     Example
     -------
@@ -451,23 +545,20 @@ class Probes:
         # p-probe @ (34, 49) and vx-probe @ (44, 59)
         prb = Probes(vars=(p, vx), locs=((34, 49), (44, 59)), shape=(200, 200))
     """
-    def __init__(self, vars, locs, shape):
+    def __init__(self, vars, locs, shape, flat=None):
 
-        self.shape = shape
-        self.ndim = len(shape)
+        self._shape = shape
+        self._ndim = len(shape)
+        self._flat = flat
+        if self._ndim != 3 and self._flat:
+            raise ValueError("Source: length 3 expected for shape")
+
         self._vars = vars
-        self._locs = locs
-        self._check()
-
-    def convert_to_2d(self, ax):
-        """ """
-        if self.locs and self.ndim == 3:
-            self.ndim = 2
-            self._locs = [[c for i, c in enumerate(loc) if i != ax] for loc in self._locs]
+        self._locs = self._parse_locs(locs)
 
     @property
     def vars(self):
-        """ Locations of the probes. """
+        """Variables to probe."""
         return self._vars
 
     @vars.setter
@@ -476,44 +567,65 @@ class Probes:
 
     @property
     def locs(self):
-        """ Locations of the probes. """
+        """Locations of the probes."""
+        if self._flat:
+            ax, _ = self._flat
+            return tuple(tuple(c for i, c in enumerate(loc) if i != ax) for loc in self._locs)
         return self._locs
 
     @locs.setter
     def locs(self, value):
+        value = self._parse_locs(value)
+        if self._flat and any(len(c) == 2 for c in value):
+            ax, idx = self._flat
+            value = tuple(c[:ax] + (idx, ) + c[ax:] for c in value)
         self._locs = value
-        self._check()
 
-    def _check(self):
-        if not isinstance(self._locs, (tuple, list)):
+    def _parse_locs(self, value):
+        """Parse locations of the probes."""
+        # is tuple ?
+        if not isinstance(value, (tuple, list)):
             raise ValueError('Probes.locs: tuple expected')
 
-        if not any(isinstance(p, (tuple, list)) for p in self._locs):
-            self._locs = self._locs,
+        # is tuple of tuples
+        if not any(isinstance(p, (tuple, list)) for p in value):
+            value = value,
+        value = tuple(tuple(c) for c in value)
 
-        for i, loc in enumerate(self._locs):
-            if len(loc) not in (0, self.ndim):
-                raise ValueError(f'Probes.locs: tuple of length {self.ndim} expected')
-            if any(not 0 <= c < s for c, s in zip(loc, self.shape)):
+        # is length ok and location in the domain ?
+        if hasattr(self, '_locs'):
+            ndims = (0, 2, 3) if self._flat else (0, self._ndim)
+        else:
+            ndims = (0, self._ndim)
+        for i, loc in enumerate(value):
+            if len(loc) not in ndims:
+                raise ValueError(f"Probes.locs: tuples of length {'|'.join(str(c) for c in ndims)} expected")
+            if any(not 0 <= c < s for c, s in zip(loc, self._shape)):
                 raise ValueError(f'Probes.locs[{i}]: out of bounds')
+
+        return value
 
     def __len__(self):
         if not any(self.locs):
             return 0
         return len(self.locs)
 
+    def __eq__(self, other):
+        """Report whether self and other are the same."""
+        return misc.are_equals(self, other, attrs=['locs', 'vars'])
+
     def __iter__(self):
         return iter(self.locs)
 
     def __str__(self):
-        return f'[Probes] {self.locs}'
+        return f'\n[Probes]\n\t- variables : {self.vars}\n\t- Locations: {self.locs}'
 
     def __repr__(self):
-        return self.__str__()
+        return str(self)
 
 
 class CfgSetup:
-    """ Setup configuration of the solver.
+    """Setup configuration of the solver.
 
     Parameters
     ----------
@@ -534,11 +646,12 @@ class CfgSetup:
 
         [general]
         version                     -> self.version
-        data dir                    -> self.datadir = 'data/'
-        data file                   -> self.datafile = 'tmp'
-        timings                     -> self.timings = False
         quiet                       -> self.quiet = False
-        mp                          -> self.mp = False
+
+        [files]
+        directory                   -> self.files.directory = 'data/'
+        name                        -> self.files.name = 'tmp'
+        overwrite                   -> self.files.overwrite = False
 
         [thermophysics]
         norm                        -> self.tp.norm = False
@@ -547,6 +660,7 @@ class CfgSetup:
         gamma                       -> self.tp.gamma = 1.4
 
         [geometry]
+        force                       -> self.geo.force = False
         free                        -> self.geo.free = True
         file                        -> self.geo.file = None
         name                        -> self.geo.name = None
@@ -577,7 +691,7 @@ class CfgSetup:
         evolution                   -> self.src.evolution = ()
 
         [flow]
-        type                        -> self.flw.kind = None
+        type                        -> self.flw.ftype = None
         components                  -> self.flw.components = (0, 0, 0)
 
         [probes]
@@ -585,6 +699,10 @@ class CfgSetup:
         locations                   -> self.prb.locs = ()
 
         [solver]
+        mp                          -> self.sol.mp = False
+        timings                     -> self.sol.timings = False
+        nan_check                   -> self.sol.nan_check = False
+        resume                      -> self.sol.resume = False
         viscous fluxes              -> self.sol.vsc = True
         vorticity                   -> self.sol.vrt = True
         shock capture               -> self.sol.cpt = True
@@ -594,7 +712,6 @@ class CfgSetup:
         nt                          -> self.sol.nt = 50
         ns                          -> self.sol.ns = 10
         cfl                         -> self.sol.cfl = 0.5
-        resume                      -> self.sol.resume = False
         save fields                 -> self.sol.save = True
 
         [graphics]
@@ -606,7 +723,7 @@ class CfgSetup:
     """
 
     _NONE = ('', 'no', 'No', 'none', 'None', None, 'False', 'false', False)
-    _SECTIONS = ('general', 'thermophysic', 'geometry',
+    _SECTIONS = ('general', 'files', 'thermophysic', 'geometry',
                  'sources', 'flow', 'probes', 'solver', 'graphics')
 
     def __init__(self, cfgfile=None, last=False, verbose=False):
@@ -616,11 +733,13 @@ class CfgSetup:
         self.stencil = 11
         self.verbose = verbose
         self.cpu_count = os.cpu_count()
-        self.path_nsfds3 = _pathlib.Path.home() / '.nsfds3'
+
+        # Path to config files
+        self.path_nsfds3 = pathlib.Path.home() / '.nsfds3'
         files.mkdir(self.path_nsfds3, self.verbose)
         self.path_last = self.path_nsfds3 / 'last'
-        self.path_current = _pathlib.Path.cwd()
-        self.cfgfile_last = _pathlib.Path(files.read_file(self.path_last, self.verbose))
+        self.path_current = pathlib.Path.cwd()
+        self.cfgfile_last = pathlib.Path(files.read_file(self.path_last, self.verbose))
 
         # Initialize configparser
         self._cfg = ConfigParser(allow_no_value=True, converters={'lit': self.parse_literal})
@@ -628,18 +747,8 @@ class CfgSetup:
         # load the configuration file and parse all parameters
         self.load(cfgfile, last)
 
-    @staticmethod
-    def parse_literal(value):
-        """ Parse value. """
-        if value.strip() == '':
-            return None
-        try:
-            return ast.literal_eval(value)
-        except ValueError:
-            return value if value.lower() not in ('', 'no') else None
-
     def load(self, cfgfile=None, last=False):
-        """ Load configuration file `cfgfile`. If file is not found, fallback to default configuration.
+        """Load configuration file `cfgfile`. If file is not found, fallback to default configuration.
 
         Parameters
         ----------
@@ -650,7 +759,7 @@ class CfgSetup:
             If cfgfile is not provided or not found, try to load the last configuration used if it exists and if last is True.
         """
         if cfgfile is None and not last:
-            path, cfgfile = self.path_current, _pathlib.Path('tmp.conf')
+            path, cfgfile = self.path_current, pathlib.Path('tmp.conf')
         elif cfgfile:
             path, cfgfile = self._load(cfgfile)
 
@@ -663,8 +772,8 @@ class CfgSetup:
         self.run()
 
     def _load(self, cfgfile):
-        """ Help method to load cfgfiles. """
-        cfgfile = _pathlib.Path(cfgfile).absolute()
+        """Help method to load cfgfiles."""
+        cfgfile = pathlib.Path(cfgfile).absolute()
         path = cfgfile.absolute().parent
         if cfgfile.is_file() and path.is_dir():
             self._cfg.read(cfgfile)
@@ -675,94 +784,102 @@ class CfgSetup:
     def write(self, fname):
         """Write a configuration file with current configuration."""
 
-        self._cfg.set('general', 'version', str(self.version)) #str(nsfds3.__version__))
-        self._cfg.set('general', 'data dir', str(self.datadir))
-        self._cfg.set('general', 'data file', str(self.datafile))
-        self._cfg.set('general', 'timings', str(self.timings))
-        self._cfg.set('general', 'quiet', str(self.quiet))
-        self._cfg.set('general', 'mp', str(self.mp))
+        cfg = ConfigParser(allow_no_value=True, converters={'lit': self.parse_literal})
 
-        self._cfg.set('thermophysic', 'norm', str(self.tp.norm))
-        self._cfg.set('thermophysic', 'rho0', str(self.tp.rho0))
-        self._cfg.set('thermophysic', 't0', str(self.tp.T0 - self.tp.Tref))
-        self._cfg.set('thermophysic', 'gamma', str(self.tp.gamma))
+        for section in self._SECTIONS:
+            cfg.add_section(section)
 
-        self._cfg.set('geometry', 'free', str(self.geo.free))
-        self._cfg.set('geometry', 'file', str(self.geo.file))
-        self._cfg.set('geometry', 'name', str(self.geo.name))
-        self._cfg.set('geometry', 'kwargs', str(self.geo.kwargs))
-        self._cfg.set('geometry', 'curvname', str(self.geo.curvname))
-        self._cfg.set('geometry', 'bc', str(self.geo.bc))
-        self._cfg.set('geometry', 'shape', str(self.geo.shape))
-        self._cfg.set('geometry', 'origin', str(self.geo.origin))
-        self._cfg.set('geometry', 'steps', str(self.geo.steps))
-        self._cfg.set('geometry', 'flat', str(self.geo.flat))
-        self._cfg.set('geometry', 'bz grid points', str(self.geo.bz_n))
-        self._cfg.set('geometry', 'bz filter order', str(self.geo.bz_filter_order))
-        self._cfg.set('geometry', 'bz stretch order', str(self.geo.bz_stretch_order))
-        self._cfg.set('geometry', 'bz stretch factor', str(self.geo.bz_stretch_factor))
+        cfg.set('general', 'version', str(self.version)) #str(nsfds3.__version__))
+        cfg.set('general', 'quiet', str(self.quiet))
 
-        self._cfg.set('sources', 'on', str(self.src.on))
-        self._cfg.set('sources', 'origin', str(self.src.origin))
-        self._cfg.set('sources', 'S0', str(self.src.S0))
-        self._cfg.set('sources', 'Bx', str(self.src.Bx))
-        self._cfg.set('sources', 'By', str(self.src.By))
-        self._cfg.set('sources', 'Bz', str(self.src.Bz))
-        self._cfg.set('sources', 'kx', str(self.src.kx))
-        self._cfg.set('sources', 'ky', str(self.src.ky))
-        self._cfg.set('sources', 'kz', str(self.src.kz))
-        self._cfg.set('sources', 'k', str(self.src.k))
-        self._cfg.set('sources', 'R', str(self.src.Rx))
-        self._cfg.set('sources', 'evolution', str(self.src.evolution))
+        cfg.set('files', 'directory', str(self.files.directory))
+        cfg.set('files', 'name', str(self.files.name))
+        cfg.set('files', 'overwrite', str(self.files.overwrite))
 
-        self._cfg.set('flow', 'kind', str(self.flw.kind))
-        self._cfg.set('flow', 'components', str(self.flw.components))
+        cfg.set('thermophysic', 'norm', str(self.tp.norm))
+        cfg.set('thermophysic', 'rho0', str(self.tp.rho0))
+        cfg.set('thermophysic', 't0', str(self.tp.T0 - self.tp.Tref))
+        cfg.set('thermophysic', 'gamma', str(self.tp.gamma))
 
-        self._cfg.set('probes', 'variables', str(self.prb.vars))
-        self._cfg.set('probes', 'locations', str(self.prb.locs))
+        cfg.set('geometry', 'free', str(self.geo.free))
+        cfg.set('geometry', 'force', str(self.geo.force))
+        cfg.set('geometry', 'file', str(self.geo.file))
+        cfg.set('geometry', 'name', str(self.geo.name))
+        cfg.set('geometry', 'kwargs', str(self.geo.kwargs))
+        cfg.set('geometry', 'curvname', str(self.geo.curvname))
+        cfg.set('geometry', 'bc', str(self.geo._bc))
+        cfg.set('geometry', 'shape', str(self.geo._shape))
+        cfg.set('geometry', 'origin', str(self.geo._origin))
+        cfg.set('geometry', 'steps', str(self.geo._steps))
+        cfg.set('geometry', 'flat', str(self.geo.flat))
+        cfg.set('geometry', 'bz grid points', str(self.geo.bz_n))
+        cfg.set('geometry', 'bz filter order', str(self.geo.bz_filter_order))
+        cfg.set('geometry', 'bz stretch order', str(self.geo.bz_stretch_order))
+        cfg.set('geometry', 'bz stretch factor', str(self.geo.bz_stretch_factor))
 
-        self._cfg.set('solver', 'nt', str(self.sol.nt))
-        self._cfg.set('solver', 'ns', str(self.sol.ns))
-        self._cfg.set('solver', 'cfl', str(self.sol.cfl))
-        self._cfg.set('solver', 'resume', str(self.sol.resume))
-        self._cfg.set('solver', 'save fields', str(self.sol.save))
-        self._cfg.set('solver', 'viscous fluxes', str(self.sol.vsc))
-        self._cfg.set('solver', 'vorticity', str(self.sol.vrt))
-        self._cfg.set('solver', 'shock capture', str(self.sol.cpt))
-        self._cfg.set('solver', 'selective filter', str(self.sol.flt))
-        self._cfg.set('solver', 'selective filter n-strength', str(self.sol.xnu_n))
-        self._cfg.set('solver', 'selective filter 0-strength ', str(self.sol.xnu_0))
+        cfg.set('sources', 'on', str(self.src.on))
+        cfg.set('sources', 'origin', str(self.src._origin))
+        cfg.set('sources', 'S0', str(self.src.S0))
+        cfg.set('sources', 'Bx', str(self.src.Bx))
+        cfg.set('sources', 'By', str(self.src.By))
+        cfg.set('sources', 'Bz', str(self.src.Bz))
+        cfg.set('sources', 'kx', str(self.src.kx))
+        cfg.set('sources', 'ky', str(self.src.ky))
+        cfg.set('sources', 'kz', str(self.src.kz))
+        cfg.set('sources', 'k', str(self.src.k))
+        cfg.set('sources', 'R', str(self.src.Rx))
+        cfg.set('sources', 'evolution', str(self.src.evolution))
 
-        self._cfg.set('graphics', 'figures', str(self.gra.fig))
-        self._cfg.set('graphics', 'probes', str(self.gra.prb))
-        self._cfg.set('graphics', 'bz', str(self.gra.bz))
-        self._cfg.set('graphics', 'bc', str(self.gra.bc))
-        self._cfg.set('graphics', 'fps', str(self.gra.fps))
+        cfg.set('flow', 'ftype', str(self.flw.ftype))
+        cfg.set('flow', 'components', str(self.flw._components))
 
-        fname = _pathlib.Path(fname) if fname.endswith('.conf') else _pathlib.Path(f"{fname}.conf")
+        cfg.set('probes', 'variables', str(self.prb.vars))
+        cfg.set('probes', 'locations', str(self.prb._locs))
+
+        cfg.set('solver', 'mp', str(self.sol.mp))
+        cfg.set('solver', 'resume', str(self.sol.resume))
+        cfg.set('solver', 'timings', str(self.sol.timings))
+        cfg.set('solver', 'nt', str(self.sol.nt))
+        cfg.set('solver', 'ns', str(self.sol.ns))
+        cfg.set('solver', 'cfl', str(self.sol.cfl))
+        cfg.set('solver', 'save fields', str(self.sol.save))
+        cfg.set('solver', 'viscous fluxes', str(self.sol.vsc))
+        cfg.set('solver', 'vorticity', str(self.sol.vrt))
+        cfg.set('solver', 'shock capture', str(self.sol.cpt))
+        cfg.set('solver', 'selective filter', str(self.sol.flt))
+        cfg.set('solver', 'selective filter n-strength', str(self.sol.xnu_n))
+        cfg.set('solver', 'selective filter 0-strength', str(self.sol.xnu_0))
+        cfg.set('solver', 'nan_check', str(self.sol.nan_check))
+
+        cfg.set('graphics', 'figures', str(self.gra.fig))
+        cfg.set('graphics', 'probes', str(self.gra.prb))
+        cfg.set('graphics', 'bz', str(self.gra.bz))
+        cfg.set('graphics', 'bc', str(self.gra.bc))
+        cfg.set('graphics', 'fps', str(self.gra.fps))
+
+        fname = pathlib.Path(fname).with_suffix('.conf')
         if fname.parent:
-            path = self.path_current / fname
+            path = fname
         else:
-            path = self.datadir / fname
+            path = self.cfgfile.parent / fname
 
         with open(path, 'w') as fn:
-            self._cfg.write(fn)
+            cfg.write(fn)
 
-    @property
-    def grid_configuration(self):
-        """Return (arg, kwargs) needed to instantiate `CartesianGrid` or `CurvilinearGrid`."""
-        return self.geo.grid_configuration
+    def overwrite(self):
+        """Overwrite configuration file."""
+        self.write(self.cfgfile)
 
     def get_grid_backup(self):
         """Return existing `CartesianGrid` or `CurvilinearGrid` object for this grid configuration
         if found, else return None."""
-        cfg, msh = files.get_objects(self.datadir, self.datafile)
+        cfg, msh = files.get_objects(self.files.directory, self.files.name)
         if self.geo == cfg.geo:
             return msh
         return None
 
     def run(self):
-        """ Run the parser. """
+        """Run the parser."""
 
         # Create each section that does not exist in the configuration
         for section in self._SECTIONS:
@@ -771,58 +888,16 @@ class CfgSetup:
 
         self.check_version()
         self._get_parameters()
-        if self.geo.flat and self.ndim == 3:
-            self.convert_to_2d()
 
         if not self.quiet and self.cfgfile is not None:
-            print(f'\n[bold red]{self.cfgfile}[/] loaded.\n')
+            print(f'\n[bold bright_cyan]{self.cfgfile}[bold bright_magenta] loaded.')
         elif not self.quiet:
-            print(f'\n[bold red]Default configuration[/] loaded.\n')
+            print(f'\n[bold bright_cyan]Default configuration[bold bright_magenta] loaded.')
 
     @property
     def version(self):
         """Version of configuration file."""
         return self._version
-
-    @property
-    def datapath(self):
-        """Absolute path to datafile.
-
-        Note
-        ----
-        datapath is read only. It cannot be set directly. Instead, set `datadir` and `datafile`.
-        """
-        return self.datadir / self.datafile
-
-    @property
-    def datafile(self):
-        """Data filename used to save fields."""
-        return self._datafile
-
-    @datafile.setter
-    def datafile(self, value):
-        if not isinstance(value, (str, _pathlib.Path)):
-            raise ValueError('datafile: str or pathlib.Path expected')
-        self._datafile = _pathlib.Path(value).with_suffix('.hdf5')
-
-    @property
-    def datadir(self):
-        """Directory where to save data files.
-
-        Note
-        ----
-        If directory does not exist, create it.
-        """
-        return self._datadir
-
-    @datadir.setter
-    def datadir(self, value):
-        if not isinstance(value, (str, _pathlib.Path)):
-            raise ValueError('datadir: str or pathlib.Path expected')
-        if isinstance(value, str):
-            value = _pathlib.Path(value)
-        self._datadir = self.path / value
-        files.mkdir(self.datadir, self.verbose)
 
     @property
     def dt(self):
@@ -834,7 +909,7 @@ class CfgSetup:
         `sol.cfl`, `tp.c0` or `flw.components` attributes is modified.
 
         """
-        if self.flw.kind is not None:
+        if self.flw.ftype is not None:
             c = self.tp.c0 + max([abs(u) for u in self.flw.components])
         else:
             c = self.tp.c0
@@ -842,8 +917,7 @@ class CfgSetup:
 
     @property
     def frequencies(self):
-        """
-        Calculate the minimum and maximum frequencies for the simulation.
+        """Calculate the minimum and maximum frequencies for the simulation.
 
         Returns
         -------
@@ -860,19 +934,22 @@ class CfgSetup:
 
     @property
     def ndim(self):
+        """Dimension of the grid."""
         return len(self.geo.shape)
 
     def _get_parameters(self):
-        """ Parse all simulation parameters. """
+        """Parse all simulation parameters."""
 
         CFG_GNL = self._cfg['general']
         self._version = CFG_GNL.get('version', self._version_base)
-        self._datadir = self.path / _pathlib.Path(CFG_GNL.get('data dir', 'data/'))
-        self._datafile = _pathlib.Path(CFG_GNL.get('data file', self.cfgfile.stem)).with_suffix('.hdf5')
-        self.timings = CFG_GNL.getboolean('timings', False)
         self.quiet = CFG_GNL.getboolean('quiet', False)
-        self.mp = CFG_GNL.getboolean('mp', True)
-        files.mkdir(self.datadir, self.verbose)
+
+        CFG_FILES = self._cfg['files']
+        self.files = Files(path=self.path,
+                           directory=self.path / pathlib.Path(CFG_FILES.get('directory', 'data/')),
+                           name=pathlib.Path(CFG_FILES.get('name', self.cfgfile.stem)).with_suffix('.hdf5'),
+                           overwrite=CFG_FILES.getboolean('overwrite', False),
+                           verbose=self.verbose)
 
         CFG_GEO = self._cfg['geometry']
         self.geo = Geometry(shape=CFG_GEO.getlit('shape', (128, 96, 32)),
@@ -887,9 +964,10 @@ class CfgSetup:
                             curvname=CFG_GEO.getlit('curvname', None),
                             bz_n=CFG_GEO.getint('bz grid points', 20),
                             bz_filter_order=CFG_GEO.getfloat('bz filter ordrer', 3.),
-                            bz_stretch_factor=CFG_GEO.getfloat('bz stretch order', 3.),
-                            bz_stretch_order=CFG_GEO.getfloat('bz stretch factor', 2.),
+                            bz_stretch_factor=CFG_GEO.getfloat('bz stretch factor', 2.),
+                            bz_stretch_order=CFG_GEO.getfloat('bz stretch order', 3.),
                             stencil=self.stencil,
+                            force=CFG_GEO.getboolean('force', False),
                             free=CFG_GEO.getboolean('free', True))
 
         CFG_SOL = self._cfg['solver']
@@ -903,11 +981,15 @@ class CfgSetup:
                           ns=CFG_SOL.getint('ns', 10),
                           cfl=CFG_SOL.getfloat('cfl', 0.5),
                           save=CFG_SOL.getboolean('save fields', True),
-                          resume=CFG_SOL.getboolean('resume', False))
-
+                          mp = CFG_SOL.getboolean('mp', True),
+                          timings = CFG_SOL.getboolean('timings', False),
+                          nan_check = CFG_SOL.getboolean('nan_check', False),
+                          resume = CFG_SOL.getboolean('resume', False),
+                          )
 
         CFG_SRC = self._cfg['sources']
-        self.src = sources.SourceSet(origin=CFG_SRC.getlit('origin', ((), )),
+        self.src = sources.SourceSet(shape=self.geo._shape,
+                                     origin=CFG_SRC.getlit('origin', ((), )),
                                      S0=CFG_SRC.getlit('S0', ()),
                                      Bx=CFG_SRC.getlit('Bx', ()),
                                      By=CFG_SRC.getlit('By', ()),
@@ -917,39 +999,39 @@ class CfgSetup:
                                      kz=CFG_SRC.getlit('kz', ()),
                                      k=CFG_SRC.getlit('k', ()),
                                      Rx=CFG_SRC.getlit('R', ()),
-                                     on=CFG_SRC.getboolean('on', ()),
-                                     ndim=self.ndim,
-                                     evolution=CFG_SRC.getlit('evolution', ()))
+                                     on=CFG_SRC.getlit('on', ()),
+                                     evolution=CFG_SRC.getlit('evolution', ()),
+                                     flat=self.geo.flat,
+                                     )
 
         CFG_FLW = self._cfg['flow']
-        self.flw = sources.Flow(kind=CFG_FLW.get('type', 'None').lower(),
+        self.flw = sources.Flow(shape=self.geo._shape,
+                                ftype=CFG_FLW.get('type', None),
                                 components=CFG_FLW.getlit('components', (0, ) * self.ndim),
-                                ndim=self.ndim)
+                                flat=self.geo.flat,
+                                )
 
         CFG_PRB = self._cfg['probes']
         self.prb = Probes(vars=CFG_PRB.getlit('variables', ()),
-                          locs=CFG_PRB.getlit('locations', ()), shape=self.geo.shape)
+                          locs=CFG_PRB.getlit('locations', ()),
+                          shape=self.geo._shape,
+                          flat=self.geo.flat,
+                          )
 
         CFG_THP = self._cfg['thermophysic']
         self.tp = Air(rho0=CFG_THP.getfloat('rho0', 1.2),
                       T0=CFG_THP.getfloat('T0', 20),
                       gamma=CFG_THP.getfloat('gamma', 1.4),
-                      norm=CFG_THP.getboolean('norm', False))
+                      norm=CFG_THP.getboolean('norm', False),
+                      )
 
         CFG_FIGS = self._cfg['graphics']
         self.gra = Graphics(fig=CFG_FIGS.getboolean('figures', True),
                             prb=CFG_FIGS.getboolean('probes', True),
                             bz=CFG_FIGS.getboolean('bz', True),
                             bc=CFG_FIGS.getboolean('bc', True),
-                            fps=CFG_FIGS.getint('fps', 24))
-
-    def convert_to_2d(self):
-        """Convert 3d config to 2d. """
-        ax, _ = self.geo.flat
-        self.geo.convert_to_2d()
-        self.flw.convert_to_2d(ax)
-        self.src.convert_to_2d(ax)
-        self.prb.convert_to_2d(ax)
+                            fps=CFG_FIGS.getint('fps', 24)
+                            )
 
     def check_version(self):
         """Check version of the configuration."""
@@ -957,34 +1039,50 @@ class CfgSetup:
         version_ok = _parse_version(version) >= _parse_version(self._version_base)
 
         if not version_ok:
-            print(f'Config file version must be >= {self._version_base}')
-            _sys.exit(1)
+            print(f'[bold bright_magenta]Config file version must be >= {self._version_base}')
+            sys.exit(1)
+
+    @staticmethod
+    def parse_literal(value):
+        """Parse value."""
+        if value.strip() == '':
+            return None
+        try:
+            return ast.literal_eval(value)
+        except ValueError:
+            return value if value.lower() not in ('', 'no') else None
 
     def __eq__(self, other):
         if not isinstance(other, CfgSetup):
             raise ValueError(f'unsupported operand type(s) for +: {type(self).__name__} and {type(other).__name__}')
 
-        return misc.deep_equals(self, other)
+        return self.prb == other.prb and \
+               self.tp == other.tp and \
+               self.geo == other.geo and \
+               self.sol == other.sol and \
+               self.files.data_path == other.files.data_path and \
+               self.dt == other.dt
 
     def __str__(self):
 
-        size = misc.getsizeof(_np.empty(self.geo.shape + (32, )))
+        size = misc.getsizeof(numpy.empty(self.geo.shape + (32, )))
         formatter = EngFormatter('B')
 
         s = "[System]"
-        s += f"\n\t- Data path             : {self.datapath}"
+        s += f"\n\t- Data path             : {self.files.data_path}"
         s += f"\n\t- Current path          : {self.path}"
-        s += f"\n\t- Multiprocessing       : {self.mp} [max {self.cpu_count} cpu(s)]"
+        s += f"\n\t- Multiprocessing       : {self.sol.mp} [max {self.cpu_count} cpu(s)]"
         s += f"\n\t- Estimated ram used    : {formatter(size)}"
-        s += self.sol.__str__()
+        s += str(self.sol)
         s += "\n[Time]"
         s += f"\n\t- Physical time    : {self.dt*self.sol.nt:.5e} s."
         s += f"\n\t- Time step        : dt={self.dt:.5e} s and nt={self.sol.nt}."
         s += "\n\t- Frequency range  : [{:.3f} - {:.3f}] Hz".format(*self.frequencies)
-        s += self.tp.__str__()
-        s += self.geo.__str__()
-        s += self.src.__str__()
-        s += self.flw.__str__()
+        s += str(self.tp)
+        s += str(self.geo)
+        s += str(self.src)
+        s += str(self.flw)
+        s += str(self.prb)
         return s
 
     def __repr__(self):

@@ -39,7 +39,7 @@ Example
     path = 'data/'
     filename = 'reference'
     cfg, msh = get_objects(path, filename)
-    viewer = MPLViewer(cfg, msh, cfg.datapath')
+    viewer = MPLViewer(cfg, msh, cfg.files.data_path')
 
     viewer2d.movie(view='p', buffer=False, probes=True)  # Make movie
     viewer2d.probes()                                    # figure with probe evolutions

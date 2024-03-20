@@ -25,10 +25,11 @@ Thermophysical parameters.
 
 import numpy as np
 from scipy import constants
+from nsfds3.utils import misc
 
 
 class Air:
-    """ Thermophysical parameters of Air.
+    """Thermophysical parameters of Air.
 
     Parameters
     ----------
@@ -62,7 +63,7 @@ class Air:
 
     @property
     def norm(self):
-        """ Report whether or not the parameters are normalized. """
+        """Report whether or not the parameters are normalized."""
         return self._norm
 
     @norm.setter
@@ -71,50 +72,54 @@ class Air:
 
     @property
     def rho0(self):
-        """ Density [kg.m^{-3}]. """
+        """Density [kg.m^{-3}]."""
         if self.norm:
             return 1.
         return self._rho0
 
     @property
     def c0(self):
-        """ Celerity of sound [m.s^{-1}]. """
+        """Celerity of sound [m.s^{-1}]."""
         if self.norm:
             return 1.
         return np.sqrt(self.T0 * self.R * self.gamma)
 
     @property
     def p0(self):
-        """ Static pressure [Pa]. """
+        """Static pressure [Pa]."""
         return self.rho0 * self.c0**2 / self.gamma
 
     @property
     def R(self):
-        """ Gas constant of air [J.kg^{-1}.K^{-1}]. """
+        """Gas constant of air [J.kg^{-1}.K^{-1}]."""
         if self.norm:
             return self.Rgp / self.Mmol * self._norm_factor
         return self.Rgp / self.Mmol
 
     @property
     def Cv(self):
-        """ Mass heat capacity at constant volume [J.kg^{-1}.K^{-1}]. """
+        """Mass heat capacity at constant volume [J.kg^{-1}.K^{-1}]."""
         return self.R / (self.gamma - 1)
 
     @property
     def Cp(self):
-        """ Mass heat capacity at constant pressure [J.kg^{-1}.K^{-1}]. """
+        """Mass heat capacity at constant pressure [J.kg^{-1}.K^{-1}]."""
         return self.Cv * self.gamma
 
     @property
     def mu(self):
-        """ Dynamic viscosity at T0 [Pa.s]. """
+        """Dynamic viscosity at T0 [Pa.s]."""
         return (self.mu0 * (self.T0 / self.Tref)**(3. / 2.) *
                 (self.Tref + self.Ssu) / (self.T0 + self.Ssu))
 
     @property
     def prandtl(self):
-        """ Prandtl number. """
+        """Prandtl number."""
         return self.Cp * self.mu / self.k
+
+    def __eq__(self, other):
+        """Report whether self and other are the same."""
+        return misc.are_equals(self, other, attrs=['rho', 'T0', 'gamma', 'norm'])
 
     def __str__(self):
         s = "\n[Thermophysic]"

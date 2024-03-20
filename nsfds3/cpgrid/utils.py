@@ -43,7 +43,7 @@ def get_func(module, name):
         custom = __import__(os.path.basename(module).split('.')[0])
     else:
         custom = _tc
-    
+
     return getattr(custom, name, None)
 
 
@@ -62,7 +62,7 @@ def parse_shape(shape):
     if len(shape) not in (2, 3):
         raise ValueError('shape: inconsistent dimension')
     if any(s > max_int16 for s in shape):
-        raise GridError(f'shape: 1 dimension exceeds {max_int16}')
+        raise GridError(f'shape: At least one dimension exceeds {max_int16}')
     return shape
 
 
@@ -114,6 +114,8 @@ def parse_steps(shape, steps):
     if len(steps) != len(shape):
         raise ValueError(f'steps: length {len(shape)} expected')
 
+    if any(dn < 1e-6 for dn in steps):
+        raise ValueError(f'steps: must be >= 1e-6')
     return steps
 
 
@@ -134,7 +136,7 @@ def parse_origin(shape, origin, bc, bz_n):
     return origin
 
 
-def parse_grid_parameters(shape, steps, origin, bc, bz_n):
+def parse_geo(shape, steps, origin, bc, bz_n):
     """ Check shape, origin, bc, and buffer zone. """
     shape = parse_shape(shape)
     steps = parse_steps(shape, steps)

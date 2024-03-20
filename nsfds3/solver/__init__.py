@@ -26,6 +26,7 @@ The `solver` package contains the following main objects:
 * :py:class:`FDTD`: setup and run the FDTD simulation
 * :py:class:`Source`: Describe a source
 * :py:class:`SourceSet`: Describes a set of sources
+* :py:class:`CustomInitialConditions`: Describes custom initial conditions
 
 
  The following example gives the general philosophy to use **nsfds3**::
@@ -36,19 +37,21 @@ The `solver` package contains the following main objects:
    # Initialize simulation parameter
    cfg = CfgSetup()    # or cfg = CfgSetup('path_to_configfile.conf')
 
-   # Define the mesh
+   # Make the mesh
    msh = build_mesh(cfg)
 
    # Create and run simulation
    fdtd = FDTD(msh, cfg)
    fdtd.run()
 
-   # Figures
+   # Show result
    fdtd.show(view='p', nans=True, buffer=True, grid=False, obstacles=True)
 """
 
+
+from nsfds3.solver.sources import SourceSet, CustomInitialConditions
 from nsfds3.solver.config import CfgSetup
 from nsfds3.solver.fdtd import FDTD
-from nsfds3.solver.sources import Source, SourceSet, CustomInitialConditions
 
-__all__ = ['CfgSetup', 'FDTD', 'Source', 'SourceSet', 'CustomInitialConditions']
+
+__all__ = ['SourceSet', 'CustomInitialConditions', 'CfgSetup', 'FDTD']
