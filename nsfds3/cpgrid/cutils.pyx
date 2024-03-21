@@ -48,7 +48,7 @@ ctypedef fused integer:
 
 
 cpdef INT8[:, ::1] is_equal(integer[:, ::1] array, int value):
-    """ Return a mask where array == value. """
+    """Return a mask where array == value."""
 
     cdef Py_ssize_t ix, iy
     cdef int nx = array.shape[0]
@@ -63,7 +63,7 @@ cpdef INT8[:, ::1] is_equal(integer[:, ::1] array, int value):
 
 
 cpdef list get_2d_cuboids(integer[:, ::1] mask, int ax=-1, int N=-1):
-    """ Return a list of dictionnaries containing cuboid parameters.
+    """Return a list of dictionnaries containing cuboid parameters.
 
     Parameters
     ----------
@@ -85,7 +85,7 @@ cpdef list get_2d_cuboids(integer[:, ::1] mask, int ax=-1, int N=-1):
 
 
 cpdef list get_3d_cuboids(integer[:, :, ::1] mask, int ax=-1, int N=-1):
-    """ Return a list of dictionnaries containing cuboid parameters.
+    """Return a list of dictionnaries containing cuboid parameters.
 
     Parameters
     ----------
@@ -405,7 +405,7 @@ cdef list _get_z_3d_cuboids(integer[:, :, ::1] mask, int N):
 
 
 cdef bint any_nonzero2d(integer[:, ::1] m, short val=1):
-    """ Return True if (m == val).any() else False. """
+    """Return True if (m == val).any() else False."""
     cdef bint flag = False
     cdef int nx = m.shape[0]
     cdef int ny = m.shape[1]
@@ -422,7 +422,7 @@ cdef bint any_nonzero2d(integer[:, ::1] m, short val=1):
 
 
 cdef bint any_nonzero3d(integer[:, :, ::1] m, short val=1):
-    """ Return True if (m == val).any() else False. """
+    """Return True if (m == val).any() else False."""
     cdef bint flag = False
     cdef int nx = m.shape[0]
     cdef int ny = m.shape[1]
@@ -444,7 +444,7 @@ cdef bint any_nonzero3d(integer[:, :, ::1] m, short val=1):
 
 
 cdef tuple first_nonzero2d(integer[:, ::1] m, short val=1):
-    """ Return the coordinate (ix, iy) of the first m == val. """
+    """Return the coordinate (ix, iy) of the first m == val."""
     cdef bint flag = False
     cdef int nx = m.shape[0]
     cdef int ny = m.shape[1]
@@ -461,7 +461,7 @@ cdef tuple first_nonzero2d(integer[:, ::1] m, short val=1):
 
 
 cdef tuple first_nonzero3d(integer[:, :, ::1] m, short val=1):
-    """ Return the coordinate (ix, iy, iz) of the first m == val. """
+    """Return the coordinate (ix, iy, iz) of the first m == val."""
     cdef bint flag = False
     cdef int nx = m.shape[0]
     cdef int ny = m.shape[1]

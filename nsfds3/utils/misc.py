@@ -96,7 +96,7 @@ def are_equals(inst1, inst2, attrs):
 
 
 def secs_to_dhms(secs):
-    """ Convert seconds to years, months, days, hh:mm:ss."""
+    """Convert seconds to years, months, days, hh:mm:ss."""
 
     dhms = _datetime.datetime(1, 1, 1) + _datetime.timedelta(seconds=secs)
 
@@ -115,7 +115,7 @@ def secs_to_dhms(secs):
 
 
 def secs_to_hms(seconds):
-    """Format seconds to a str like XXh YYm ZZs. """
+    """Format seconds to a str like XXh YYm ZZs."""
     hours = int(seconds // 3600)
     minuts = int((seconds % 3600) // 60)
     seconds = int(seconds % 60)
@@ -128,7 +128,7 @@ def secs_to_hms(seconds):
 
 
 def timer(func):
-    """ Time method of a class instance containing:
+    """Time method of a class instance containing:
 
         - _timings: dictionary attribute
         - timing: boolean attribute
@@ -150,7 +150,7 @@ def timer(func):
 
 
 def unload_timings(timings, eps=2e-4):
-    """ Empty timings and return a formatted description of the timings and the mean time per iteration.
+    """Empty timings and return a formatted description of the timings and the mean time per iteration.
 
     Parameters
     ----------
@@ -186,7 +186,7 @@ def unload_timings(timings, eps=2e-4):
 
 
 def get_padded(s, N, value=0):
-    """ Pad signal with value. """
+    """Pad signal with value."""
     if N > s.shape[0]:
         return _np.concatenate([s, value*_np.ones(N - s.shape[0])])
 
@@ -194,7 +194,7 @@ def get_padded(s, N, value=0):
 
 
 def resample(file, target_rate, pad=None, write=False, force_mono=True):
-    """ Resample target wave file with target_rate. """
+    """Resample target wave file with target_rate."""
 
     target_rate = int(target_rate)
 

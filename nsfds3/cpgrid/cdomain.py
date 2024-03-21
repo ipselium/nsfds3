@@ -35,7 +35,7 @@ from nsfds3.graphics.graphics import CPViewer
 
 
 class ComputationDomains:
-    """ Divide computation domain in several Subdomains based on obstacles in presence.
+    """Divide computation domain in several Subdomains based on obstacles in presence.
 
     Parameters
     ----------
@@ -108,7 +108,7 @@ class ComputationDomains:
                 for fc in f.colinear:
                     fix |= set(f.intersection(fc))
                 self._mask[tuple(zip(*fix)) + sax] = 0
-        
+
         # Fix obstacle faces located at the corners (2d/3d), and also at the edges of the domain (in 3d)
         for f in self.obstacles.edged:
             # Fix corners in 2d/3d
@@ -147,7 +147,7 @@ class ComputationDomains:
             self._mask[fbox.sn + (f.axis, )] *= base
 
     def get_cuboids(self, mask, ax=-1, N=-1):
-        """ Return a list of dictionnaries containing cuboid parameters.
+        """Return a list of dictionnaries containing cuboid parameters.
 
         Parameters
         ----------
@@ -209,13 +209,13 @@ class ComputationDomains:
             print("Computation domain seems not to be valid.")
 
     def show(self, obstacles=True, domains=False, bounds=True, only_mesh=True, **kwargs):
-        """ Plot 3d representation of computation domain. """
+        """Plot 3d representation of computation domain."""
         viewer = CPViewer(self)
         viewer.show(obstacles=obstacles, domains=domains, bounds=bounds, only_mesh=only_mesh, **kwargs)
 
     @property
     def is_valid(self):
-        """ Report whether computation domains seem valid or not. """
+        """Report whether computation domains seem valid or not."""
         sizes = []
         for domain in self.domains:
             size = 0
@@ -223,7 +223,7 @@ class ComputationDomains:
                 size += _np.prod(s.size)
             sizes.append(size)
         return all(len(self) <= s for s in sizes)
-    
+
     def _free(self):
         try:
             del self._mask
@@ -231,7 +231,7 @@ class ComputationDomains:
             pass
 
     def __len__(self):
-        
+
         size_obstacles = 0
         for obs in self.obstacles:
             size_obstacles += _np.prod(obs.size)

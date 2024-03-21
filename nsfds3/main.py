@@ -38,7 +38,7 @@ from nsfds3.graphics import MPLViewer
 
 
 def parse_args():
-    """ Parse arguments. """
+    """Parse arguments."""
 
     # Options gathered in some parsers
     commons = argparse.ArgumentParser(add_help=False)
@@ -121,7 +121,7 @@ def parse_args():
 
 
 def show(args, cfg, msh):
-    """ Show simulation parameters and grid. """
+    """Show simulation parameters and grid."""
 
     if args.show_command == 'parameters':
         headers.versions()
@@ -151,7 +151,7 @@ def show(args, cfg, msh):
 
 
 def make(args, cfg, msh):
-    """ Create a movie from a dataset. """
+    """Create a movie from a dataset."""
 
     if args.make_command == 'movie':
 
@@ -165,7 +165,7 @@ def make(args, cfg, msh):
 
 
 def solve(args, cfg, msh):
-    """ Solve NS equations. """
+    """Solve NS equations."""
 
     # Simulation
     fdtd = FDTD(cfg, msh)
@@ -180,7 +180,7 @@ def solve(args, cfg, msh):
 
 
 def main():
-    """ Main function for nsfd3 command line api. """
+    """Main function for nsfd3 command line api."""
 
     # Headers
     headers.copyright()

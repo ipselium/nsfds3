@@ -45,7 +45,7 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 #from progressbar import ProgressBar, Bar, ETA
 from rich.progress import track
-from nsfds3.utils.data import DataExtractor, FieldExtractor, DataIterator
+from nsfds3.utils.data import DataExtractor, FieldExtractor
 from nsfds3.graphics.utils import MidPointNorm, cmap_jet, cmap_mask, dict_update, fig_scale
 from libfds.fields import Fields2d, Fields3d
 
@@ -58,10 +58,12 @@ class ViewerError(Exception):
 
 
 class MeshViewer:
-    """Graphical tool to visualize Mesh objects graphically.
+    """Graphical tool to visualize Mesh instances graphically.
 
     Parameters
     ----------
+    mesh: CartesianGrid or CurvilinearGrid
+        Mesh object
     figsize: tuple, optional
         Size of the figure
     dpi: int, optional
@@ -319,7 +321,14 @@ class MeshViewer:
 
 
 class CPViewer(MeshViewer):
-    """MeshViewer specialization adapted to ComputationDomains."""
+    """MeshViewer specialization adapted to ComputationDomains.
+
+    Parameters
+    ----------
+    cpdomain: ComputationalDomain
+        Computational domain object
+
+    """
 
     def __init__(self, cpdomain):
 
@@ -408,7 +417,7 @@ class CPViewer(MeshViewer):
 
 
 class MPLViewer(MeshViewer):
-    """MeshViewer specialization adapted to libfds.Fields or hdf5 files.
+    """MeshViewer specialization adapted to exploit libfds.Fields isntances or hdf5 files.
 
     Parameters
     ----------
@@ -457,7 +466,7 @@ class MPLViewer(MeshViewer):
         elif isinstance(data, (pathlib.Path, str)):
             self.data = DataExtractor(data)
         else:
-            raise ValueError('data can be Fields2d, Fields3d, or path to hdf5 file')
+            raise ViewerError('data can be Fields2d, Fields3d, or path to hdf5 file')
 
     def show(self, view='p', vmin=None, vmax=None,  iteration=0, **kwargs):
         """Show view at a given iteration."""
@@ -473,12 +482,12 @@ class MPLViewer(MeshViewer):
 
         norm = MidPointNorm(vmin=vmin, vmax=vmax, midpoint=0)
 
-        fig, ax = self.frame(var, norm, **kwargs)
+        fig, ax = self._frame(var, norm, **kwargs)
 
         _plt.show()
 
-    def frame(self, var, norm, **kwargs):
-
+    def _frame(self, var, norm, **kwargs):
+        """Helper method to setup graphical frames. Prefer using show() method."""
         kwargs = dict_update(self.dkwargs, kwargs)
 
         if len(self.msh.shape) == 3:
@@ -574,7 +583,7 @@ class MPLViewer(MeshViewer):
         return metadata
 
     def movie(self, view='p', nt=None, ref=None, xlim=None, ylim=None, zlim=None, codec='libx264', **kwargs):
-        """Make movie."""
+        """Make movie for a given view."""
 
         kwargs = dict_update(self.dkwargs, kwargs)
 
@@ -583,11 +592,11 @@ class MPLViewer(MeshViewer):
             sys.exit(1)
 
         # Create Iterator and make 1st frame
-        data = DataIterator(self.data, view=view, nt=nt)
+        data = self.data.get_iterator(view=view, nt=nt)
         vmin, vmax = self.data.reference(view=view, ref=ref)
         norm = MidPointNorm(vmin=vmin, vmax=vmax, midpoint=0)
         i, var = next(data)
-        fig, im = self.frame(var, norm, iteration=i, **kwargs)
+        fig, im = self._frame(var, norm, iteration=i, **kwargs)
 
         # Movie parameters
         metadata = self._init_movie(view)
@@ -620,22 +629,22 @@ class MPLViewer(MeshViewer):
                 writer.grab_frame()
 
     def probes(self, figsize=(9, 4)):
-        """Plot pressure at probes."""
+        """Plot acoustic pressure at probe locations."""
 
         if not isinstance(self.data, DataExtractor):
             print('probes method only available for DataExtractor')
             sys.exit(1)
 
-        probes = self.data.get_dataset('probe_locations').tolist()
+        locs = self.data.get_dataset('probe_locations').tolist()
 
-        if not probes:
+        if not locs:
             raise ViewerError("No probes !")
 
         p = self.data.get_dataset('probe_values')
         t = _np.arange(self.cfg.sol.nt) * self.cfg.dt
 
         _, ax = _plt.subplots(figsize=figsize)
-        for i, c in enumerate(probes):
+        for i, c in enumerate(locs):
             ax.plot(t, p[i, :] - self.cfg.tp.p0,
                     label=f'@{tuple([self.axis[i][tuple(c)] for i in range(len(p.shape))])}')
         ax.set_xlim(t.min(), t.max())
@@ -646,7 +655,7 @@ class MPLViewer(MeshViewer):
         _plt.show()
 
     def spectrogram(self, M=None, figsize=(9, 4)):
-        """Plot spectograms at probes.
+        """Plot spectograms at probe locations.
 
         Parameters
         ----------

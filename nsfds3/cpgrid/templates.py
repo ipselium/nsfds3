@@ -37,7 +37,7 @@ from nsfds3.cpgrid.geometry import Obstacle
 
 
 def create_geometry(shape, origins, sizes, bc=None):
-    """ Obstacles separated"""
+    """Obstacles separated"""
     obstacles = []
     if not bc:
         bc = ['W' * 2 * len(shape), ] * len(origins)
@@ -65,13 +65,13 @@ class TestCases:
 
     @staticmethod
     def empty(shape, stencil=11):
-        """ Empty domain. """
+        """Empty domain."""
         conf = {'origins': [], 'sizes': []}
         return create_geometry(shape, **conf)
 
     @staticmethod
     def single(shape, stencil=11):
-        """ Single obstacle. """
+        """Single obstacle."""
 
         thresh = stencil * 2 + 1
 
@@ -85,14 +85,14 @@ class TestCases:
 
     @staticmethod
     def evolution_sine(time):
-        """ Sinusoïdal time evolution """
+        """Sinusoïdal time evolution """
         f = 1 / (50 * time[1])
         amp = 1
         return amp * _np.sin(2 * _np.pi * f * time)
 
     @staticmethod
     def single_source(shape, stencil=11):
-        """ Single obstacle with wall source.
+        """Single obstacle with wall source.
 
         ::
 
@@ -109,7 +109,7 @@ class TestCases:
 
     @staticmethod
     def base(shape, stencil=11):
-        """ Base geometry. """
+        """Base geometry."""
 
         if len(shape) == 2:
             conf = {'origins': [(0, 80), (10, 95),                          # Two overlapped with one at bound location
@@ -163,7 +163,7 @@ class TestCases:
 
     @staticmethod
     def edges(shape, stencil=11):
-        """ All possible single edges... """
+        """All possible single edges..."""
 
         thresh = stencil * 2 + 1
         height = 2 * thresh
@@ -219,7 +219,7 @@ class TestCases:
 
     @staticmethod
     def superimposed1(shape, stencil=11):
-        """ Two obstacles side to side.
+        """Two obstacles side to side.
 
         ::
 
@@ -245,7 +245,7 @@ class TestCases:
 
     @staticmethod
     def superimposed2(shape, stencil=11):
-        """ Two obstacles of different height side to side.
+        """Two obstacles of different height side to side.
 
         ::
 
@@ -273,7 +273,7 @@ class TestCases:
 
     @staticmethod
     def Lcell(shape, stencil=11):
-        """ L arrangement.
+        """L arrangement.
 
         ::
 
@@ -302,7 +302,7 @@ class TestCases:
 
     @staticmethod
     def Tcell(shape, stencil=11):
-        """ T arrangement.
+        """T arrangement.
 
         ::
 
@@ -331,7 +331,7 @@ class TestCases:
 
     @staticmethod
     def Ucell(shape, stencil=11):
-        """ Bridge arrangement.
+        """Bridge arrangement.
 
         ::
 
@@ -365,7 +365,7 @@ class TestCases:
 
     @staticmethod
     def Ocell(shape, stencil=11):
-        """ Window arrangement.
+        """Window arrangement.
 
         ::
 
@@ -403,7 +403,7 @@ class TestCases:
 
     @staticmethod
     def overlapped1(shape, stencil=11):
-        """ Two obstacles overlapped (one sides). """
+        """Two obstacles overlapped (one sides)."""
 
         thresh = stencil * 2 + 1
         width = 5 * thresh
@@ -422,7 +422,7 @@ class TestCases:
 
     @staticmethod
     def overlapped2(shape, stencil=11):
-        """ Two obstacles overlapped (two sides). """
+        """Two obstacles overlapped (two sides)."""
 
         thresh = stencil * 2 + 1
         width = 5 * thresh
@@ -442,7 +442,7 @@ class TestCases:
 
     @staticmethod
     def curv_mountain(x, y):
-        """ Curvilinear function example. """
+        """Curvilinear function example."""
         xsine = _np.linspace(-_np.pi, _np.pi, x.shape[0])
         sine = _np.sin(xsine/0.1)
         profile = _np.zeros_like(x)

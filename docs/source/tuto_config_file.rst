@@ -157,7 +157,7 @@ return a list of :py:class:`nsfds3.cpgrid.Obstacle` objects. For example::
     from nsfds3.cpgrid import Obstacle
 
     def squares(shape):
-        """ Obstacle arangment example. """
+        """Obstacle arangment example."""
         obs1 = Obstacle(origin=(10, 10), size=(15, 15), env=shape, bc='WWWW')
         obs2 = Obstacle(origin=(80, 70), size=(20, 20), env=shape, bc='WWWW')
         return [obs1, obs2, ]
@@ -171,7 +171,7 @@ numerical axes `(xn, yn[, zn])` and returns the transformed axes
     import numpy as np
 
     def mountain(x, y):
-        """ Curvilinear function example. """
+        """Curvilinear function example."""
         xs = np.linspace(-np.pi, np.pi, x.shape[0])
         s = np.sin(xs / 0.1)
         profile = np.zeros_like(x)
@@ -209,14 +209,14 @@ tappered cosine (`profile='tukey'`). For example::
 
 
     def sine(t):
-        """ Sinusoïdal time evolution """
+        """Sinusoïdal time evolution."""
         f = 1 / (50 * t[1])
         amp = 1
         return amp * np.sin(2 * np.pi * f * t)
 
 
     def single_source(shape):
-        """ Single obstacle with wall source on right face."""
+        """Single obstacle with wall source on right face."""
         obs = Obstacle(origin=(20, 20), size=(30, 40), env=shape, bc='WVWW')
         obs.face_right.set_source(func=sine, profile='sine')
         return [obs, ]

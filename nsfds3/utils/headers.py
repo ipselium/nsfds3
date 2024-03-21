@@ -43,6 +43,7 @@ console = Console()
 
 
 def copyright():
+    """Displays copyright."""
     title = f"[magenta]nsfds2 v0.1.0 -- Copyright (C) 2016-{_dt.now().year} -- Cyril Desjouy\n"
     cp = "This program comes with [u]ABSOLUTELY NO WARRANTY[/u]. " + \
          "This is free software, and you are welcome to redistribute it " + \
@@ -57,7 +58,7 @@ def copyright():
 
 
 def versions():
-    """ Displays versions of the dependencies. """
+    """Displays versions of the dependencies."""
     table = _Table(box=_box.ROUNDED, expand=True)
     table.add_column('software', style='bold blue', justify='center')
     table.add_column('version', style='italic blue', justify='center')

@@ -110,7 +110,7 @@ def get_pressure(r=None, ru=None, rv=None, rw=None, re=None, gamma=1.4):
 
 
 def get_probes(cfg, save=False):
-    """Get probe location and values.
+    """Get probe location and values from cfg file.
 
     Parameters
     ----------
@@ -143,13 +143,10 @@ def get_probes(cfg, save=False):
         raise FileNotFoundError('Unable to load hdf5 file.')
 
     with h5py.File(cfg.files.data_path, 'r') as fn:
-        if cfg.ndim == 3:
-            locs = _np.vstack((msh.x[fn['probe_locations'][...][:, 0]],
-                               msh.y[fn['probe_locations'][...][:, 1]],
-                               msh.z[fn['probe_locations'][...][:, 1]])).T
-        else:
-            locs = _np.vstack((msh.x[fn['probe_locations'][...][:, 0]],
-                               msh.y[fn['probe_locations'][...][:, 1]])).T
+        locs = fn['probe_locations'][...].tolist()
+        if not locs:
+            return _np.array([]), _np.array([]), _np.array([])
+        locs = _np.array([[msh.paxis[k][tuple(c)] for k in range(cfg.ndim)] for c in locs])
         values = fn['probe_values'][...] - cfg.tp.p0
     time = _np.arange(cfg.sol.nt) * cfg.dt
 

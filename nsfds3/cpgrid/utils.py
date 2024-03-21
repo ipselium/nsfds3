@@ -35,7 +35,7 @@ from .templates import TestCases as _tc
 
 
 def get_func(module, name):
-    """ Get function from python module. If not found, fallback to
+    """Get function from python module. If not found, fallback to
     nsfds3.cpgrid.templates ir None.
     """
     if os.path.isfile(module):
@@ -48,16 +48,16 @@ def get_func(module, name):
 
 
 class GridError(Exception):
-    """Exception raised when grid parameters are wrong. """
+    """Exception raised when grid parameters are wrong."""
 
 
 def sign(x):
-    """Returns the sign of x. """
+    """Returns the sign of x."""
     return -1 if x < 0 else 1
 
 
 def parse_shape(shape):
-    """Parse shape. """
+    """Parse shape."""
     max_int16 = _np.iinfo(_np.int16).max
     if len(shape) not in (2, 3):
         raise ValueError('shape: inconsistent dimension')
@@ -67,7 +67,7 @@ def parse_shape(shape):
 
 
 def parse_bc(shape, bc):
-    """Parse boundary condition. """
+    """Parse boundary condition."""
     regex = [
         r'[^P]P..', 
         r'P[^P]..', 
@@ -104,7 +104,7 @@ def parse_bc(shape, bc):
 
 
 def parse_steps(shape, steps):
-    """Parse spacial steps. """
+    """Parse spacial steps."""
     if steps is None:
         steps = (1., ) * len(shape)
 
@@ -120,7 +120,7 @@ def parse_steps(shape, steps):
 
 
 def parse_origin(shape, origin, bc, bz_n):
-    """Parse origin of the domain. """
+    """Parse origin of the domain."""
     if origin is None:
         origin = tuple([bz_n if bc[2*i] == "A" else 0 for i in range(len(shape))])
 
@@ -137,7 +137,7 @@ def parse_origin(shape, origin, bc, bz_n):
 
 
 def parse_geo(shape, steps, origin, bc, bz_n):
-    """ Check shape, origin, bc, and buffer zone. """
+    """Check shape, origin, bc, and buffer zone."""
     shape = parse_shape(shape)
     steps = parse_steps(shape, steps)
     bc = parse_bc(shape, bc)
@@ -147,19 +147,19 @@ def parse_geo(shape, steps, origin, bc, bz_n):
 
 
 def check_bz(shape, bz_n, bc):
-    """ Check that buffer zone size is consistent. """
+    """Check that buffer zone size is consistent."""
     if not all([n - bz_n * (bc[2*i:2*i + 2].count('A')) > 11 for i, n in enumerate(shape)]):
         raise GridError('bz: 1 of the dimension is too small.')
 
 
 def buffer_bounds(bc, bz_n):
-    """ From bc, returns a list of indices corresponding to the limits of the buffer zone. """
+    """From bc, returns a list of indices corresponding to the limits of the buffer zone."""
     return [[sign(0.5 - j) * bz_n if v == "A" else -j for j, v in enumerate(bc[i:i+2])]
              for i in range(0, len(bc), 2)]
 
 
 def buffer_kwargs(bc, bz_n, shape):
-    """ Returns a dict containing origin, size and bc of the buffer zone.
+    """Returns a dict containing origin, size and bc of the buffer zone.
 
     Parameters
     ----------

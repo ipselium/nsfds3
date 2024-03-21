@@ -36,7 +36,7 @@ from matplotlib.colors import LinearSegmentedColormap, ListedColormap, BoundaryN
 
 
 def cmap_exists(name):
-    """ Check if the cmap named name is already registered. """
+    """Check if the cmap named name is already registered."""
     try:
         matplotlib.cm.get_cmap(name)
     except ValueError:
@@ -45,7 +45,7 @@ def cmap_exists(name):
 
 
 def cmap_mask(stencil=11):
-    """ Discrete cmap with 4 colours to describe masks."""
+    """Discrete cmap with 4 colours to describe masks."""
     nodes = [-stencil, 0, 1, stencil]
     colors = ["mistyrose", "black", "white", "paleturquoise"]
     return ListedColormap(colors), BoundaryNorm(nodes, len(colors) - 1)
@@ -107,7 +107,7 @@ def grayify_cmap(cmap):
 
 
 class MidPointNorm(matplotlib.colors.Normalize):
-    """ Adjust cmap using a midpoint as reference.
+    """Adjust cmap using a midpoint as reference.
 
     Note
     ----
@@ -148,7 +148,7 @@ class MidPointNorm(matplotlib.colors.Normalize):
 
 
 def extend_range(a, b, percent=5):
-    """ Extends the numerical range (a, b) by percent. """
+    """Extends the numerical range (a, b) by percent."""
     value = (b - a) * percent / 100
     return a - value, b + value
 
@@ -164,7 +164,7 @@ def dict_update(d1, d2):
 
 
 def fig_scale(ax1, ax2, ref=None):
-    """ Return ideal size ratio. """
+    """Return ideal size ratio."""
     if isinstance(ax1, (tuple, list)):
         s1 = sum(ax.max() - ax.min() for ax in ax1)
     else:
