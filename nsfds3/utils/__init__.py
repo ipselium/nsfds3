@@ -22,12 +22,13 @@
 """
 The `utils` package gathers some utilities for **nsfds3**. The main ones are :
 
-    * :py:func:`get_objects`: get cfg and msh from pickles
+    * :py:func:`get_objects`: get cfg and msh from pickles.
     * :py:func:`get_pressure`: get pressure from conservative variables
+    * :py:func:`get_probes`: get probe values.
     * :py:func:`probes_to_wavfile`: Make .wav files from probes signals.
 """
 
 from nsfds3.utils.files import get_objects, probes_to_wavfile
-from nsfds3.utils.data import get_pressure
+from nsfds3.utils.data import get_pressure, get_probes
 
-__all__ = ['get_objects', 'get_pressure', 'probes_to_wavfile']
+__all__ = ['get_objects', 'get_pressure', 'get_probes', 'probes_to_wavfile']

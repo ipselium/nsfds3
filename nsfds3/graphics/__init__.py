@@ -34,16 +34,14 @@ Example
 ::
 
     from nsfds3.graphics import MPLViewer
-    from nsfds3.utils import get_objects
+    from nsfds3.utils import CfgSetup
 
-    path = 'data/'
-    filename = 'reference'
-    cfg, msh = get_objects(path, filename)
-    viewer = MPLViewer(cfg, msh, cfg.files.data_path')
-
-    viewer2d.movie(view='p', buffer=False, probes=True)  # Make movie
-    viewer2d.probes()                                    # figure with probe evolutions
-    viewer2d.spectrogram()                               # figure with spectrogram
+    filename = 'reference.conf'
+    cfg = CfgSetup(filename)
+    with MPLViewer(cfg) as viewer:
+        viewer.movie(view='p', buffer=False, probes=True)  # Make movie
+        viewer.probes()                                    # figure with probe evolutions
+        viewer.spectrogram()                               # figure with spectrogram
 """
 
 from nsfds3.graphics.graphics import MPLViewer, MeshViewer, CPViewer

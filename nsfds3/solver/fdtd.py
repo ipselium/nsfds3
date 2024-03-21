@@ -27,9 +27,8 @@ The `fdtd` module provides the `FDTD` (Finite Difference Time Domain) class that
 setup and run the simulation
 """
 
-import sys as _sys
-import itertools as _it
-import pickle as _pkl
+import sys
+import pickle
 from time import perf_counter as _pc
 import numpy as _np
 import h5py as _h5py
@@ -41,32 +40,12 @@ from libfds.filters import SelectiveFilter, ShockCapture
 from libfds.cmaths import nan_check
 
 from rich import print
-from rich.prompt import Prompt
 from rich.panel import Panel
 from rich.progress import track
-from rich.color import ANSI_COLOR_NAMES
 
 from nsfds3.graphics import MPLViewer
-from nsfds3.utils import misc, get_objects
+from nsfds3.utils import misc
 from nsfds3.solver import CfgSetup, CustomInitialConditions
-
-
-def resume(directory, basename, nt_new=None):
-    """Resume simulation.
-
-    Parameters
-    ----------
-    directory: str
-        Directory of the cfg/msh/hdf5 files.
-    basename: str
-        Basename of the files.
-    nt_new: int
-        New number of time iteration to take into account.
-    """
-    cfg, msh = get_objects(directory, basename)
-    ics = CustomInitialConditions(cfg, msh)
-
-    return FDTD(cfg, msh, ics=ics)
 
 
 class FDTD:
@@ -184,7 +163,7 @@ class FDTD:
             if not isinstance(res, float):
                 print('[bold bright_magenta]NaN encountered : exiting simulation')
                 print(nan_check(self.fld.p))
-                _sys.exit(0)
+                sys.exit(0)
 
 
     def run(self):
@@ -282,10 +261,10 @@ class FDTD:
         """Save cfg and msh objects."""
 
         with open(self.cfg.files.data_path.with_suffix('.cfg'), 'wb') as pkl:
-            _pkl.dump(self.cfg, pkl, protocol=_pkl.HIGHEST_PROTOCOL)
+            pickle.dump(self.cfg, pkl, protocol=pickle.HIGHEST_PROTOCOL)
 
         with open(self.cfg.files.data_path.with_suffix('.msh'), 'wb') as pkl:
-            _pkl.dump(self.msh, pkl, protocol=_pkl.HIGHEST_PROTOCOL)
+            pickle.dump(self.msh, pkl, protocol=pickle.HIGHEST_PROTOCOL)
 
     def _init_save(self):
         """Init save file."""
@@ -299,7 +278,7 @@ class FDTD:
         if not self.overwrite:
             overwrite = misc.Confirm.ask(f'[blink]Confirm appending results to {self.cfg.files.data_path}[/] ?')
             if not overwrite:
-                _sys.exit(0)
+                sys.exit(0)
 
         with _h5py.File(self.cfg.files.data_path, 'r+') as self.sfile:
             self.sfile.attrs['nt'] = self.cfg.sol.nt
@@ -316,11 +295,12 @@ class FDTD:
             msg2 = f'[blink]Overwrite to start new simulation ?'
             overwrite = misc.Confirm.ask(msg1 + msg2)
             if not overwrite:
-                _sys.exit(0)
+                sys.exit(0)
 
         with _h5py.File(self.cfg.files.data_path, 'w') as self.sfile:
             self.sfile.attrs['vorticity'] = self.cfg.sol.vrt
             self.sfile.attrs['ndim'] = self.msh.ndim
+            self.sfile.attrs['dt'] = self.cfg.dt
             self.sfile.attrs['nt'] = self.cfg.sol.nt
             self.sfile.attrs['ns'] = self.cfg.sol.ns
             self.sfile.attrs['p0'] = self.cfg.tp.p0
@@ -333,10 +313,9 @@ class FDTD:
             # Save initial fields
             self._save()
 
-
     def show(self, view='p', vmin=None, vmax=None, **kwargs):
         """Show results."""
-        viewer = MPLViewer(self.cfg, self.msh, self.fld)
+        viewer = MPLViewer(self.cfg, data=self.fld)
         viewer.show(view=view, vmin=vmin, vmax=vmax, **kwargs)
 
 

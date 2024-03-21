@@ -1,6 +1,7 @@
 build/*
 archives/
 results/
+*workspace
 *.npy
 *TODO*
 *.hdf5

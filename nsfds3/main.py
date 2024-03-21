@@ -134,16 +134,16 @@ def show(args, cfg, msh):
         msh._computation_domains.show(domains=True)
 
     elif args.show_command == 'frame':
-        plt = MPLViewer(cfg, msh, cfg.files.data_path)
+        plt = MPLViewer(cfg)
         plt.show(view=args.view, iteration=cfg.sol.nt,
-                   buffer=cfg.show_bz, probes=cfg.show_prb)
+                   buffer=cfg.gra.bz, probes=cfg.gra.prb)
 
     elif args.show_command == 'probes':
-        plt = MPLViewer(cfg, msh, cfg.files.data_path)
+        plt = MPLViewer(cfg)
         plt.probes()
 
     elif args.show_command == 'spectrogram':
-        plt = MPLViewer(cfg, msh, cfg.files.data_path)
+        plt = MPLViewer(cfg)
         plt.spectrogram()
 
     else:
@@ -155,10 +155,10 @@ def make(args, cfg, msh):
 
     if args.make_command == 'movie':
 
-        plt = MPLViewer(cfg, msh, cfg.files.data_path)
-        plt.movie(view=args.view, nt=cfg.nt, ref=args.ref,
-                  buffer=cfg.show_bz, probes=cfg.show_prb,
-                  fps=cfg.fps)
+        plt = MPLViewer(cfg)
+        plt.movie(view=args.view, nt=cfg.sol.nt, ref=args.ref,
+                  buffer=cfg.gra.bz, probes=cfg.gra.prb,
+                  fps=cfg.gra.fps)
 
     elif args.make_command == 'sound':
         _ = probes_to_wavfile(cfg.files.data_path)
@@ -171,9 +171,9 @@ def solve(args, cfg, msh):
     fdtd = FDTD(cfg, msh)
     fdtd.run()
 
-    if cfg.show_fig:
-        plt = MPLViewer(cfg, msh, cfg.files.data_path)
-        if cfg.save_fld:
+    if cfg.gra.fig:
+        plt = MPLViewer(cfg)
+        if cfg.sol.save:
             plt.show(iteration=cfg.sol.nt)
         if cfg.prb:
             plt.probes()
@@ -189,7 +189,10 @@ def main():
     args = parse_args()
 
     # Parse config file
-    cfg = CfgSetup(args.cfgfile, last=not args.notlast)
+    if hasattr(args, 'cfgfile'):
+        cfg = CfgSetup(cfgfile=args.cfgfile)
+    else:
+        cfg = CfgSetup(last=True)
 
     # Override values in config file with command line arguments
     if hasattr(args, 'quiet'):
@@ -198,24 +201,16 @@ def main():
         cfg.sol.timings = args.timings if args.timings is not None else cfg.sol.timings
     if hasattr(args, 'nt'):
         cfg.sol.nt = args.nt if args.nt is not None else cfg.sol.nt
+    if hasattr(args, 'force'):
+        cfg.geo.force = args.force if args.force is not None else cfg.geo.force
 
     # legacy : nsfds2 allowed for multiple views on the same frame, not nsfds3!
     if hasattr(args, 'view'):
         if isinstance(args.view, list):
             args.view = args.view[0]
 
-
-
     if args.command:
-        msh = None
-        if not args.force:
-            msh = cfg.get_grid_backup()
-            if msh is not None and not cfg.quiet:
-                print(f'Got [bold red]existing {type(msh).__name__}[/] for this configuration. Skip grid generation...')
-
-        if args.force or msh is None:
-            msh = build_mesh(cfg)
-
+        msh = build_mesh(cfg)
         globals()[args.command](args, cfg, msh)
     else:
         print('Must specify an action among solve/make/show/loop')

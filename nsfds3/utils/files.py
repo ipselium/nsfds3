@@ -37,7 +37,7 @@ from nsfds3.utils.data import DataExtractor as _DataExtractor
 
 
 def get_objects(path, fname):
-    """ Get cfg and msh objects from pickles.
+    """Get cfg and msh objects from pickles.
 
     Parameters
     ----------
@@ -75,7 +75,7 @@ def get_objects(path, fname):
 
 
 def mkdir(directory, verbose=False):
-    """ Check if directory exists. If not, create it.
+    """Check if directory exists. If not, create it.
 
     Parameters
     ----------
@@ -98,7 +98,7 @@ def mkdir(directory, verbose=False):
 
 
 def write_file(fname, content, verbose=False):
-    """ Write content into fname.
+    """Write content into fname.
 
     Parameters
     ----------
@@ -124,7 +124,7 @@ def write_file(fname, content, verbose=False):
 
 
 def read_file(fname, verbose=False):
-    """ Return the content of fname.
+    """Return the content of fname.
 
     Parameters
     ----------
@@ -155,13 +155,13 @@ def read_file(fname, verbose=False):
 
 
 def normalize(s, dtype=_np.int16):
-    """ Normalize wav data. """
+    """Normalize wav data."""
     smax = _np.iinfo(dtype).max
     return (s/abs(s).max()*smax).astype(dtype)
 
 
 def probes_to_wavfile(datafile, dtype=_np.int16, path=None):
-    """ Make .wav files from probes signals.
+    """Make .wav files from probes signals.
 
     Parameters
     ----------

@@ -212,6 +212,9 @@ class CustomInitialConditions:
             ax.set_xlabel('x [m]')
             ax.set_ylabel('y [m]')
             ax.set_aspect('equal')
+        if self.cfg.prb:
+            for prb in self.cfg.prb.locs:
+                _plt.plot(self.msh.x[prb[0]], self.msh.y[prb[1]], 'ro')
         _plt.show()
 
     def __str__(self):

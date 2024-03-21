@@ -408,7 +408,28 @@ class CPViewer(MeshViewer):
 
 
 class MPLViewer(MeshViewer):
-    """MeshViewer specialization adapted to libfds.Fields or hdf5 files."""
+    """MeshViewer specialization adapted to libfds.Fields or hdf5 files.
+
+    Parameters
+    ----------
+    cfg: nsfds3.solver.CfgSetup
+        Configuration of the simulation
+    data: libfds.fields.Fields2d, libfds.fields.Fields3d, pathlib.Path, str, optional
+        Data can be provided as Fields2d/Fields3d or with the path to a hdf5 file.
+        If data is not provided, the file pointed to by the cfg.files.data_path attribute is used if it exists.
+
+    Note
+    ----
+    Until the MPLViewer instance is not closed with the close method, it keeps the hdf5 file open.
+    This can cause problems when opening it in another process.
+    It is strongly recommanded to use MPLViewer as a context manager :
+
+    ::
+
+        with MPLViewer(path_to_config_file.conf) as viewer:
+            viewer.show(view='p', iteration=100)
+
+    """
 
     dkwargs = dict(figsize=(10, 10), dpi=100, fps=24,
                    grid=False, buffer=True, obstacles=True, domains=False, probes=True,
@@ -418,22 +439,25 @@ class MPLViewer(MeshViewer):
                    kwargs_domains=dict(facecolor='y', alpha=0.2, zorder=100, annotate=True),
                    kwargs_buffer=dict(linewidth=3, edgecolor='k', facecolor='none', alpha=0.2, zorder=100))
 
-    def __init__(self, cfg, msh, data):
+    def __init__(self, cfg, data=None):
 
-        super().__init__(msh)
+        super().__init__(cfg.get_grid_backup())
 
         self.cfg = cfg
-        self._data = data
         self.closed = False
+
+        if not data:
+            if not cfg.files.data_path.is_file():
+                raise FileNotFoundError('Unable to load hdf5 file.')
+            else:
+                data = cfg.files.data_path
 
         if isinstance(data, (Fields2d, Fields3d)):
             self.data = FieldExtractor(data)
         elif isinstance(data, (pathlib.Path, str)):
             self.data = DataExtractor(data)
-        elif isinstance(data, DataExtractor):
-            self.data = data
         else:
-            raise ValueError('data can be Fields2d, Fields3d, DataExtractor, or path to hdf5 file')
+            raise ValueError('data can be Fields2d, Fields3d, or path to hdf5 file')
 
     def show(self, view='p', vmin=None, vmax=None,  iteration=0, **kwargs):
         """Show view at a given iteration."""

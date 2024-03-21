@@ -24,7 +24,6 @@ The `solver` package contains the following main objects:
 
 * :py:class:`CfgSetup`: read a configuration file and set all simulation parameters.
 * :py:class:`FDTD`: setup and run the FDTD simulation
-* :py:class:`Source`: Describe a source
 * :py:class:`SourceSet`: Describes a set of sources
 * :py:class:`CustomInitialConditions`: Describes custom initial conditions
 

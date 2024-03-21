@@ -30,8 +30,11 @@ import numpy as _np
 from libfds import fields
 
 
+VIEWS = {'e': 're', 'vx': 'ru', 'vy': 'rv', 'vz': 'rw'}
+
+
 def closest_index(n, ns, nt):
-    """ Returns the index closest to `n`.
+    """Returns the index closest to `n`.
 
     Parameters
     ----------
@@ -66,7 +69,7 @@ def closest_index(n, ns, nt):
 
 
 def get_pressure(r=None, ru=None, rv=None, rw=None, re=None, gamma=1.4):
-    """ Get pressure from conservative variables.
+    """Get pressure from conservative variables.
 
     Parameters
     ----------
@@ -106,8 +109,60 @@ def get_pressure(r=None, ru=None, rv=None, rw=None, re=None, gamma=1.4):
     return p
 
 
+def get_probes(cfg, save=False):
+    """Get probe location and values.
+
+    Parameters
+    ----------
+    cfg: CfgSetup
+        Configuration of the simulation. Must be a CfgSetup instance.
+    save: bool, default to False
+        Whether to save probe to npy files or not.
+
+    Return
+    ------
+    (locations, values, time): tuple
+        locations are the spacial positions of the probes.
+        values are the values of the probes. Each line corresponds to the values of a probe
+        time is the time axis.
+
+    Example
+    -------
+
+    ::
+
+        from nsfds3.solver import CfgSetup
+        from nsfds3.utils import get_probes
+
+        cfg = CfgSetup('config_file.conf')
+        locations, values, time = get_probes(cfg)
+    """
+
+    msh = cfg.get_grid_backup()
+    if not cfg.files.data_path.is_file():
+        raise FileNotFoundError('Unable to load hdf5 file.')
+
+    with h5py.File(cfg.files.data_path, 'r') as fn:
+        if cfg.ndim == 3:
+            locs = _np.vstack((msh.x[fn['probe_locations'][...][:, 0]],
+                               msh.y[fn['probe_locations'][...][:, 1]],
+                               msh.z[fn['probe_locations'][...][:, 1]])).T
+        else:
+            locs = _np.vstack((msh.x[fn['probe_locations'][...][:, 0]],
+                               msh.y[fn['probe_locations'][...][:, 1]])).T
+        values = fn['probe_values'][...] - cfg.tp.p0
+    time = _np.arange(cfg.sol.nt) * cfg.dt
+
+    if save:
+        _np.save(cfg.files.directory / f'{cfg.files.name.stem}_probes.npy', values)
+        _np.save(cfg.files.directory / f'{cfg.files.name.stem}_time.npy', time)
+        _np.save(cfg.files.directory / f'{cfg.files.name.stem}_locations.npy', locs)
+
+    return locs, values, time
+
+
 def check_view(view, volumic=True, vorticity=True):
-    """ Validates the given view parameter and returns it if valid.
+    """Validates the given view parameter and returns it if valid.
 
     Parameters
     ----------
@@ -147,12 +202,13 @@ def check_view(view, volumic=True, vorticity=True):
 
 
 class DataIterator:
-    """Data Generator.
+    """Data Generator. This class is not intended for direct use.
+    Use DataExtractor.get_iterator() method instead.
 
     Parameters
     ----------
-    data : DataExtractor or str
-        DataExtractor instance or filename.
+    data : DataExtractor
+        DataExtractor instance.
     view : tuple
         The variable(s) to display.
     nt : int
@@ -161,10 +217,10 @@ class DataIterator:
 
     def __init__(self, data, view=('p'), nt=None):
 
-        if isinstance(data, DataExtractor):
-            self.data = data
-        elif isinstance(data, (pathlib.Path, str)):
-            self.data = DataExtractor(data)
+        if not isinstance(data, DataExtractor):
+            raise ValueError('DataExtractor instance expected')
+
+        self.data = data
 
         if not isinstance(view, (tuple, list)):
             view = (view, )
@@ -179,11 +235,11 @@ class DataIterator:
         return int((self.nt - self.icur) / self.ns)
 
     def __iter__(self):
-        """ Iterator """
+        """Iterator """
         return self
 
     def __next__(self):
-        """ Next element of iterator : (frame_number, variable) """
+        """Next element of iterator : (frame_number, variable) """
         if self.icur > self.nt:
             raise StopIteration
 
@@ -197,7 +253,6 @@ class DataIterator:
             return tmp
 
         except KeyError:
-            self.data.close()
             raise StopIteration
 
 
@@ -206,32 +261,36 @@ class DataExtractor:
 
     Parameters
     ----------
-    obj: pathlib.Path or str
-        The data to be initialized with. If it is a pathlib.Path or str, the
-        data will be retrieved using the `DataExtractor.get_data` method.
-        Otherwise, the data will be used as is.
+    path: pathlib.Path or str
+        Path to hdf5 file.
+
+    Note
+    ----
+    Until the DataExtractor instance is not closed with the close method, it keeps the hdf5 file open.
+    This can cause problems when opening it in another process.
+    Encourage the use of the context manager :
+
+    ::
+
+        with DataExtractor(path_to_hdf5_file) as data:
+            data.get(view='p', iteration=100)
     """
 
-    def __init__(self, obj):
+    def __init__(self, path):
 
-        self._obj = obj
+        self.path = pathlib.Path(path)
+        if not path.is_file():
+            raise FileNotFoundError('Unable to find hdf5 file.')
 
-        if isinstance(obj, (pathlib.Path, str)):
-            self.data = self.get_data(obj)
-        elif isinstance(obj, h5py.File):
-            self.data = obj
-        else:
-            raise ValueError('pathlib.Path, str, or h5py.File expected')
+        self.data = self.get_data(path)
 
-        self.var = {'e': 're', 'vx': 'ru', 'vy': 'rv', 'vz': 'rw'}
-        self.nt = self.get_attr('nt')
-        self.ns = self.get_attr('ns')
-
-        self.gamma = self.get_attr('gamma')
+        self.nt = self.data.attrs['nt']
+        self.ns = self.data.attrs['ns']
+        self.gamma = self.data.attrs['gamma']
         self.p0 = self.data.attrs['p0']
+        self.volumic = self.data.attrs['ndim'] == 3
+        self.vorticity = self.data.attrs['vorticity']
 
-        self.volumic = self.get_attr('ndim') == 3
-        self.vorticity = self.get_attr('vorticity')
         self.T = (0, 1, 2) if self.volumic else (1, 0)
 
     def __enter__(self):
@@ -240,9 +299,25 @@ class DataExtractor:
     def __exit__(self, mtype, value, traceback):
         self.close()
 
+    def get_iterator(self, view=('p'), nt=None):
+        """Return a Iterator for view(s) until nt.
+
+        Parameters
+        ----------
+        view: tuple or str
+            view(s) to be setup for iteration
+        nt: int
+            Maximum number of time iterations
+
+        Return
+        ------
+        DataIterator
+        """
+        return DataIterator(self, view=view, nt=nt)
+
     @staticmethod
     def get_data(fname):
-        """ Get data from h5py.File (hdf5 file).
+        """Get data from h5py.File (hdf5 file).
 
         Parameters
         ----------
@@ -301,7 +376,7 @@ class DataExtractor:
             return _np.nanmin(varmin), _np.nanmax(varmax)
 
     def _autoref(self, view='p'):
-        """ Search minimum and maximum value indices of the view.
+        """Search minimum and maximum value indices of the view.
 
         Parameter
         ---------
@@ -314,7 +389,7 @@ class DataExtractor:
             References of the minimum and maximum value for the view.
         """
         view = check_view(view, self.volumic, self.vorticity)
-        var = DataIterator(self, view=(view, ))
+        var = self.get_iterator(view=(view, ))
         mins, maxs = _np.array([(v.max(), v.min()) for _, v in var]).T
 
         refmax = abs(maxs - maxs.mean()).argmin() * self.ns
@@ -350,7 +425,7 @@ class DataExtractor:
             return p.transpose(self.T) - self.p0
 
         elif view in ['vx', 'vy', 'vz', 'e']:
-            v = self.data[f"{self.var[view]}_it{iteration}"][...]
+            v = self.data[f"{VIEWS[view]}_it{iteration}"][...]
             r = self.data[f"r_it{iteration}"][...]
             return (v / r).transpose(self.T)
 
@@ -371,13 +446,15 @@ class FieldExtractor:
 
     Parameters
     ----------
-        fld: libfds.fields.Fields2d or libfds.fields.Fields3d
-            The field to get data from.
+    fld: libfds.fields.Fields2d or libfds.fields.Fields3d
+         The field to get data from.
 
     Raises
     ------
         ValueError: If fld is neither Fields2d nor Fields3d.
     """
+
+
 
     def __init__(self, fld):
         self.fld = fld
@@ -391,7 +468,6 @@ class FieldExtractor:
             raise ValueError('fld must be Fields2d or Fields3d')
 
         self.vorticity = bool(fld.wz)
-        self.var = {'e': 're', 'vx': 'ru', 'vy': 'rv', 'vz': 'rw'}
 
     def get(self, view='p', iteration=None):
         """
@@ -417,4 +493,4 @@ class FieldExtractor:
             return _np.array(getattr(self.fld, view)).transpose(self.T)
 
         elif view in ['vx', 'vy', 'vz', 'e']:
-            return _np.array(getattr(self.fld, self.var[view]) / self.fld.r).transpose(self.T)
+            return _np.array(getattr(self.fld, VIEWS[view]) / self.fld.r).transpose(self.T)

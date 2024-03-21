@@ -41,12 +41,11 @@ from libfds.cmaths import curvilinear2d_metrics, curvilinear3d_metrics
 
 def build_mesh(cfg):
     """Return Grid from :py:class:`nsfds3.solver.CfgSetup` configuration."""
-    if cfg.files.data_path.is_file() and not cfg.geo.force:
+    if cfg.has_grid_backup and not cfg.geo.force:
         msh = cfg.get_grid_backup()
-        if msh is not None:
-            if not cfg.quiet:
-                print('[bold bright_cyan]Existing Grid backup[bold bright_magenta] loaded.')
-            return msh
+        if not cfg.quiet:
+            print(f'Got [bold bright_cyan]existing {type(msh).__name__}[/] for this configuration. Skip grid generation...')
+        return msh
 
     if getattr(cfg.geo, 'curvfunc', None):
         return CurvilinearGrid.from_cfg(cfg)

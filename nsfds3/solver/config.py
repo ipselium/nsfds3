@@ -870,13 +870,24 @@ class CfgSetup:
         """Overwrite configuration file."""
         self.write(self.cfgfile)
 
+    @property
+    def has_grid_backup(self):
+        """Return whether a `CartesianGrid` or `CurvilinearGrid` already exist for this configuration or not."""
+        try:
+            cfg, _ = files.get_objects(self.files.directory, self.files.name)
+        except FileNotFoundError:
+            return False
+        else:
+            if self.geo == cfg.geo:
+                return True
+        return False
+
     def get_grid_backup(self):
-        """Return existing `CartesianGrid` or `CurvilinearGrid` object for this grid configuration
+        """Return existing `CartesianGrid` or `CurvilinearGrid` instance for this grid configuration
         if found, else return None."""
-        cfg, msh = files.get_objects(self.files.directory, self.files.name)
-        if self.geo == cfg.geo:
-            return msh
-        return None
+        if self.has_grid_backup:
+            return files.get_objects(self.files.directory, self.files.name)[1]
+        raise FileNotFoundError('Unable to load mesh file.')
 
     def run(self):
         """Run the parser."""

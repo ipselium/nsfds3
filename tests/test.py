@@ -25,16 +25,15 @@ The module `data` provides some helper class or function to retrieve data from n
 
 
 from nsfds3.graphics import MPLViewer
-from nsfds3.utils import get_objects
+from nsfds3.solver import CfgSetup
 from pathlib import Path
 
-path = Path('/Users/cdesjouy/Documents/dev/apps/nsfds3/tests/configurations/None')
-filename = Path('pulse_2d')
+filename = Path('pulse_2d.conf')
 
-cfg2d, msh2d = get_objects(path, filename)
-viewer2d = MPLViewer(cfg2d, msh2d, path / filename.with_suffix('.hdf5'))
+cfg2d = CfgSetup(filename)
 
-msh2d.show(N=4, buffer=True, domains=False,
-            kwargs_obstacles=dict(hatch='/', facecolor='r'),
-            kwargs_buffer=dict(hatch='/', fill=True, facecolor='b', alpha=0.1)
-            )
+with MPLViewer(cfg2d) as viewer2d:
+    viewer2d.show(N=4, buffer=True, domains=False,
+                  kwargs_obstacles=dict(hatch='/', facecolor='r'),
+                  kwargs_buffer=dict(hatch='/', fill=True, facecolor='b', alpha=0.1)
+                 )
