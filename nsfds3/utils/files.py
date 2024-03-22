@@ -33,7 +33,7 @@ import pathlib
 import time
 import scipy.io.wavfile as _wf
 import numpy as _np
-from nsfds3.utils.data import DataExtractor as _DataExtractor
+from nsfds3.utils.data import Hdf5Wrapper as _Hdf5Wrapper
 
 
 def get_objects(path, fname):
@@ -181,7 +181,7 @@ def probes_to_wavfile(datafile, dtype=_np.int16, path=None):
     probes = []
     datafile = pathlib.Path(datafile).expanduser()
 
-    with _DataExtractor(datafile) as data:
+    with _Hdf5Wrapper(datafile) as data:
         probe_values = data.get_dataset('probe_values')
         p0 = data.get_attr('p0')
         dt = data.get_attr('dt')

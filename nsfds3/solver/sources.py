@@ -35,7 +35,7 @@ import itertools as _it
 from rich import print
 from rich.prompt import IntPrompt, Prompt
 from nsfds3.graphics.utils import cmap_jet, MidPointNorm
-from nsfds3.utils.data import DataExtractor
+from nsfds3.utils.data import Hdf5Wrapper
 from nsfds3.utils.files import get_objects
 from nsfds3.utils.misc import Confirm
 from libfds.cmaths import super_gaussian2d, super_gaussian3d
@@ -142,7 +142,7 @@ class CustomInitialConditions:
             print('[bold bright_magenta]Old configuration not found.')
             return
 
-        with DataExtractor(self.cfg.files.data_path) as data:
+        with Hdf5Wrapper(self.cfg.files.data_path) as data:
             self.cfg.sol.itmax = data.get_attr('itmax')
             self._r = data.get_dataset(f'r_it{self.cfg.sol.itmax}')
             self._ru = data.get_dataset(f'ru_it{self.cfg.sol.itmax}')

@@ -345,17 +345,23 @@ class CurvilinearGrid(CartesianGrid):
         """Check metrics."""
         msg = f'Warning : Metric invariants > {rtol}\n'
 
+        s = tuple(slice(self.bz_n if self.bc[2*i] == 'A' else 0,
+                        -self.bz_n if self.bc[2*i+1] == 'A' else None) for i in range(self.ndim))
+
         if self.ndim == 3:
-            invariants = curvilinear3d_metrics(self.J, self.dx_du, self.dx_dv, self.dx_dw,
-                                                       self.dy_du, self.dy_dv, self.dy_dw,
-                                                       self.dz_du, self.dz_dv, self.dz_dw)
+            invariants = curvilinear3d_metrics(self.J[s].copy(), 
+                                               self.dx_du[s].copy(), self.dx_dv[s].copy(), self.dx_dw[s].copy(),
+                                               self.dy_du[s].copy(), self.dy_dv[s].copy(), self.dy_dw[s].copy(),
+                                               self.dz_du[s].copy(), self.dz_dv[s].copy(), self.dz_dw[s].copy())
         else:
-            invariants = curvilinear2d_metrics(self.J, self.dx_du, self.dx_dv,
-                                                 self.dy_du, self.dy_dv)
+            invariants = curvilinear2d_metrics(self.J[s].copy(),
+                                               self.dx_du[s].copy(), self.dx_dv[s].copy(),
+                                               self.dy_du[s].copy(), self.dy_dv[s].copy())
 
         self.invariants = [np.max(np.abs(inv[self.buffer.sn])) for inv in invariants]
         if not np.allclose(np.array(self.invariants), 0., rtol=rtol):
-            inv = [f'Max {ax}-invariant {inv}\n' for ax, inv in zip(('x', 'y', 'z'), self.invariants)]
+            inv = [f'Max {ax}-invariant: {inv} [{inv * 100 / dn:.4f} % error]\n' 
+                   for ax, inv, dn in zip(('x', 'y', 'z'), self.invariants, self.steps)]
             msg += ''.join(inv)
             print('[bold bright_magenta]' + msg)
 

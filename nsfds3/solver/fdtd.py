@@ -24,7 +24,7 @@
 # pylint: disable=protected-access
 """
 The `fdtd` module provides the `FDTD` (Finite Difference Time Domain) class that
-setup and run the simulation
+setup and run the simulation.
 """
 
 import sys
@@ -76,7 +76,7 @@ class FDTD:
 
     Finite differences schemes, Runge-Kutta algorithm and selective filter are applied using
     the technique described in [1]_. The shock capturing procedure is applied using the technique
-    described in [2]_.
+    described in [2]_. Curvilinear viscous fluxes are calculated following [3]_.
 
     References
     ----------
@@ -88,6 +88,9 @@ class FDTD:
     .. [2] C. Bogey, N. de Cacqueray, C. Bailly, "A shock-capturing methodology based on adaptative
            spatial filtering for high-order non-linear computations", Journal of Computational Physics,
            Volume 228, Issue 5, 2009, Pages 1447-1465.
+
+    .. [3] Marsden, Olivier. « Calcul direct du rayonnement acoustique de profils par une 
+           approche curviligne d’ordre élevé », 2005.
     """
 
     def __init__(self, cfg, msh, ics=None, quiet=None, timings=None, overwrite=None):
@@ -164,7 +167,6 @@ class FDTD:
                 print('[bold bright_magenta]NaN encountered : exiting simulation')
                 print(nan_check(self.fld.p))
                 sys.exit(0)
-
 
     def run(self):
         """Run simulation."""

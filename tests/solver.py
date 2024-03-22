@@ -27,30 +27,13 @@ DOCSTRING
 """
 
 
-import itertools as _it
-from time import perf_counter as _pc
-import numpy as np
-import matplotlib.pyplot as plt
-
-from libfds.fields import Fields2d
-from libfds.fluxes import EulerianFluxes2d
-from libfds.filters import SelectiveFilter, ShockCapture
-from mplutils.custom_cmap import modified_jet, MidPointNorm
-
-from rich import print
-from rich.panel import Panel
-from rich.progress import track
-
-from nsfds3.cpgrid import RegularMesh
+from nsfds3.cpgrid import build_mesh
 from nsfds3.solver import CfgSetup, FDTD
 
+cfgfile = 'configurations/base_2d.conf'
 
-if __name__ == '__main__':
-    config = CfgSetup()
-    args, kwargs = config.get_config()
-    mesh = RegularMesh(*args, **kwargs)
-    fdtd = FDTD(config, mesh)
-    print(mesh)
-    print(mesh.domains)
-    fdtd.run()
-    fdtd.show()
+cfg = CfgSetup(cfgfile)
+msh = build_mesh(cfg)
+
+fdtd = FDTD(cfg, msh, timings=False)
+fdtd.run()

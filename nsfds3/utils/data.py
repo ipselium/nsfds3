@@ -83,15 +83,17 @@ def get_pressure(r=None, ru=None, rv=None, rw=None, re=None, gamma=1.4):
     p: numpy.array
         Pressure
 
-    Examples
-    --------
+    Example
+    -------
 
     The pressure is not directly provided. To access acoustic pressure, one can
-    use::
+    use
+
+    ::
 
         from nsfds3.utils import get_pressure
 
-	    p = get_pressure(r=r, ru=ru, rv=rv, rw=rw, re=re, gamma=gamma)
+        p = get_pressure(r=r, ru=ru, rv=rv, rw=rw, re=re, gamma=gamma)
 
     """
     if any(item is None for item in [r, ru, rv, re]):
@@ -200,12 +202,12 @@ def check_view(view, volumic=True, vorticity=True):
 
 class DataIterator:
     """Data Generator. This class is not intended for direct use.
-    Use DataExtractor.get_iterator() method instead.
+    Use Hdf5Wrapper.get_iterator() method instead.
 
     Parameters
     ----------
-    data : DataExtractor
-        DataExtractor instance.
+    data : Hdf5Wrapper
+        Hdf5Wrapper instance.
     view : tuple
         The variable(s) to display.
     nt : int
@@ -214,8 +216,8 @@ class DataIterator:
 
     def __init__(self, data, view=('p'), nt=None):
 
-        if not isinstance(data, DataExtractor):
-            raise ValueError('DataExtractor instance expected')
+        if not isinstance(data, Hdf5Wrapper):
+            raise ValueError('Hdf5Wrapper instance expected')
 
         self.data = data
 
@@ -253,7 +255,7 @@ class DataIterator:
             raise StopIteration
 
 
-class DataExtractor:
+class Hdf5Wrapper:
     """Helper class to extract data from an h5py.File.
 
     Parameters
@@ -263,13 +265,13 @@ class DataExtractor:
 
     Note
     ----
-    Until the DataExtractor instance is not closed with the close method, it keeps the hdf5 file open.
+    Until the Hdf5Wrapper instance is not closed with the close method, it keeps the hdf5 file open.
     This can cause problems when opening it in another process.
     Encourage the use of the context manager :
 
     ::
 
-        with DataExtractor(path_to_hdf5_file) as data:
+        with Hdf5Wrapper(path_to_hdf5_file) as data:
             data.get(view='p', iteration=100)
     """
 
@@ -438,7 +440,7 @@ class DataExtractor:
         return (self.data[dataset][...])
 
 
-class FieldExtractor:
+class FieldWrapper:
     """Helper class to extract data from a lbfds.fields.Fields2d or Fields3d.
 
     Parameters

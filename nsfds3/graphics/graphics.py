@@ -45,7 +45,7 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 #from progressbar import ProgressBar, Bar, ETA
 from rich.progress import track
-from nsfds3.utils.data import DataExtractor, FieldExtractor
+from nsfds3.utils.data import Hdf5Wrapper, FieldWrapper
 from nsfds3.graphics.utils import MidPointNorm, cmap_jet, cmap_mask, dict_update, fig_scale
 from libfds.fields import Fields2d, Fields3d
 
@@ -462,9 +462,9 @@ class MPLViewer(MeshViewer):
                 data = cfg.files.data_path
 
         if isinstance(data, (Fields2d, Fields3d)):
-            self.data = FieldExtractor(data)
+            self.data = FieldWrapper(data)
         elif isinstance(data, (pathlib.Path, str)):
-            self.data = DataExtractor(data)
+            self.data = Hdf5Wrapper(data)
         else:
             raise ViewerError('data can be Fields2d, Fields3d, or path to hdf5 file')
 
@@ -587,8 +587,8 @@ class MPLViewer(MeshViewer):
 
         kwargs = dict_update(self.dkwargs, kwargs)
 
-        if not isinstance(self.data, DataExtractor):
-            print('movie method only available for DataExtractor')
+        if not isinstance(self.data, Hdf5Wrapper):
+            print('movie method only available for Hdf5Wrapper')
             sys.exit(1)
 
         # Create Iterator and make 1st frame
@@ -631,8 +631,8 @@ class MPLViewer(MeshViewer):
     def probes(self, figsize=(9, 4)):
         """Plot acoustic pressure at probe locations."""
 
-        if not isinstance(self.data, DataExtractor):
-            print('probes method only available for DataExtractor')
+        if not isinstance(self.data, Hdf5Wrapper):
+            print('probes method only available for Hdf5Wrapper')
             sys.exit(1)
 
         locs = self.data.get_dataset('probe_locations').tolist()
@@ -698,7 +698,7 @@ class MPLViewer(MeshViewer):
 
     def close(self):
         """Close hdf5 file if one is open."""
-        if isinstance(self.data, DataExtractor):
+        if isinstance(self.data, Hdf5Wrapper):
             self.data.close()
             self.closed = True
 
