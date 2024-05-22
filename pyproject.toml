@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel", "numpy>=1.26.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nsfds3"
+dynamic = ["version"]       # let setuptool find package version
+authors = [
+  { name="Cyril Desjouy", email="cyril.desjouy@univ-lemans.fr" },
+]
+description = "Finite difference solver for Navier-Stokes equations"
+readme = "README.rst"
+license = {file = "LICENSE"}
+requires-python = ">=3.11"
+classifiers = [
+    "Programming Language :: Python :: 3.11",
+    "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+    "Operating System :: OS Independent",
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Physics",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = [
+    "numpy>=1.26.0",
+    "scipy",
+    "matplotlib>=3.9.0",
+    "plotly",
+    "rich",
+    "h5py"
+]
+
+[project.urls]
+Homepage = "https://github.com/ipselium/nsfds3"
+Documentation = "https://perso.univ-lemans.fr/~cdesjouy/nsfds3"
+
+[project.scripts]
+nsfds3 = "nsfds3.main:main"

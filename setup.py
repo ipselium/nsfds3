@@ -29,19 +29,27 @@ setup file for nsfds3
 -----------
 """
 
+import codecs
+import os.path
 import platform
-from setuptools import setup, find_packages
+from setuptools import setup
 from setuptools.extension import Extension
-from setuptools.command.build_ext import build_ext as _build_ext
 
-class build_ext(_build_ext):
-    def finalize_options(self):
-        """https://stackoverflow.com/questions/19919905/how-to-bootstrap-numpy-installation-in-setup-py """
-        _build_ext.finalize_options(self)
-        # Prevent numpy from thinking it is still in its setup process:
-        __builtins__.__NUMPY_SETUP__ = False
-        import numpy
-        self.include_dirs.append(numpy.get_include())
+
+def read(rel_path):
+    here = os.path.abspath(os.path.dirname(__file__))
+    with codecs.open(os.path.join(here, rel_path), 'r') as fp:
+        return fp.read()
+
+
+def get_version(rel_path):
+    for line in read(rel_path).splitlines():
+        if line.startswith('__version__'):
+            delim = '"' if '"' in line else "'"
+            return line.split(delim)[1]
+    else:
+        raise RuntimeError("Unable to find version string.")
+
 
 
 if platform.system() == 'Windows':
@@ -58,7 +66,14 @@ else:
 extensions = [
     Extension(
         'nsfds3.cpgrid.cutils',
-        ["nsfds3/cpgrid/cutils.c"],
+        ["src/nsfds3/cpgrid/cutils.c"],
+        libraries=libraries,
+        extra_compile_args=extra_compile_args,
+        extra_link_args=extra_link_args,
+    ),
+    Extension(
+        'nsfds3.cpgrid.gridutils',
+        ["src/nsfds3/cpgrid/gridutils.c"],
         libraries=libraries,
         extra_compile_args=extra_compile_args,
         extra_link_args=extra_link_args,
@@ -66,32 +81,6 @@ extensions = [
 ]
 
 setup(
-    name='nsfds3',
-    description="Finite difference solver for Navier-Stokes equations",
-    #    long_description=open('README.rst').read(),
-    long_description_content_type='text/x-rst',
-    version="0.2.1",
-    license="GPL",
-    url='https://github.com/ipselium/nsfds3',
-    author="Cyril Desjouy",
-    author_email="cyril.desjouy@univ-lemans.fr",
-    cmdclass={'build_ext': build_ext},
     ext_modules=extensions,
-    packages=find_packages(),
-    include_package_data=True,
-    install_requires=["numpy", "scipy", "matplotlib", "plotly",
-                      "progressbar33", "rich", "h5py",],
-    classifiers=[
-        "Development Status :: 4 - Beta",
-        "Programming Language :: Python :: 3",
-        "Intended Audience :: Science/Research",
-        "Topic :: Scientific/Engineering :: Physics",
-        "Topic :: Software Development :: Libraries :: Python Modules",
-        "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
-    ],
-    entry_points={
-        'console_scripts': [
-            'nsfds3 = nsfds3.main:main',
-        ],
-    }
+    version=get_version("src/nsfds3/__init__.py")
 )

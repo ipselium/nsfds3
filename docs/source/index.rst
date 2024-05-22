@@ -2,10 +2,10 @@
 Welcome to nsfds3's documentation!
 ==================================
 
-.. image:: https://badge.fury.io/py/nsfds2.svg
-   :target: https://badge.fury.io/py/nsfds2.svg
+.. image:: https://badge.fury.io/py/nsfds3.svg
+   :target: https://badge.fury.io/py/nsfds3.svg
 
-.. image:: images/nsfds2.png
+.. image:: images/nsfds3.png
 
 .. toctree::
    :caption: Quickstart
