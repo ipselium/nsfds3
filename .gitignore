@@ -6,6 +6,7 @@ results/
 *TODO*
 *.hdf5
 *.h5
+*.json
 *.cfg
 *.pkl
 *.msh
