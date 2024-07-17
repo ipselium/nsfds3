@@ -61,6 +61,14 @@ class Air:
         if norm:
             self.norm = True
 
+    @staticmethod
+    def from_cfg(cfg):
+        rho0 = cfg['thermophysic']['rho0']
+        T0 = cfg['thermophysic']['t0']
+        gamma = cfg['thermophysic']['gamma']
+        norm = cfg['thermophysic']['norm']
+        return Air(rho0=rho0, T0=T0, gamma=gamma, norm=norm)
+
     @property
     def norm(self):
         """Report whether or not the parameters are normalized."""

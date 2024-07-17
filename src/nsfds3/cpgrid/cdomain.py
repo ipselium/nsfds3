@@ -24,9 +24,8 @@ The `cdomain` module provides :py:class:`ComputationDomains` class aiming at div
 grid into subdomains following the geometric configurations.
 """
 
-from time import perf_counter as pc
 import itertools as _it
-import numpy as _np
+import numpy
 import rich.progress as _rp
 from nsfds3.cpgrid.geometry import ObstacleSet, DomainSet, Domain
 from nsfds3.cpgrid.cutils import get_2d_cuboids, get_3d_cuboids
@@ -83,7 +82,7 @@ class ComputationDomains:
         """
         Initialize a mask that contains 0 at the location of obstacles and 1 elsewhere.
         """
-        self._mask = _np.ones(self.shape + (self.ndim, ), dtype=_np.int8)
+        self._mask = numpy.ones(self.shape + (self.ndim, ), dtype=numpy.int8)
         sax = (slice(0, self.ndim), )
 
         for obs in self.obstacles:
@@ -94,7 +93,10 @@ class ComputationDomains:
             self._mask[f.sin + sax] = 0
 
         # Fix junction between face to face overlapped objects
-        combs = [(f1, f2) for f1, f2 in _it.combinations(self.obstacles.faces, r=2) if f1.sid != f2.sid and f1.side == f2.opposite]
+        combs = []
+        for o1, o2 in self.obstacles.overlapped_cuboids:
+            combs += [(f1, f2) for f1, f2 in _it.product(o1.faces, o2.faces) if f1.side == f2.opposite]
+
         for f1, f2 in combs:
             if f1.intersects(f2):
                 s = tuple(zip(*f1.inner_indices().intersection(f2.inner_indices())))
@@ -121,7 +123,6 @@ class ComputationDomains:
                     if [set(rf).intersection(re) for rf, re in zip(fedge, bedge)]:
                         self._mask[f.slice_from_edge(fedge) + sax] = 0
 
-
     def _mask_setup(self):
         """
         Fill a mask according to finite difference scheme to be applied on each point.
@@ -130,13 +131,12 @@ class ComputationDomains:
             - Forward scheme   : stencil
             - Backward scheme  : -stencil
         """
-
         self._mask_init()
         bounds = tuple(b for b in self.bounds.faces if b.bc in self._BC_U)
 
         for f in self.obstacles.uncentered + bounds:
             fbox = f.box(self._midstencil)
-            base = _np.zeros(fbox.size, dtype=_np.int8)
+            base = numpy.zeros(fbox.size, dtype=numpy.int8)
             base[(slice(None), ) * self.ndim] = self._mask[f.base_slice + (f.axis, )] == 0
             if f.inner:
                 base[self._mask[fbox.sn + (f.axis, )] == 1] = f.normal * self.stencil
@@ -151,7 +151,7 @@ class ComputationDomains:
 
         Parameters
         ----------
-            mask : np.array
+            mask : numpy.array
                 Search cuboids in mask
             ax : int, optional
                 Direction of the search. Can be 0 (x), 1 (y), or other (center)
@@ -188,7 +188,7 @@ class ComputationDomains:
                 for name, mid, c in zip('cpm', [-1, self._midstencil, self._midstencil], confs):
                     ti = pbar.get_time()
 
-                    m = _np.array((self._mask[..., n] == c), dtype=_np.int8)                     # To optimize ?
+                    m = numpy.array((self._mask[..., n] == c), dtype=numpy.int8)                     # To optimize ?
                     cuboids = self.get_cuboids(m, ax=n, N=mid)
                     for cub in cuboids:
                         domains[n].append(Domain(cub['origin'], cub['size'], self.shape, tag=name, axis=n))
@@ -202,9 +202,10 @@ class ComputationDomains:
 
         self.domains = []
         for ax, domain in zip('xyz', domains):
-            setattr(self, f'{ax}domains', DomainSet(self.shape, self.bc, subs=domain, obstacles=self.obstacles))
+            setattr(self, f'{ax}domains', DomainSet(self.shape, self.bc, subs=domain))
             self.domains.append(getattr(self, f'{ax}domains'))
         self.cdomains = min(domains, key=len)
+
         if not self.is_valid:
             print("Computation domain seems not to be valid.")
 
@@ -216,27 +217,21 @@ class ComputationDomains:
     @property
     def is_valid(self):
         """Report whether computation domains seem valid or not."""
-        sizes = []
-        for domain in self.domains:
-            size = 0
-            for s in domain:
-                size += _np.prod(s.size)
-            sizes.append(size)
-        return all(len(self) <= s for s in sizes)
+        for d in self.domains:
+            m = numpy.ones(self.shape, dtype=numpy.int8)
+            for obs in self.obstacles:
+                m[*obs.sn] = 0
+            for obs in d:
+                m[*obs.sn] = 0
+            if m.any():
+                return False
+        return True
 
     def _free(self):
         try:
             del self._mask
         except AttributeError:
             pass
-
-    def __len__(self):
-
-        size_obstacles = 0
-        for obs in self.obstacles:
-            size_obstacles += _np.prod(obs.size)
-
-        return _np.prod(self.shape) - size_obstacles
 
     def __str__(self):
         s = ''

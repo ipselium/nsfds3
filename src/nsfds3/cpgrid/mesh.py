@@ -41,11 +41,12 @@ from libfds.cmaths import curvilinear2d_metrics, curvilinear3d_metrics
 
 def build_mesh(cfg):
     """Return Grid from :py:class:`nsfds3.solver.CfgSetup` configuration."""
-    if cfg.has_grid_backup and not cfg.geo.force:
-        msh = cfg.get_grid_backup()
-        if not cfg.quiet:
-            print(f'Got [bold bright_cyan]existing {type(msh).__name__}[/] for this configuration. Skip grid generation...')
-        return msh
+    if not cfg.geo.force:
+        if cfg.has_grid_backup:
+            msh = cfg.get_grid_backup()
+            if not cfg.quiet:
+                print(f'Got [bold bright_cyan]existing {type(msh).__name__}[/] for this configuration. Skip grid generation...')
+            return msh
 
     if getattr(cfg.geo, 'curvfunc', None):
         return CurvilinearGrid.from_cfg(cfg)
@@ -124,6 +125,7 @@ class CartesianGrid:
         self.domain_limits = [(axe.min(), axe.max()) for axe in self.paxis]
         self.buffer_limits = [bounds(i, ax, bound) for i, (ax, bound) in
                               enumerate(zip(self.paxis, utils.buffer_bounds(self.bc, self.bz_n)))]
+
 
     @classmethod
     def from_cfg(cls, cfg):

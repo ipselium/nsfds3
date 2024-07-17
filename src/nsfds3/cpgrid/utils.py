@@ -30,17 +30,23 @@ Some tools for cpgrid.
 import re
 import os
 import sys
+import pathlib
 import numpy as _np
 from .templates import TestCases as _tc
 
 
-def get_func(module, name):
-    """Get function from python module. If not found, fallback to
+def get_func(file, name):
+    """Get function from python file. If not found, fallback to
     nsfds3.cpgrid.templates ir None.
     """
-    if os.path.isfile(module):
-        sys.path.append(os.path.dirname(module))
-        custom = __import__(os.path.basename(module).split('.')[0])
+
+    if not file:
+        return None
+
+    file = pathlib.Path(file)
+    if os.path.isfile(file.with_suffix('.py')):
+        sys.path.append(file.parent)
+        custom = __import__(file.stem)
     else:
         custom = _tc
 

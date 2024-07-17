@@ -28,10 +28,10 @@ The module `sources` provides :
     * The `Flow` class: Describes a mean flow
 """
 
-import sys
-import numpy as _np
+import numpy
+import itertools
 import matplotlib.pyplot as _plt
-import itertools as _it
+from scipy.signal import find_peaks
 from rich import print
 from rich.prompt import IntPrompt, Prompt
 from nsfds3.graphics.utils import cmap_jet, MidPointNorm
@@ -102,7 +102,7 @@ class CustomInitialConditions:
             * y-component of velocity (self.vy)
             * z-component of velocity (self.vz)
 
-            Note that super_gaussian() method is available here for convenience.
+            Note that super_gaussian() method is available in this context for convenience.
         """
         pass
 
@@ -173,7 +173,7 @@ class CustomInitialConditions:
     def check(self):
         """Check that initial conditions are valid ones."""
         for varname, var in self.vars.items():
-            if not isinstance(var, _np.ndarray) or var.shape != self.msh.shape:
+            if not isinstance(var, numpy.ndarray) or var.shape != self.msh.shape:
                 raise ValueError(f'{varname} must be a numpy.ndarray of dim {self.msh.shape}')
 
     @property
@@ -204,7 +204,7 @@ class CustomInitialConditions:
         cmap = cmap_jet()
         fig, axes = _plt.subplots(1, number, tight_layout=True)
         if number == 1:
-            axes = _np.array([axes, ])
+            axes = numpy.array([axes, ])
         for ax, (varname, value) in zip(axes, self.vars.items()):
             norm = MidPointNorm(vmin=value.min(), vmax=value.max(), midpoint=0)
             ax.pcolormesh(self.msh.x, self.msh.y, value.T, cmap=cmap, norm=norm)
@@ -219,7 +219,7 @@ class CustomInitialConditions:
 
     def __str__(self):
         if self.custom:
-            vars = [varname for varname in self.varnames if isinstance(getattr(self, varname), _np.ndarray)]
+            vars = [varname for varname in self.varnames if isinstance(getattr(self, varname), numpy.ndarray)]
             vars = '/'.join(vars)
             return f'ics : {self.custom} ({vars})'
         return f'ics : {self.custom}'
@@ -263,17 +263,18 @@ class Source:
                  Rx=0, evolution=None):
 
         self._origin = origin
-        self._S0 = S0
-        self._Bx = Bx
-        self._By = By
-        self._Bz = Bz
-        self._kx = kx
-        self._ky = ky
-        self._kz = kz
-        self._k = k
-        self._Rx = Rx
+        self._S0 = float(S0)
+        self._Bx = float(Bx)
+        self._By = float(By)
+        self._Bz = float(Bz)
+        self._kx = float(kx)
+        self._ky = float(ky)
+        self._kz = float(kz)
+        self._k = float(k)
+        self._Rx = float(Rx)
         self._evolution = None
         self._f = evolution
+        self.I = 0
 
     @property
     def tag(self):
@@ -339,10 +340,28 @@ class Source:
         t : numpy.array
             Time axis
         """
+
         if isinstance(self._f, (int, float)):
-            self.evolution = self.amplitude * _np.sin(2 * _np.pi * self._f * t)
+            self.evolution = numpy.sin(2 * numpy.pi * self._f * t)
+
         elif callable(self._f):
-            self.evolution = self.amplitude * self.evolution(t)
+            self.evolution = self._f(t)
+
+        else:
+            raise ValueError('Wrong evolution type')
+
+        # Integral of the time evolution to evaluate energy per dt to 
+        # introduce into the system. if nt <= 10, do not calculate I.
+        if len(t) < 11:
+            self.I = 1.
+        else:
+            peaks, *_  = find_peaks(abs(self.evolution))
+            if len(peaks) != 0:
+                s = slice(0, peaks[0])
+            else:
+                s = slice(0, abs(self.evolution).argmax())
+
+            self.I = numpy.trapz(abs(self.evolution)[s], t[s])
 
     def __str__(self):
         s = f'{self.tag.title()} Source @ {self.origin} '
@@ -445,7 +464,10 @@ class SourceSet:
         self.tes = []
         for origin, kwargs in zip(self.origin, self.kwargs):
             if kwargs.pop('on', False) and len(origin):
-                self.ics.append(Source(origin, **kwargs))
+                if kwargs.get('evolution', None):
+                    self.tes.append(Source(origin, **kwargs))
+                else:
+                    self.ics.append(Source(origin, **kwargs))
 
     def _parse_origin(self, origin):
         """Parse origin parameter."""
@@ -593,13 +615,13 @@ class SourceSet:
 
     @evolution.setter
     def evolution(self, value):
-        self._kwargs['evolution'] = tuple(value) if hasattr(value, '__iter__') else (value,)
+        self._kwargs['evolution'] = tuple(value) if hasattr(value, '__iter__') else (value, )
         self.update()
 
     @property
     def kwargs(self):
         """Return a list of dictionnaries providing keyword arguments of the sources."""
-        prms = _it.zip_longest(*self._kwargs.values())
+        prms = itertools.zip_longest(*self._kwargs.values())
         return [{key: value for key, value in zip(self._kwargs.keys(), values)
                                                 if value is not None} for values in prms]
 
@@ -617,96 +639,6 @@ class SourceSet:
             for src in self:
                 s += f"\n\t- {src}."
         return s
-
-    def __repr__(self):
-        return str(self)
-
-
-class Flow:
-    """Mean flow source.
-
-    Parameters
-    ----------
-    shape: tuple
-        Shape of the computational domain.
-    ftype: str or None, optional
-        Type of the flow. Can be one of the Flow.TYPES.
-    components: tuple, optional
-        Components of the flow.
-    flat: tuple or None, optional
-        Whether geometry is flattened or not. 
-        If a tuple is provided, it must provide (flat axis, flat index).
-    """
-    TYPES = (None, 'mean flow', )
-
-    def __init__(self, shape, ftype=None, components=(0, 0, 0), ndim=None, flat=None):
-
-        self._shape = shape
-        self._ndim = len(shape)
-        self._flat = flat
-        if self._ndim != 3 and self._flat:
-            raise ValueError("Flow: with flat, ndim must be 3")
-
-        self._ftype = self._parse_ftype(ftype)
-        self._components = self._parse_components(components)
-
-    @property
-    def ftype(self):
-        """Type of the mean flow."""
-        return self._ftype
-
-    @ftype.setter
-    def ftype(self, value):
-        value = self._parse_ftype(value)
-        self._ftype = value
-
-    @property
-    def components(self):
-        """Components of the mean flow.
-
-        Note
-        ----
-        If `components` is modified, the time step `dt` is modified too if `ftype` is set to an actual flow.
-        """
-        if self._flat:
-            ax, _ = self._flat
-            return tuple(s for i, s in enumerate(self._components) if i != ax)
-        return self._components
-
-    @components.setter
-    def components(self, value):
-        value = self._parse_components(value)
-        if self._flat and len(value) == 2:
-            ax, _ = self._flat
-            value = value[:ax] + (self._components[ax], ) + value[ax:]
-        self._components = value
-
-    def _parse_components(self, value):
-        """Check that flow parameters are set correctly."""
-        if not isinstance(value, tuple):
-            raise ValueError(f'Flow.components: tuple expected')
-
-        if hasattr(self, '_components'):
-            ndims = (2, 3) if self._flat else (self._ndim, )
-        else:
-            ndims  = (self._ndim, )
-        if len(value) not in ndims:
-            raise ValueError(f"Flow.components: {'|'.join(str(c) for c in ndims)}-length tuple expected")
-
-        return value
-
-    def _parse_ftype(self, value):
-        """Parse flow type."""
-        if isinstance(value, str):
-            value = value.lower()
-        if value not in Flow.TYPES:
-            raise ValueError(f'{type(self).__name__}.ftype: must be in {Flow.TYPES}')
-        return value
-
-    def __str__(self):
-        if self.ftype:
-            return f"\n[Flow]    {self.ftype} {self.components}.\n"
-        return f"\n[Flow]    None.\n"
 
     def __repr__(self):
         return str(self)

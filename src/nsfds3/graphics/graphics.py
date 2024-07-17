@@ -24,7 +24,7 @@ Some helper classes and functions to represent meshes graphically.
 
     * `MeshViewer` : Graphical tool to visualize Mesh objects graphically.
     * `CPViewer` : MeshViewer specialization adapted to ComputationDomains.
-    * `MPLViewer` : MeshViewer specialization adapted to libfds.Fields or hdf5 files.
+    * `MPLViewer` : MeshViewer specialization adapted to libfds.cFdtd or hdf5 files.
     * `PlyViewer` : Mesh/ComputationDomain viewer using Plotly.
 """
 
@@ -44,9 +44,10 @@ from matplotlib.image import PcolorImage
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 from rich.progress import track
-from nsfds3.utils.data import Hdf5Wrapper, FieldWrapper
+from rich import print
+from nsfds3.utils.data import Hdf5Wrapper, FieldWrapper, parse_decimate
 from nsfds3.graphics.utils import MidPointNorm, cmap_jet, cmap_mask, dict_update, fig_scale
-from libfds.fields import Fields2d, Fields3d
+from libfds.cfdtd import cFdtd2d, cFdtd3d
 
 
 cmap = cmap_jet()
@@ -85,7 +86,7 @@ class MeshViewer:
                    grid=True, buffer=True, obstacles=True, domains=False, N=1,
                    slices = None,
                    kwargs_grid=dict(zorder=5),
-                   kwargs_obstacles=dict(facecolor='k', alpha=0.2, hatch='x', zorder=100, annotate=True, rasterized=True),
+                   kwargs_obstacles=dict(facecolor='k', alpha=0.2, hatch='x', zorder=100, annotate=False, rasterized=True),
                    kwargs_domains=dict(facecolor='y', alpha=0.2, zorder=100, annotate=False, rasterized=True),
                    kwargs_buffer=dict(linewidth=3, edgecolor='k', facecolor='none', alpha=0.2, zorder=100))
 
@@ -174,6 +175,11 @@ class MeshViewer:
             if not kwargs.get('buffer'):
                 ax.set_xlim(self.msh.buffer_limits[indices[0]])
                 ax.set_ylim(self.msh.buffer_limits[indices[1]])
+            else:
+                ax.set_xlim(self.msh.paxis[indices[0]].min(),
+                            self.msh.paxis[indices[0]].max())
+                ax.set_ylim(self.msh.paxis[indices[1]].min(),
+                            self.msh.paxis[indices[1]].max())
 
         return fig, ax_xy, ax_xz, ax_zy, ax_bar
 
@@ -197,10 +203,14 @@ class MeshViewer:
         if kwargs.get('domains'):
             self.objects(*args, self.msh.domains, **kwargs.get('kwargs_domains'))
 
-        self.objects(*args, self.msh.buffer, **kwargs.get('kwargs_buffer'))
+        if 'A' in self.msh.bc:
+            self.objects(*args, self.msh.buffer, **kwargs.get('kwargs_buffer'))
         if not kwargs.get('buffer'):
             ax.set_xlim(self.msh.buffer_limits[0])
             ax.set_ylim(self.msh.buffer_limits[1])
+        else:
+            ax.set_xlim(self.msh.x.min(), self.msh.x.max())
+            ax.set_ylim(self.msh.y.min(), self.msh.y.max())
 
         ax.set_xlabel(r'$x$ [m]')
         ax.set_ylabel(r'$y$ [m]')
@@ -227,7 +237,7 @@ class MeshViewer:
         Parameters
         ----------
         ax : matplotlib.axes._subplots.AxesSubplot
-            Axis where to draw the grid
+            Axis where to draw the object
         axes : tuple of np.ndarray
             Grid axes (x, y [, z])
         indices : tuple of int
@@ -416,14 +426,14 @@ class CPViewer(MeshViewer):
 
 
 class MPLViewer(MeshViewer):
-    """MeshViewer specialization adapted to exploit libfds.Fields isntances or hdf5 files.
+    """MeshViewer specialization adapted to exploit libfds.cFdtd isntances or hdf5 files.
 
     Parameters
     ----------
     cfg: nsfds3.solver.CfgSetup
         Configuration of the simulation
-    data: libfds.fields.Fields2d, libfds.fields.Fields3d, pathlib.Path, str, optional
-        Data can be provided as Fields2d/Fields3d or with the path to a hdf5 file.
+    data: libfds.cfdtd.cFdtd2d, libfds.cfdtd.cFdtd3d, pathlib.Path, str, optional
+        Data can be provided as cFdtd2d/cFdtd3d or with the path to a hdf5 file.
         If data is not provided, the file pointed to by the cfg.files.data_path attribute is used if it exists.
 
     Note
@@ -440,11 +450,11 @@ class MPLViewer(MeshViewer):
     """
 
     dkwargs = dict(figsize=(10, 10), dpi=100, fps=24,
-                   grid=False, buffer=True, obstacles=True, domains=False, probes=True,
+                   grid=False, buffer=False, obstacles=True, domains=False, probes=False,
                    N=1, slices = None,
                    kwargs_grid=dict(zorder=5),
-                   kwargs_obstacles=dict(facecolor='k', alpha=0.2, zorder=100, annotate=True),
-                   kwargs_domains=dict(facecolor='y', alpha=0.2, zorder=100, annotate=True),
+                   kwargs_obstacles=dict(facecolor='k', alpha=0.2, zorder=100, annotate=False),
+                   kwargs_domains=dict(facecolor='y', alpha=0.2, zorder=100, annotate=False),
                    kwargs_buffer=dict(linewidth=3, edgecolor='k', facecolor='none', alpha=0.2, zorder=100))
 
     def __init__(self, cfg, data=None):
@@ -460,15 +470,29 @@ class MPLViewer(MeshViewer):
             else:
                 data = cfg.files.data_path
 
-        if isinstance(data, (Fields2d, Fields3d)):
+        if isinstance(data, (cFdtd2d, cFdtd3d)):
             self.data = FieldWrapper(data)
         elif isinstance(data, (pathlib.Path, str)):
             self.data = Hdf5Wrapper(data)
         else:
-            raise ViewerError('data can be Fields2d, Fields3d, or path to hdf5 file')
+            raise ViewerError('data can be cFdtd2d, cFdtd3d, or path to hdf5 file')
 
-    def show(self, view='p', vmin=None, vmax=None,  iteration=0, **kwargs):
-        """Show view at a given iteration."""
+    def show(self, view='p', vmin=None, vmax=None, iteration=0, decimate=None, **kwargs):
+        """Show view at a given iteration.
+
+        Parameters
+        ----------
+        view: str
+            Field to show. Default to 'p'
+        vmin/vmax: float
+            Limit values of field. Default to None.
+        iteration: int
+            Show field at given time iteration. Default to 0
+        decimate: tuple
+            Decimate factor for each direction. Default to None
+        **kwargs: dict
+            Keyword arguments.
+        """
 
         kwargs = dict_update(self.dkwargs, kwargs)
 
@@ -481,26 +505,27 @@ class MPLViewer(MeshViewer):
 
         norm = MidPointNorm(vmin=vmin, vmax=vmax, midpoint=0)
 
-        fig, ax = self._frame(var, norm, **kwargs)
+        fig, ax = self._frame(var, norm, decimate=decimate, **kwargs)
 
         _plt.show()
 
-    def _frame(self, var, norm, **kwargs):
+    def _frame(self, var, norm, decimate=None, **kwargs):
         """Helper method to setup graphical frames. Prefer using show() method."""
         kwargs = dict_update(self.dkwargs, kwargs)
 
         if len(self.msh.shape) == 3:
-            return self._fields3d(var, norm, **kwargs)
+            return self._fields3d(var, norm, decimate=decimate, **kwargs)
         else:
-            return self._fields2d(var, norm, **kwargs)
+            return self._fields2d(var, norm, decimate=decimate, **kwargs)
 
-    def _fields2d(self, var, norm, **kwargs):
+    def _fields2d(self, var, norm, decimate=None, **kwargs):
         """Show 2d results."""
 
         fig, ax, ax_bar = self._frame2d(cbar=True, **kwargs)
 
         # Fill figure (im : matplotlib.image.QuadMesh)
-        im = ax.pcolorfast(self.x, self.y, var[:-1, :-1].T, cmap=cmap, norm=norm, animated=True)
+        dx, dy = parse_decimate(decimate, 2)
+        im = ax.pcolorfast(self.x[::dx, ::dy], self.y[::dx, ::dy], var[::dx, ::dy][:-1, :-1].T, cmap=cmap, norm=norm, animated=True)
 
         # Colorbar
         midpoint = _np.nanmean(var) if norm.vmin > 0 and norm.vmax > 0 else 0
@@ -514,7 +539,8 @@ class MPLViewer(MeshViewer):
 
         # Nans & Probes
         if kwargs.get('nans'):
-            nans = _np.where(_np.isnan(var))[::-1]
+            nans =  _np.argwhere(_np.isnan(var.T))
+            nans = _np.array([(self.x[ix, iy], self.y[ix, iy]) for ix, iy in nans]).T
             ax.plot(*nans, 'r.')
 
         if self.cfg.prb and kwargs.get('probes'):
@@ -524,7 +550,7 @@ class MPLViewer(MeshViewer):
 
         return fig, im
 
-    def _fields3d(self, var, norm, **kwargs):
+    def _fields3d(self, var, norm, decimate=None, **kwargs):
         """Show 3d results."""
 
         fig, ax_xy, ax_xz, ax_zy, ax_bar = self._frame3d(cbar=True, **kwargs)
@@ -532,9 +558,10 @@ class MPLViewer(MeshViewer):
         ims = []
 
         # Fill figure
-        ims.append(ax_xy.pcolorfast(self.x[:, :, self.i_xy], self.y[:, :, self.i_xy], var[:-1, :-1, self.i_xy], cmap=cmap, norm=norm))
-        ims.append(ax_xz.pcolorfast(self.x[:, self.i_xz, :], self.z[:, self.i_xz, :], var[:-1, self.i_xz, :-1], cmap=cmap, norm=norm))
-        ims.append(ax_zy.pcolorfast(self.z[self.i_zy, :, :], self.y[self.i_zy, :, :], var[self.i_zy, :-1, :-1], cmap=cmap, norm=norm))
+        dx, dy, dz = parse_decimate(decimate, 3)
+        ims.append(ax_xy.pcolorfast(self.x[::dx, ::dy, self.i_xy], self.y[::dx, ::dy, self.i_xy], var[::dx, ::dy, :][:-1, :-1, self.i_xy], cmap=cmap, norm=norm))
+        ims.append(ax_xz.pcolorfast(self.x[::dx, self.i_xz, ::dz], self.z[::dx, self.i_xz, ::dz], var[::dx, :, ::dz][:-1, self.i_xz, :-1], cmap=cmap, norm=norm))
+        ims.append(ax_zy.pcolorfast(self.z[self.i_zy, ::dy, ::dz], self.y[self.i_zy, ::dy, ::dz], var[:, ::dy, ::dz][self.i_zy, :-1, :-1], cmap=cmap, norm=norm))
 
         # Colorbar
         midpoint = _np.nanmean(var) if norm.vmin > 0 and norm.vmax > 0 else 0
@@ -581,7 +608,7 @@ class MPLViewer(MeshViewer):
 
         return metadata
 
-    def movie(self, view='p', nt=None, ref=None, xlim=None, ylim=None, zlim=None, codec='libx264', **kwargs):
+    def movie(self, view='p', nt=None, ref=None, maxref=100, decimate=True, xlim=None, ylim=None, zlim=None, codec='libx264', **kwargs):
         """Make movie for a given view."""
 
         kwargs = dict_update(self.dkwargs, kwargs)
@@ -590,12 +617,23 @@ class MPLViewer(MeshViewer):
             print('movie method only available for Hdf5Wrapper')
             sys.exit(1)
 
+        # Handle decimate options
+        if decimate is True:
+            decimate = tuple(max(1, int(s / 1080)) for s in self.msh.shape)
+        decimate = parse_decimate(decimate, len(self.msh.shape))
+        if self.msh.ndim == 3:
+            dx, dy, dz = decimate
+        else:
+            dx, dy = decimate
+
         # Create Iterator and make 1st frame
+        print('Searching best reference...')
         data = self.data.get_iterator(view=view, nt=nt)
-        vmin, vmax = self.data.reference(view=view, ref=ref)
+        vmin, vmax = self.data.reference(view=view, ref=ref, decimate=decimate, maxref=maxref)
         norm = MidPointNorm(vmin=vmin, vmax=vmax, midpoint=0)
         i, var = next(data)
-        fig, im = self._frame(var, norm, iteration=i, **kwargs)
+        fig, im = self._frame(var, norm, iteration=i, decimate=decimate, **kwargs)
+        fig.canvas.manager.full_screen_toggle()
 
         # Movie parameters
         metadata = self._init_movie(view)
@@ -608,23 +646,23 @@ class MPLViewer(MeshViewer):
                 axes = fig.get_axes()
                 if self.msh.ndim == 3:
                     if isinstance(im[0], PcolorImage):    # Pcolorimage object if non-rectangle mesh elements
-                        im[0].set_data(self.x, self.y, var[:-1, :-1, self.i_xy])
-                        im[1].set_data(self.x, self.z, var[:-1, self.i_xz, :-1])
-                        im[2].set_data(self.z, self.y, var[self.i_zy, :-1, :-1])
+                        im[0].set_data(self.x[::dx, ::dy, :], self.y[::dx, ::dy, :], var[::dx, ::dy, :][:-1, :-1, self.i_xy])
+                        im[1].set_data(self.x[::dx, :, ::dz], self.z[::dx, :, ::dz], var[::dx, :, ::dz][:-1, self.i_xz, :-1])
+                        im[2].set_data(self.z[:, ::dy, ::dz], self.y[:, ::dy, ::dz], var[:, ::dy, ::dz][self.i_zy, :-1, :-1])
                     else:                                 # AxesImage otherwise
-                        im[0].set_array(var[:-1, :-1, self.i_xy])
-                        im[1].set_array(var[:-1, self.i_xz, :-1])
-                        im[2].set_array(var[self.i_zy, :-1, :-1])
+                        im[0].set_array(var[::dx, ::dy, :][:-1, :-1, self.i_xy])
+                        im[1].set_array(var[::dx, :, ::dz][:-1, self.i_xz, :-1])
+                        im[2].set_array(var[:, ::dy, ::dz][self.i_zy, :-1, :-1])
                     axes[1].set_title(metadata['var'] + f' (n={i})')
                 else:
-                    im.set_array(var[:-1, :-1].T)
+                    im.set_array(var[::dx, ::dy][:-1, :-1].T)
                     axes[0].set_title(metadata['var'] + f' (n={i})')
 
                 # grab_frame() takes 90% of the time to make the animation.
                 # the self.fig.canvas.draw() in writer.grab_frame() is responsible of this !
                 # TODO: rewrite a FasterFFmpegWriter that uses blit (and multiprocessing ?)
                 # Note: the time/iteration is the same as the time to execute fig.savefig('test.jpg') !
-                # Note: Another way to gain some time is to decimate data...
+                # Note: Another way to gain some time is to decimate data... DOne.
                 writer.grab_frame()
 
     def probes(self, figsize=(9, 4)):

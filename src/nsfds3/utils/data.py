@@ -27,10 +27,17 @@ import sys
 import pathlib
 import h5py
 import numpy as _np
-from libfds import fields
+from libfds import cfdtd
 
 
 VIEWS = {'e': 're', 'vx': 'ru', 'vy': 'rv', 'vz': 'rw'}
+
+
+def parse_decimate(d, ndim):
+    if isinstance(d, (tuple, list)):
+        return d[:ndim]
+    else:
+        return (1, ) * ndim
 
 
 def closest_index(n, ns, nt):
@@ -102,9 +109,9 @@ def get_pressure(r=None, ru=None, rv=None, rw=None, re=None, gamma=1.4):
     p = _np.empty_like(r)
 
     if p.ndim == 3 and rw is not None:
-        fields.update_p3d(p, r, ru, rv, rw, re, gamma)
+        fields.p_update3d(p, r, ru, rv, rw, re, gamma)
     elif p.ndim == 2:
-        fields.update_p2d(p, r, ru, rv, re, gamma)
+        fields.p_update2d(p, r, ru, rv, re, gamma)
     else:
         raise ValueError('Variable must be 2 or 3d')
 
@@ -206,20 +213,23 @@ class DataIterator:
 
     Parameters
     ----------
-    data : Hdf5Wrapper
+    data: Hdf5Wrapper
         Hdf5Wrapper instance.
-    view : tuple
+    view: tuple
         The variable(s) to display.
-    nt : int
-        The last frame to consider.
+    nt: int
+        Maximum number of time iterations to consider.
+    step:
+        Final iterator contains only 1 dataset over step.
     """
 
-    def __init__(self, data, view=('p'), nt=None):
+    def __init__(self, data, view=('p'), nt=None, step=1):
 
         if not isinstance(data, Hdf5Wrapper):
             raise ValueError('Hdf5Wrapper instance expected')
 
         self.data = data
+        self.step = step
 
         if not isinstance(view, (tuple, list)):
             view = (view, )
@@ -247,7 +257,7 @@ class DataIterator:
             for var in self.view:
                 tmp.append(self.data.get(view=var, iteration=self.icur))
 
-            self.icur += self.ns
+            self.icur += self.ns * self.step
 
             return tmp
 
@@ -298,21 +308,23 @@ class Hdf5Wrapper:
     def __exit__(self, mtype, value, traceback):
         self.close()
 
-    def get_iterator(self, view=('p'), nt=None):
+    def get_iterator(self, view=('p'), nt=None, step=1):
         """Return a Iterator for view(s) until nt.
 
         Parameters
         ----------
         view: tuple or str
-            view(s) to be setup for iteration
+            view(s) to be setup for iteration.
         nt: int
-            Maximum number of time iterations
+            Maximum number of time iterations to consider.
+        step:
+            Take only 1 dataset over step.
 
         Return
         ------
         DataIterator
         """
-        return DataIterator(self, view=view, nt=nt)
+        return DataIterator(self, view=view, nt=nt, step=step)
 
     @staticmethod
     def get_data(fname):
@@ -342,45 +354,69 @@ class Hdf5Wrapper:
             print('You must provide a valid hdf5 file')
             sys.exit(1)
 
-    def reference(self, view='p', ref=None):
+    def reference(self, view='p', ref=None, nt=None, decimate=None, maxref=100):
         """Generate the references for min/max colormap values.
 
         Parameters
         ----------
-        view : str
+        view: str
             The quantity from which the reference is to be taken
-        ref : int, tuple, None, or str
+        nt: int
+            Maximum number of time iterations to consider.
+        ref: int, tuple, None, or str
             Can be int (frame index), tuple (int_min, int_max), or 'auto'
+        decimate: tuple
+            Decimation factor for each direction, default to None.
+        maxref: int
+            Take maxref reference linearly spaced over all datasets'.
 
         Returns
         -------
         tuple:
             The minimum and maximum values of the view
+
+        Note
+        ----
+        Autoref can be very slow for large datasets.
+        For instance for 1000 datasets of 6000x6000 array:
+            - load array from hdf5 = 70ms x 1000 = 1min10sec
+            - Search for min/max = 10ms x 1000 = 10sec
+            - Total process = ~ 1min20sec
+        Decimate by 2 the array leads to a gain of 5sec.
+        Take one dataset over 2 leads to a gain of 35sec.
         """
         view = check_view(view, self.volumic, self.vorticity)
 
+        nt = nt if nt is not None else self.nt
+
         if ref is None or ref == 'auto':
-            ref = self._autoref(view=view)
+            ref = self._autoref(view=view, nt=nt, decimate=decimate, maxref=maxref)
 
         if isinstance(ref, int):
-            iteration = closest_index(ref, self.ns, self.nt)
+            iteration = closest_index(ref, self.ns, nt)
             var = self.get(view=view, iteration=iteration)
             return _np.nanmin(var), _np.nanmax(var)
 
         if isinstance(ref, tuple):
-            iteration_min = closest_index(ref[0], self.ns, self.nt)
-            iteration_max = closest_index(ref[1], self.ns, self.nt)
+            iteration_min = closest_index(ref[0], self.ns, nt)
+            iteration_max = closest_index(ref[1], self.ns, nt)
             varmin = self.get(view=view, iteration=iteration_min)
             varmax = self.get(view=view, iteration=iteration_max)
             return _np.nanmin(varmin), _np.nanmax(varmax)
 
-    def _autoref(self, view='p'):
+    def _autoref(self, view='p', nt=None, decimate=None, maxref=100):
         """Search minimum and maximum value indices of the view.
 
         Parameter
         ---------
         view: str
             View from which to find reference.
+        nt: int
+            Maximum number of time iterations to consider.
+        decimate: tuple
+            Decimation factor for each direction, default to None.
+        maxref: int
+            Take maxref reference linearly spaced over all datasets'.
 
         Returns
         -------
@@ -388,11 +424,24 @@ class Hdf5Wrapper:
             References of the minimum and maximum value for the view.
         """
         view = check_view(view, self.volumic, self.vorticity)
-        var = self.get_iterator(view=(view, ))
-        mins, maxs = _np.array([(v.max(), v.min()) for _, v in var]).T
 
-        refmax = abs(maxs - maxs.mean()).argmin() * self.ns
-        refmin = abs(mins - mins.mean()).argmin() * self.ns
+        # Take only maxref references.
+        nt = nt if nt is not None else self.nt
+        step = int(nt / (maxref * self.ns))
+
+        # Decimate data
+        if self.volumic:
+            dx, dy, dz = parse_decimate(decimate, 3)
+            slices = slice(None, None, dx), slice(None, None, dy), slice(None, None, dz)
+        else:
+            dx, dy = parse_decimate(decimate, 2)
+            slices = slice(None, None, dx), slice(None, None, dy)
+
+        var = self.get_iterator(view=(view, ), nt=nt, step=step)
+        mins, maxs = _np.array([(v[*slices].max(), v[*slices].min()) for _, v in var]).T
+
+        refmax = abs(maxs - maxs.mean()).argmin() * self.ns * step
+        refmin = abs(mins - mins.mean()).argmin() * self.ns * step
 
         return refmin, refmax
 
@@ -411,7 +460,10 @@ class Hdf5Wrapper:
         iteration = closest_index(iteration, self.ns, self.nt)
         view = check_view(view, self.volumic, self.vorticity)
 
-        if view == 'p':
+        if view == 'p' and self.data.get('p_it0'):
+            return (self.data[f"p_it{iteration}"][...]).transpose(self.T) - self.p0
+
+        elif view == 'p' and not self.data.get('p_it0'):
             r = self.data[f"r_it{iteration}"][...]
             ru = self.data[f"ru_it{iteration}"][...]
             rv = self.data[f"rv_it{iteration}"][...]
@@ -441,11 +493,11 @@ class Hdf5Wrapper:
 
 
 class FieldWrapper:
-    """Helper class to extract data from a lbfds.fields.Fields2d or Fields3d.
+    """Helper class to extract data from a lbfds.cfdtd.cFdtd2d or Fields3d.
 
     Parameters
     ----------
-    fld: libfds.fields.Fields2d or libfds.fields.Fields3d
+    fld: libfds.cfdtd.cFdtd2d or libfds.cfdtd.cFdtd3d
          The field to get data from.
 
     Raises
@@ -457,10 +509,10 @@ class FieldWrapper:
 
     def __init__(self, fld):
         self.fld = fld
-        if isinstance(fld, fields.Fields2d):
+        if isinstance(fld, cfdtd.cFdtd2d):
             self.volumic = False
             self.T = (1, 0)
-        elif isinstance(fld, fields.Fields3d):
+        elif isinstance(fld, cfdtd.cFdtd3d):
             self.volumic = True
             self.T = (0, 1, 2)
         else:

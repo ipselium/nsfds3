@@ -441,6 +441,25 @@ class TestCases:
         return create_geometry(shape, **conf)
 
     @staticmethod
+    def cells2d(shape, stencil=11, ncells=40, x0=20, y0=20):
+        """LBRT"""
+
+        nx, ny = shape
+        geo = []
+        xref, yref = x0, y0
+        xwidth, ywidth = 121, 121      # 13cm = 325
+        xstreet, ystreet = 30, 30      # 1cm = 25pts
+
+        for _ in range(ncells):
+            xref = x0
+            for _ in range(ncells):
+                geo.append(Obstacle(origin=(xref, yref), size=(xwidth, ywidth), bc='WWWW', env=(nx, ny)))
+                xref += xwidth + xstreet
+            yref += ywidth + ystreet
+
+        return geo
+
+    @staticmethod
     def curv_mountain(x, y):
         """Curvilinear function example."""
         xsine = _np.linspace(-_np.pi, _np.pi, x.shape[0])

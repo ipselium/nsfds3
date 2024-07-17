@@ -29,10 +29,10 @@ The `geometry` module provides objects to describe elements of geometry :
 """
 
 import warnings
-import itertools as _it
+import itertools
 import functools
-import numpy as _np
-from time import perf_counter as pc
+import numpy
+
 
 class Box:
     """Elementary object to describe Cuboids or Faces."""
@@ -58,7 +58,7 @@ class Box:
         self._set_sin()
 
         self.vertices = self._get_vertices()
-        m = _it.product(*[(s, range(s.start, s.start + 1), range(s.stop - 1, s.stop)) for s in self.rn])
+        m = itertools.product(*[(s, range(s.start, s.start + 1), range(s.stop - 1, s.stop)) for s in self.rn])
         self.edges = tuple(set([s for s in m if [len(c) for c in s].count(1) == self.ndim - 1]))
 
     @classmethod
@@ -68,15 +68,14 @@ class Box:
         size = tuple(s.stop - s.start for s in slices)
         return cls(origin=origin, size=size, env=env, bc=bc, inner=inner, tag=tag)
 
-    @property
-    @functools.lru_cache()
+    @functools.cached_property
     def indices(self):
         """Return a set of all indexes contained in the Box."""
-        return set(_it.product(*self.rn))
+        return set(itertools.product(*self.rn))
 
     def _get_vertices(self):
-        vertices = self.sort_vertices([tuple(i) for i in _it.product(*self.cn)])
-        return _np.array(vertices, dtype=_np.int16).T
+        vertices = self.sort_vertices([tuple(i) for i in itertools.product(*self.cn)])
+        return numpy.array(vertices, dtype=numpy.int16).T
 
     @staticmethod
     def sort_vertices(values):
@@ -87,8 +86,8 @@ class Box:
         n = 0
         while len(vertices):
             for v in vertices:
-                if _np.count_nonzero((_np.array(v)
-                                      - _np.array(sort[-1])) == 0) == len(values[0]) - 1:
+                if numpy.count_nonzero((numpy.array(v)
+                                      - numpy.array(sort[-1])) == 0) == len(values[0]) - 1:
                     sort.append(v)
                     vertices.remove(v)
                     break
@@ -103,7 +102,7 @@ class Box:
     @staticmethod
     def _fix_vertices(values):
         """Fix flat cuboids."""
-        axis = _np.where([v.min() == v.max() for v in values])[0]
+        axis = numpy.where([v.min() == v.max() for v in values])[0]
         if axis.any():
             axis = axis[0]
             if axis == 0:
@@ -143,7 +142,7 @@ class Box:
         rn = list(self.rin)
         if ax is not None:
             rn[ax] = self.rn[ax]
-        return set(_it.product(*rn))
+        return set(itertools.product(*rn))
 
     def center(self, transform=None, ax=None):
         """Return physical coordinates of the center of the box along ax."""
@@ -161,14 +160,14 @@ class Box:
     def intersection(self, other):
         """Return intersection (point coordinate) between self and other."""
         c = [set(rs).intersection(ro) for rs, ro in zip(self.rn, other.rn)]
-        return tuple(_it.product(*c))
+        return tuple(itertools.product(*c))
 
     def intersects(self, other):
         """Report whether self intersects other."""
-        out = []
-        for s, o in zip(self.rn, other.rn):
-            out.append(set(s).intersection(o))
-        return all(tuple(out))
+        for s, o in zip(self.cn, other.cn):
+            if s[1] < o[0] or s[0] > o[1]:
+                return False
+        return True
 
     def issubset(self, other):
         """Report whether other contains self."""
@@ -196,12 +195,13 @@ class Box:
         if any(s == 0 for s in self.size):
             raise ValueError('Size of the object must be at least 1')
 
+        if any(self.origin[i] < 0 for i in range(self.ndim)) or \
+           any(self.origin[i] + self.size[i] - 1 > self.env[i] - 1 for i in range(self.ndim)):
+            raise ValueError('Object must be into the domain')
+
     def _set_bc(self):
         """Set bc. Will be len(origin) * 'W' by default."""
-        if not self.bc:
-            self.bc = '..' * self.ndim
-        else:
-            self.bc = self.bc.upper()
+        self.bc = '..' * self.ndim if not self.bc else self.bc.upper()
 
     def _set_rn(self):
         """Set ranges (rx, ry [, rz])."""
@@ -349,6 +349,11 @@ class Obstacle(Cuboid):
         See :py:class:`nsfds3.cpgrid.geometry.Box` and :py:class:`nsfds3.cpgrid.geometry.Cuboid` for further details."""
 
 
+class Bounds(Cuboid):
+    """Specialization of Cuboid objects to describe a global domain.
+        See :py:class:`nsfds3.cpgrid.geometry.Box` and :py:class:`nsfds3.cpgrid.geometry.Cuboid` for further details."""
+
+
 class Domain(Cuboid):
     """Specialization of Cuboid objects to describe a portion of the computation domain.
         See :py:class:`nsfds3.cpgrid.geometry.Box` and :py:class:`nsfds3.cpgrid.geometry.Cuboid` for further details."""
@@ -358,8 +363,18 @@ class Domain(Cuboid):
         super().__init__(origin, size, env, bc=bc, inner=inner, tag=tag)
         self.axis = axis
 
+    @property
+    def scm_code(self):
+        if self.tag == 'P':
+            return 0
+        elif self.tag == 'p':
+            return 5
+        elif self.tag == 'm':
+            return -5
+        return 11
+
     def __fargs__(self):
-        return f"origin={self.origin}, size={self.size}, bc={self.bc}, sid={self.sid}, tag={self.tag}, axis={self.axis}"
+        return f"origin={self.origin}, size={self.size}, bc={self.bc}, sid={self.sid}, tag={self.tag} ({self.scm_code}), axis={self.axis}"
 
 
 class Face(Box):
@@ -421,7 +436,7 @@ class Face(Box):
         if not callable(func):
             raise ValueError('func must be callable')
 
-        self.source_evolution = _np.array([])
+        self.source_evolution = numpy.array([])
         self.source_function = func
         self.source_name = func.__name__
         self.source_alpha = alpha
@@ -531,6 +546,19 @@ class Face(Box):
             return False
         return super().issubset(other)
 
+    def is_likely_to_interfere_with(self, other):
+        if self.side != other.opposite:
+            return False
+        if self.covered or other.covered:
+            return False
+        if self.clamped or other.clamped:
+            return False
+        if self.periodic or other.periodic:
+            return False
+        if self.loc * self.normal + other.loc * other.normal >= 0:
+            return False
+        return all(set(self.rn[ax]).intersection(other.rn[ax]) for ax in self.not_axis)
+
     def __fargs__(self):
 
         s = f"origin={self.origin}, size={self.size}, "
@@ -558,13 +586,21 @@ class BoxSet:
         self.shape = shape
         self.ndim = len(shape)
         self.bc = bc
-        self.subs = subs
+        self.subs = subs if subs else []
         self.stencil = stencil
 
-        self.faces = tuple(_it.chain(*[sub.faces for sub in subs]))
-        self.corners = tuple(_it.product(*zip((0, ) * len(shape), tuple(s - 1 for s in shape))))
-        self.bounds = Obstacle(origin=(0, ) * len(shape), size=shape, env=shape, bc=self.bc, inner=True)
-        self.sids = {o.sid:o for o in self.subs}
+        self.faces = tuple(itertools.chain(*[sub.faces for sub in subs]))
+        self.corners = tuple(itertools.product(*zip((0, ) * len(shape), tuple(s - 1 for s in shape))))
+        self.bounds = Bounds(origin=(0, ) * len(shape), size=shape, env=shape, bc=self.bc, inner=True)
+        self.sids = {obs.sid:obs for obs in self.subs}
+
+    def get_sub_by_coordinate(self, c):
+        """Return subdomain containing point of coordinates c."""
+        subs = []
+        for s in self:
+            if s.contains(c):
+                subs.append(s)
+        return subs
 
     def __eq__(self, other):
         if not isinstance(other, type(self)):
@@ -613,42 +649,24 @@ class DomainSet(BoxSet):
         See :py:class:`nsfds3.cpgrid.geometry.BoxSet` for further details.
     """
 
-    def __init__(self, shape, bc, subs=None, obstacles=None, stencil=11):
+    def __init__(self, shape, bc, subs=None, stencil=11):
 
         super().__init__(shape, bc=bc, subs=subs, stencil=stencil)
-        self.obstacles = obstacles if obstacles else []
 
-        if self.obstacles:
-            self._update_bc()
+        if len(shape) == 3:    # outer/inner for 3d visualization
+            self.outer = []
+            for bound in self.bounds.faces:
+                for face in [f for f in self.faces if f.loc == bound.loc and f.side == bound.side]:
+                    if face.parent.tag in ('p', 'm') and face.parent.axis == bound.axis:
+                        self.outer.append(face.parent)
+            self.inner = [o for o in self if o not in self.outer]
 
-        self.outer = []
-        for bound in self.bounds.faces:
-            for face in [f for f in self.faces if f.loc == bound.loc and f.side == bound.side]:
-                if face.parent.tag in ('p', 'm') and face.parent.axis == bound.axis:
-                    self.outer.append(face.parent)
-        self.inner = [o for o in self if o not in self.outer]
-
-    def _update_bc(self):
-        """Set bc of computation subdomains."""
-        for f1, f2 in _it.product(self.faces, self.obstacles.faces):
-            if f1.side == f2.opposite and f1.loc == f2.loc:
-                if f1.intersects(f2):
-                    f1.bc = f2.bc
-
-        for f1, f2 in _it.product(self.faces, self.bounds.faces):
-            if f1.side == f2.side and f1.loc == f2.loc:
-                if f1.intersects(f2):
-                    f1.bc = f2.bc
-
-        for sub in self:
-            if 'P' in sub.bc[2*sub.axis:2*sub.axis + 2]:
-                sub.tag = 'P'
 
     def __add__(self, other):
         """Override BoxSet.__add__."""
-        if self.stencil != other.stencil or self.shape != other.shape or self.bc != other.bc or self.obstacles != other.obstacles:
+        if self.stencil != other.stencil or self.shape != other.shape or self.bc != other.bc:
             raise ValueError(f'{type(self)} not compatible')
-        return type(self)(shape=self.shape, bc=self.bc, subs=self.subs + other.subs, obstacles=self.obstacles, stencil=self.stencil)
+        return type(self)(shape=self.shape, bc=self.bc, subs=self.subs + other.subs, stencil=self.stencil)
 
 
 class ObstacleSet(BoxSet):
@@ -659,10 +677,11 @@ class ObstacleSet(BoxSet):
         ----
         ObstacleSet provides several useful sequences of faces :
 
+            - overlapped_cuboids : cuboids that overlap
+            - overlapped : faces that are partially overlapped by an obstacle
             - periodic : faces located on a periodic boundary of the domain
             - colinear : faces that are colinear with other obstacle faces
             - covered : faces that are entirely covered by an obstacle
-            - overlapped : faces that are partially overlapped by an obstacle
             - clamped : faces located on a boundary (not periodic) of the domain
             - bounded : faces that are bounded by at least one boundary of the domain
             - edged : faces that are located on a boundary of the domain and bounded by at least another one
@@ -688,11 +707,12 @@ class ObstacleSet(BoxSet):
 
         if self.subs:
             self.check_boxes()
+            self.check_collision()
 
     def check_boxes(self):
         """Check that :
             - all boxes have same dimension and envelop,
-            - there is not collistion between obstacles and bounds
+            - there is not collision between obstacles and bounds
         """
         if not len(set([s.env for s in self])) == 1:
             raise ValueError('All boxes must have same envelop')
@@ -704,41 +724,56 @@ class ObstacleSet(BoxSet):
             if self.is_out_of_bounds(obs):
                 raise ValueError(f'{obs} is out of bounds')
 
-        faces = self.free + self.overlapped + self.colinear + self.bounded
-        combs = [(f1, f2) for f1, f2 in _it.combinations(faces, r=2)
-                 if f1.sid != f2.sid and f1.side == f2.opposite]
-        combs += [(f1, f2) for f1, f2 in _it.product(faces, self.bounds.faces)
-                 if f1.sid != f2.sid and f1.side == f2.side]
+    def check_collision(self):
+        """Warn if obstacles interfere."""
+        # Check collision
+        n = int(self.stencil // 2)
+        for obs in self:
+            obs.extended_cn = tuple((max(0, obs.cn[ax][0] - n), 
+                                     min(size - 1, obs.cn[ax][1] + n)) for size, ax in zip(obs.env, range(obs.ndim)))
 
-        for f1, f2 in combs:
-            if self.is_too_close(f1, f2):
-                warnings.warn(f'{f1} and {f2} too close')
+        # Obstacles that are likely to interfere
+        combs = [(o1, o2) for o1, o2 in itertools.combinations(self, r=2) \
+            if self.is_extended_overlap(o1, o2) and not o1.intersects(o2)]
+
+        # Warn for obstacles that are too close
+        for o1, o2 in combs:
+            for f1, f2 in itertools.product(o1.faces, o2.faces):
+                if f1.is_likely_to_interfere_with(f2):
+                    warnings.warn(f'{o1} and {o2} too close')
+                    break
+
+        # Warn for obstacles that are too close to bounds
+        for obs in self:
+            if any(0 < obs.origin[i] < self.stencil - 1 for i in range(obs.ndim)):
+                warnings.warn(f'{obs} too close to the bound')
+                continue
+            if any(obs.env[i] - self.stencil < obs.origin[i] + obs.size[i] - 1 < obs.env[i] - 1 for i in range(obs.ndim)):
+                warnings.warn(f'{obs} too close to the bound')
 
     def is_out_of_bounds(self, obs):
         """Check if subdomain is out of bounds."""
         return any(s.start < 0 or s.stop - 1 >= n for s, n in zip(obs.sn, self.shape))
 
-    def is_too_close(self, f1, f2):
-        """Check if f1 and f2 locations are compatible with the stencil."""
-        if f1.loc == f2.loc:
-            return False
-        if f1.normal == 1 and f2.loc not in range(f1.loc + 1, f1.loc + self.stencil - 1):
-            return False
-        if f1.normal == -1 and f2.loc not in range(f1.loc - self.stencil + 2, f1.loc):
-            return False
-        return all(set(f1.rn[ax]).intersection(f2.rn[ax]) for ax in f1.not_axis)
+    @staticmethod
+    def is_extended_overlap(o1, o2):
+        """Report whether obstacle o1 and o2 share extended coordinates."""
+        for s, o in zip(o1.extended_cn, o2.extended_cn):
+            if s[1] <= o[0] or s[0] >= o[1]:
+                return False
+        return True
 
     def get_obstacle_by_face(self, f):
         """Return the Obstacle object containing the face f."""
-        for o in self:
-            if o.sid == f.sid:
-                return o
+        for obs in self:
+            if obs.sid == f.sid:
+                return obs
 
     def get_obstacle_by_sid(self, sid):
         """Return Obstacle whose identity is sid."""
-        for o in self:
-            if o.sid == sid:
-                return o
+        for obs in self:
+            if obs.sid == sid:
+                return obs
 
     def _update_face_description(self):
         """Set attributes for each face.
@@ -749,10 +784,15 @@ class ObstacleSet(BoxSet):
 
         """
 
-        faces_vs_subs = [(f, o) for f, o in _it.product(self.faces, self) if f.sid != o.sid]
+        self.overlapped_cuboids = [(o1, o2) for o1, o2 in itertools.combinations(self, r=2) if o1.intersects(o2)]
+        faces_vs_subs = []
+        for o1, o2 in self.overlapped_cuboids:
+            faces_vs_subs += [(f, o2) for f in o1.faces if f.intersects(o2)]
+            faces_vs_subs += [(f, o1) for f in o2.faces if f.intersects(o1)]
+        #faces_vs_subs = [(f, o) for f, o in itertools.product(self.faces, self) if f.sid != o.sid]
 
         # Faces clamped to global domain (handle periodic condition)
-        for f, b in _it.product(self.faces, self.bounds.faces):
+        for f, b in itertools.product(self.faces, self.bounds.faces):
             if f.side == b.side:
                 if f in b:
                     if b.bc != 'P':
@@ -760,7 +800,7 @@ class ObstacleSet(BoxSet):
                     if b.bc == 'P':
                         f.periodic = b
 
-        # Face fully covered by an obtacle
+        # Face fully covered by an obstacle
         for f, o in faces_vs_subs:
             if f in o:
                 f.covered.append(o)
@@ -769,7 +809,7 @@ class ObstacleSet(BoxSet):
         for f in self.faces:
             bounded = [(r.start == 0, r.stop == s) for i, (r, s) in enumerate(zip(f.rn, self.shape))
                         if i != f.axis]
-            if any(_it.chain(*bounded)):
+            if any(itertools.chain(*bounded)):
                 f.bounded = True
 
         # Face Overlapped by another obstacle, or colinear to another obstacle
@@ -781,7 +821,7 @@ class ObstacleSet(BoxSet):
                     f.overlapped.append(o)
 
         # Bounds covered by an obstacle
-        for f, o in _it.product(self.bounds.faces, self):
+        for f, o in itertools.product(self.bounds.faces, self):
             if f.intersects(o):
                 f.overlapped.append(o)
 
@@ -791,14 +831,14 @@ class ObstacleSet(BoxSet):
             warnings.warn('Already flat')
             return None
 
-        obstacles = []
+        subs = []
         for obs in self:
             if index in obs.rn[axis]:
-                obstacles.append(obs.flatten(axis))
+                subs.append(obs.flatten(axis))
 
         bc = ''.join([v for i, v in enumerate(self.bc) if i not in [2*axis, 2*axis + 1]])
         shape = tuple(o for i, o in enumerate(self.shape) if i != axis)
-        obsset = ObstacleSet(shape=shape, bc=bc, subs=obstacles, stencil=self.stencil)
+        obsset = ObstacleSet(shape=shape, bc=bc, subs=subs, stencil=self.stencil)
         obsset.__volumic = self
 
         return obsset

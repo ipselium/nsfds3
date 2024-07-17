@@ -29,14 +29,12 @@ setup and run the simulation.
 
 import sys
 import pickle
+import h5py
+import numpy
 from time import perf_counter as _pc
-import numpy as _np
-import h5py as _h5py
 import pathlib as _pathlib
 
-from libfds.fields import Fields
-from libfds.fluxes import EulerianFluxes, ViscousFluxes, Vorticity
-from libfds.filters import SelectiveFilter, ShockCapture
+from libfds.cfdtd import cFdtd
 from libfds.cmaths import nan_check
 
 from rich import print
@@ -71,7 +69,7 @@ class FDTD:
     Notes
     -----
     When the simulation is complete, one can use the `show` method to display the desired field
-    at the last iteration, or inspect the `fld` object that gathers all conservative variables
+    at the last iteration, or inspect the `csolver` object that gathers all conservative variables
     at the last iteration.
 
     Finite differences schemes, Runge-Kutta algorithm and selective filter are applied using
@@ -95,10 +93,12 @@ class FDTD:
 
     def __init__(self, cfg, msh, ics=None, quiet=None, timings=None, overwrite=None):
 
-        # Initialize configuration, mesh & ICS
+        # Initialize configuration & mesh (slow because of pickle loading)
         self.cfg = cfg
         self.msh = msh
         self.save_objects()
+
+        # ICS : Here CustomInitialCondition can take time because of loading pickles
         self.ics = ics if ics is not None else CustomInitialConditions(cfg, msh)
 
         # Arguments
@@ -111,28 +111,19 @@ class FDTD:
         self._timings = {}
 
         # Initialize sources (boundaries and domain)
-        time = _np.linspace(0, cfg.sol.nt * cfg.dt, cfg.sol.nt + 1)
+        time = numpy.linspace(0, cfg.sol.nt * cfg.dt, cfg.sol.nt + 1)
         for face in [f for f in msh.obstacles.faces if f.bc == "V"]:
             face.source_evolution = face.source_function(time)
 
         for source in self.cfg.src.tes:
             source.set_evolution(time)
 
-        # Initialize solver
-        self.fld = Fields(self.cfg, self.msh, ics=self.ics)
-        self.efluxes = EulerianFluxes(self.fld)
-        if self.cfg.sol.vsc:
-            self.vfluxes = ViscousFluxes(self.fld)
-        if self.cfg.sol.flt:
-            self.sfilter = SelectiveFilter(self.fld)
-        if self.cfg.sol.cpt:
-            self.scapture = ShockCapture(self.fld)
-        if self.cfg.sol.vrt:
-            self.wxyz = Vorticity(self.fld)
+        # Initialize solver ()
+        self.csolver = cFdtd(self.cfg, self.msh, ics=self.ics)
         if self.cfg.prb:
-            self.probes = _np.zeros((len(cfg.prb), cfg.sol.ns))
+            self.probes = numpy.zeros((len(cfg.prb), cfg.sol.ns))
             for n, c in enumerate(self.cfg.prb):
-                self.probes[n, 0] = self.fld.p[tuple(c)]
+                self.probes[n, 0] = self.csolver.p[tuple(c)]
 
         # Initialize save
         self._init_save()
@@ -154,7 +145,7 @@ class FDTD:
         if self.timings:
             desc, time_per_iteration = misc.unload_timings(self._timings)
             if not self.quiet:
-                res = self.fld.residual()
+                res = self.csolver.residual()
                 txt = f"Iteration: [red]{self.cfg.sol.it:>6}\t[/]|\t"
                 txt += f"Residuals: [green]{res:>.4f}\t[/]|\t"
                 txt += f"Time: {time_per_iteration:>.4f}"
@@ -163,17 +154,17 @@ class FDTD:
 
         if self.nan_check:
             if res is None:
-                res = self.fld.residual()
+                res = self.csolver.residual()
             if not isinstance(res, float):
                 print('[bold bright_magenta]NaN encountered : exiting simulation')
-                print(nan_check(self.fld.p))
+                print(nan_check(self.csolver.p))
                 sys.exit(0)
 
     def run(self):
         """Run simulation."""
         ti = _pc()
         try:
-            self.sfile = _h5py.File(self.cfg.files.data_path, 'a')
+            self.sfile = h5py.File(self.cfg.files.data_path, 'a')
             for self.cfg.sol.it in track(range(self.cfg.sol.it + 1, self.cfg.sol.nt + 1),
                                          disable=self.quiet):
                 self._eulerian_fluxes()
@@ -184,58 +175,74 @@ class FDTD:
                 if not self.cfg.sol.it % self.cfg.sol.ns:
                     self._save()
                     self._log()
-                self._update_probes()
+                self._p_update_probes()
 
             if not self.quiet:
                 msg = 'Simulation completed in [bold bright_cyan]{}[/].\n'
                 msg += 'Final residuals of [bold bright_cyan]{:>.4f}[/].\n'
                 msg += 'End at physical time [bold bright_cyan]t = {:.4f} sec.'
                 print(Panel(msg.format(misc.secs_to_dhms(_pc() - ti),
-                                       self.fld.residual(),
+                                       self.csolver.residual(),
                                        self.cfg.dt * self.cfg.sol.it)))
+        except OSError:
+            # Raised if no space left on hard drive
+            # del last iteration
+            if self.cfg.sol.save:
+                del self.sfile[f'r_it{self.cfg.sol.it - self.cfg.sol.ns}']
+                del self.sfile[f'ru_it{self.cfg.sol.it - self.cfg.sol.ns}']
+                del self.sfile[f'rv_it{self.cfg.sol.it - self.cfg.sol.ns}']
+                del self.sfile[f're_it{self.cfg.sol.it - self.cfg.sol.ns}']
+                if self.msh.ndim == 3:
+                    del self.sfile[f'rw_it{self.cfg.sol.it - self.cfg.sol.ns}']
+            if self.cfg.sol.save_p and not self.cfg.sol.save:
+                for i in range(1, 6):
+                    del self.sfile[f'p_it{self.cfg.sol.it - i * self.cfg.sol.ns}']
+
         finally:
-            self.sfile.close()
             self.save_objects()
+            # Save at least the last fields in case of resume
+            if not self.cfg.sol.save:
+                self._save_main_fields()
+            self.sfile.close()
 
     @misc.timer
     def _eulerian_fluxes(self):
         """Compute Eulerian fluxes."""
-        self.efluxes.rk4()
+        self.csolver.efluxes_integrate()
 
     @misc.timer
     def _viscous_fluxes(self):
         """Compute viscous fluxes."""
         if self.cfg.sol.vsc:
-            self.vfluxes.integrate()
-            self.efluxes.cout()
+            self.csolver.vfluxes_integrate()
 
     @misc.timer
     def _selective_filter(self):
         """Apply selective filter."""
         if self.cfg.sol.flt:
-            self.sfilter.apply()
+            self.csolver.sf_apply()
 
     @misc.timer
     def _shock_capture(self):
         """Apply shock capture procedure."""
         if self.cfg.sol.cpt:
-            self.scapture.apply()
+            self.csolver.sc_apply()
 
     @misc.timer
     def _vorticity(self):
         """Compute vorticity """
         if self.cfg.sol.vrt:
-            self.wxyz.compute()
+            self.csolver.vrt_update()
 
     @misc.timer
-    def _update_probes(self):
+    def _p_update_probes(self):
         """Update probes."""
         if self.cfg.prb:
             for n, c in enumerate(self.cfg.prb):
-                self.probes[n, self.cfg.sol.it % self.cfg.sol.ns] = self.fld.p[tuple(c)]
+                self.probes[n, self.cfg.sol.it % self.cfg.sol.ns] = self.csolver.p[tuple(c)]
 
     @misc.timer
-    def _save(self):
+    def _save(self, force=False):
         """Save data."""
 
         self.cfg.sol.itmax = self.cfg.sol.it
@@ -243,22 +250,28 @@ class FDTD:
 
         # Save fields
         if self.cfg.sol.save:
-            self.sfile.create_dataset(f'r_it{self.cfg.sol.it}', data=self.fld.r)
-            self.sfile.create_dataset(f'ru_it{self.cfg.sol.it}', data=self.fld.ru)
-            self.sfile.create_dataset(f'rv_it{self.cfg.sol.it}', data=self.fld.rv)
-            self.sfile.create_dataset(f're_it{self.cfg.sol.it}', data=self.fld.re)
-            if self.msh.ndim == 3:
-                self.sfile.create_dataset(f'rw_it{self.cfg.sol.it}', data=self.fld.rw)
+            self._save_main_fields()
 
             if self.cfg.sol.vrt:
-                self.sfile.create_dataset(f'wz_it{self.cfg.sol.it}', data=self.fld.wz)
+                self.sfile.create_dataset(f'wz_it{self.cfg.sol.it}', data=self.csolver.wz)
                 if self.msh.ndim == 3:
-                    self.sfile.create_dataset(f'wx_it{self.cfg.sol.it}', data=self.fld.wx)
-                    self.sfile.create_dataset(f'wy_it{self.cfg.sol.it}', data=self.fld.wy)
+                    self.sfile.create_dataset(f'wx_it{self.cfg.sol.it}', data=self.csolver.wx)
+                    self.sfile.create_dataset(f'wy_it{self.cfg.sol.it}', data=self.csolver.wy)
+
+        if self.cfg.sol.save_p:
+            self.sfile.create_dataset(f'p_it{self.cfg.sol.it}', data=self.csolver.p)
 
         # Unload probe values
         if self.cfg.prb:
             self.sfile['probe_values'][:, self.cfg.sol.it - self.cfg.sol.ns:self.cfg.sol.it] = self.probes
+
+    def _save_main_fields(self):
+        self.sfile.create_dataset(f'r_it{self.cfg.sol.it}', data=self.csolver.r)
+        self.sfile.create_dataset(f'ru_it{self.cfg.sol.it}', data=self.csolver.ru)
+        self.sfile.create_dataset(f'rv_it{self.cfg.sol.it}', data=self.csolver.rv)
+        self.sfile.create_dataset(f're_it{self.cfg.sol.it}', data=self.csolver.re)
+        if self.msh.ndim == 3:
+            self.sfile.create_dataset(f'rw_it{self.cfg.sol.it}', data=self.csolver.rw)
 
     def save_objects(self):
         """Save cfg and msh objects."""
@@ -283,10 +296,10 @@ class FDTD:
             if not overwrite:
                 sys.exit(0)
 
-        with _h5py.File(self.cfg.files.data_path, 'r+') as self.sfile:
+        with h5py.File(self.cfg.files.data_path, 'r+') as self.sfile:
             self.sfile.attrs['nt'] = self.cfg.sol.nt
             self.cfg.sol.it = self.sfile.attrs['itmax']
-            probes = _np.zeros((len(self.cfg.prb), self.cfg.sol.nt))
+            probes = numpy.zeros((len(self.cfg.prb), self.cfg.sol.nt))
             probes[:, :self.cfg.sol.it] = self.sfile['probe_values'][:, :self.cfg.sol.it]
             del self.sfile['probe_values']
             self.sfile.create_dataset('probe_values', data=probes)
@@ -300,7 +313,7 @@ class FDTD:
             if not overwrite:
                 sys.exit(0)
 
-        with _h5py.File(self.cfg.files.data_path, 'w') as self.sfile:
+        with h5py.File(self.cfg.files.data_path, 'w') as self.sfile:
             self.sfile.attrs['vorticity'] = self.cfg.sol.vrt
             self.sfile.attrs['ndim'] = self.msh.ndim
             self.sfile.attrs['dt'] = self.cfg.dt
@@ -309,7 +322,7 @@ class FDTD:
             self.sfile.attrs['p0'] = self.cfg.tp.p0
             self.sfile.attrs['gamma'] = self.cfg.tp.gamma
 
-            probes = _np.zeros((len(self.cfg.prb), self.cfg.sol.nt))
+            probes = numpy.zeros((len(self.cfg.prb), self.cfg.sol.nt))
             self.sfile.create_dataset('probe_locations', data=self.cfg.prb.locs)
             self.sfile.create_dataset('probe_values', data=probes)
 
@@ -318,7 +331,7 @@ class FDTD:
 
     def show(self, view='p', vmin=None, vmax=None, **kwargs):
         """Show results."""
-        viewer = MPLViewer(self.cfg, data=self.fld)
+        viewer = MPLViewer(self.cfg, data=self.csolver)
         viewer.show(view=view, vmin=vmin, vmax=vmax, **kwargs)
 
 

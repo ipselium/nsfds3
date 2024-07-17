@@ -5,6 +5,7 @@ results/
 *.npy
 *TODO*
 *.hdf5
+*.h5
 *.cfg
 *.pkl
 *.msh
@@ -19,6 +20,7 @@ results/
 NOTES.md
 nsfds3/nsfds3.code-workspace
 nsfds3/.vscode
+*.vscode
 tests/test.npy.npz
 *.npz
 *.npy

@@ -129,7 +129,7 @@ class Solver:
 
     def __init__(self, vsc=True, cpt=True, vrt=True, flt=True,
                  xnu_n=0.2, xnu_0=0.01, nt=50, ns=10, cfl=0.5,
-                 save=True, mp=False, nan_check=False, resume=False, timings=False):
+                 save=True, save_p=True, nan_check=False, resume=False, timings=False):
 
         self.vsc = vsc
         self.cpt = cpt
@@ -141,9 +141,9 @@ class Solver:
         self._ns = ns
         self.cfl = cfl
         self.save = save
+        self.save_p = save_p
         self.it = 0
         self.itmax = 0
-        self.mp = mp
         self.nan_check = nan_check
         self.resume = resume
         self.timings = timings
@@ -647,6 +647,7 @@ class CfgSetup:
         [general]
         version                     -> self.version
         quiet                       -> self.quiet = False
+        mp                          -> self.mp = False
 
         [files]
         directory                   -> self.files.directory = 'data/'
@@ -690,16 +691,11 @@ class CfgSetup:
         R                           -> self.src.Rx = ()
         evolution                   -> self.src.evolution = ()
 
-        [flow]
-        type                        -> self.flw.ftype = None
-        components                  -> self.flw.components = (0, 0, 0)
-
         [probes]
         variables                   -> self.prb.vars = ()
         locations                   -> self.prb.locs = ()
 
         [solver]
-        mp                          -> self.sol.mp = False
         timings                     -> self.sol.timings = False
         nan_check                   -> self.sol.nan_check = False
         resume                      -> self.sol.resume = False
@@ -713,6 +709,7 @@ class CfgSetup:
         ns                          -> self.sol.ns = 10
         cfl                         -> self.sol.cfl = 0.5
         save fields                 -> self.sol.save = True
+        save pressure               -> self.sol.save_p = True
 
         [graphics]
         figures                     -> self.gra.fig = True
@@ -724,7 +721,7 @@ class CfgSetup:
 
     _NONE = ('', 'no', 'No', 'none', 'None', None, 'False', 'false', False)
     _SECTIONS = ('general', 'files', 'thermophysic', 'geometry',
-                 'sources', 'flow', 'probes', 'solver', 'graphics')
+                 'sources', 'probes', 'solver', 'graphics')
 
     def __init__(self, cfgfile=None, last=False, verbose=False):
 
@@ -772,7 +769,7 @@ class CfgSetup:
         self.run()
 
     def _load(self, cfgfile):
-        """Help method to load cfgfiles."""
+        """Helper method to load cfgfiles."""
         cfgfile = pathlib.Path(cfgfile).absolute()
         path = cfgfile.absolute().parent
         if cfgfile.is_file() and path.is_dir():
@@ -791,6 +788,7 @@ class CfgSetup:
 
         cfg.set('general', 'version', str(self.version)) #str(nsfds3.__version__))
         cfg.set('general', 'quiet', str(self.quiet))
+        cfg.set('general', 'mp', str(self.mp))
 
         cfg.set('files', 'directory', str(self.files.directory))
         cfg.set('files', 'name', str(self.files.name))
@@ -830,13 +828,9 @@ class CfgSetup:
         cfg.set('sources', 'R', str(self.src.Rx))
         cfg.set('sources', 'evolution', str(self.src.evolution))
 
-        cfg.set('flow', 'ftype', str(self.flw.ftype))
-        cfg.set('flow', 'components', str(self.flw._components))
-
         cfg.set('probes', 'variables', str(self.prb.vars))
         cfg.set('probes', 'locations', str(self.prb._locs))
 
-        cfg.set('solver', 'mp', str(self.sol.mp))
         cfg.set('solver', 'resume', str(self.sol.resume))
         cfg.set('solver', 'timings', str(self.sol.timings))
         cfg.set('solver', 'nt', str(self.sol.nt))
@@ -917,14 +911,10 @@ class CfgSetup:
         Note
         ----
         `dt` is a read only attribute. It is automatically updated if one of `geo.steps`,
-        `sol.cfl`, `tp.c0` or `flw.components` attributes is modified.
+        `sol.cfl`, or `tp.c0` attributes is modified.
 
         """
-        if self.flw.ftype is not None:
-            c = self.tp.c0 + max([abs(u) for u in self.flw.components])
-        else:
-            c = self.tp.c0
-        return min(self.geo.steps) * self.sol.cfl / c
+        return min(self.geo.steps) * self.sol.cfl / self.tp.c0
 
     @property
     def frequencies(self):
@@ -954,6 +944,7 @@ class CfgSetup:
         CFG_GNL = self._cfg['general']
         self._version = CFG_GNL.get('version', self._version_base)
         self.quiet = CFG_GNL.getboolean('quiet', False)
+        self.mp = CFG_GNL.getboolean('mp', True)
 
         CFG_FILES = self._cfg['files']
         self.files = Files(path=self.path,
@@ -992,15 +983,25 @@ class CfgSetup:
                           ns=CFG_SOL.getint('ns', 10),
                           cfl=CFG_SOL.getfloat('cfl', 0.5),
                           save=CFG_SOL.getboolean('save fields', True),
-                          mp = CFG_SOL.getboolean('mp', True),
-                          timings = CFG_SOL.getboolean('timings', False),
-                          nan_check = CFG_SOL.getboolean('nan_check', False),
-                          resume = CFG_SOL.getboolean('resume', False),
+                          save_p=CFG_SOL.getboolean('save pressure', True),
+                          timings=CFG_SOL.getboolean('timings', False),
+                          nan_check=CFG_SOL.getboolean('nan_check', False),
+                          resume=CFG_SOL.getboolean('resume', False),
                           )
 
         CFG_SRC = self._cfg['sources']
+        _cfg = CFG_SRC.getlit('evolution', ())
+        file = CFG_GEO.getlit('file', None)
+        file = '' if file is None else file
+        evolution = tuple()
+        for e in _cfg:
+            if isinstance(e, (int, float)):
+                evolution += (float(e), )
+            elif isinstance(e, str):
+                evolution += (cputils.get_func(self.path / file, e), )
+
         self.src = sources.SourceSet(shape=self.geo._shape,
-                                     origin=CFG_SRC.getlit('origin', ((), )),
+                                     origin=CFG_SRC.getlit('origin', (tuple(int(n/2) for n in self.geo._shape), )),
                                      S0=CFG_SRC.getlit('S0', ()),
                                      Bx=CFG_SRC.getlit('Bx', ()),
                                      By=CFG_SRC.getlit('By', ()),
@@ -1010,17 +1011,10 @@ class CfgSetup:
                                      kz=CFG_SRC.getlit('kz', ()),
                                      k=CFG_SRC.getlit('k', ()),
                                      Rx=CFG_SRC.getlit('R', ()),
-                                     on=CFG_SRC.getlit('on', ()),
-                                     evolution=CFG_SRC.getlit('evolution', ()),
+                                     on=CFG_SRC.getlit('on', (True, )),
+                                     evolution=evolution,
                                      flat=self.geo.flat,
                                      )
-
-        CFG_FLW = self._cfg['flow']
-        self.flw = sources.Flow(shape=self.geo._shape,
-                                ftype=CFG_FLW.get('type', None),
-                                components=CFG_FLW.getlit('components', (0, ) * self.ndim),
-                                flat=self.geo.flat,
-                                )
 
         CFG_PRB = self._cfg['probes']
         self.prb = Probes(vars=CFG_PRB.getlit('variables', ()),
@@ -1082,7 +1076,7 @@ class CfgSetup:
         s = "[System]"
         s += f"\n\t- Data path             : {self.files.data_path}"
         s += f"\n\t- Current path          : {self.path}"
-        s += f"\n\t- Multiprocessing       : {self.sol.mp} [max {self.cpu_count} cpu(s)]"
+        s += f"\n\t- Multiprocessing       : {self.mp} [max {self.cpu_count} cpu(s)]"
         s += f"\n\t- Estimated ram used    : {formatter(size)}"
         s += str(self.sol)
         s += "\n[Time]"
@@ -1092,7 +1086,6 @@ class CfgSetup:
         s += str(self.tp)
         s += str(self.geo)
         s += str(self.src)
-        s += str(self.flw)
         s += str(self.prb)
         return s
 

@@ -32,6 +32,7 @@ setup file for nsfds3
 import codecs
 import os.path
 import platform
+import numpy
 from setuptools import setup
 from setuptools.extension import Extension
 
@@ -81,6 +82,7 @@ extensions = [
 ]
 
 setup(
+    include_dirs=[numpy.get_include()],
     ext_modules=extensions,
     version=get_version("src/nsfds3/__init__.py")
 )

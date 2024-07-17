@@ -24,7 +24,7 @@ The `graphics` package provides some helper classes and functions to represent m
 
     * :py:class:`nsfds3.graphics.MeshViewer`: Graphical tool to visualize Mesh objects graphically.
     * :py:class:`nsfds3.graphics.CPViewer`: MeshViewer specialization adapted to ComputationDomains.
-    * :py:class:`nsfds3.graphics.MPLViewer`: MeshViewer specialization adapted to libfds.Fields or hdf5 files.
+    * :py:class:`nsfds3.graphics.MPLViewer`: MeshViewer specialization adapted to libfds.cFdtd or hdf5 files.
 
 The main viewer used in nsfds3 is :py:class:`nsfds3.graphics.MPLViewer`.
 

@@ -39,7 +39,6 @@ from numpy cimport int64_t, uint8_t
 
 ctypedef np.npy_int8 INT8
 
-
 ctypedef fused integer:
     short
     long
@@ -112,14 +111,14 @@ cpdef list get_3d_cuboids(integer[:, :, ::1] mask, int ax=-1, int N=-1):
 cdef list _get_2d_cuboids(integer[:, ::1] mask):
 
     cdef Py_ssize_t ix, iy
-    cdef short cxi, cxf
-    cdef short cyi, cyf
+    cdef short cxi = 0, cxf
+    cdef short cyi = 0, cyf
     cdef integer[:, ::1] m = mask.copy()
     cdef list cuboids = []
 
-    while any_nonzero2d(m):
+    while True:
 
-        cxi, cyi = first_nonzero2d(m)
+        cxi, cyi = first_nonzero2d(m, ix_start=cxi, iy_start=cyi)
         cxf, cyf = m.shape[0], m.shape[1]
 
         for iy in range(cyi, cyf):
@@ -146,15 +145,16 @@ cdef list _get_2d_cuboids(integer[:, ::1] mask):
 cdef list _get_3d_cuboids(integer[:, :, ::1] mask):
 
     cdef Py_ssize_t ix, iy, iz
-    cdef short cxi, cxf
-    cdef short cyi, cyf
+    cdef short cxi = 0, cxf
+    cdef short cyi = 0, cyf
+    cdef short czi = 0, czf
     cdef integer[:, :, ::1] m = mask.copy()
     cdef list cuboids = []
 
 
-    while any_nonzero3d(m):
+    while True:
 
-        cxi, cyi, czi = first_nonzero3d(m)
+        cxi, cyi, czi = first_nonzero3d(m, ix_start=cxi, iy_start=cyi, iz_start=czi)
         cxf, cyf, czf = m.shape[0], m.shape[1], m.shape[2]
 
         for iz in range(czi, czf):
@@ -186,14 +186,14 @@ cdef list _get_3d_cuboids(integer[:, :, ::1] mask):
 cdef list _get_x_2d_cuboids(integer[:, ::1] mask, int N):
 
     cdef Py_ssize_t iy
-    cdef short cxi, cyi
+    cdef short cxi = 0, cyi = 0
     cdef short cyf, cyf_bis
     cdef integer[:, ::1] m = mask.copy()
     cdef list cuboids = []
 
-    while any_nonzero2d(m):
+    while True:
 
-        cxi, cyi = first_nonzero2d(m)
+        cxi, cyi = first_nonzero2d(m, ix_start=cxi, iy_start=cyi)
         cyf = m.shape[1]
         cyf_bis = m.shape[1]
 
@@ -223,14 +223,14 @@ cdef list _get_x_2d_cuboids(integer[:, ::1] mask, int N):
 cdef list _get_x_3d_cuboids(integer[:, :, ::1] mask, int N):
 
     cdef Py_ssize_t iy, iz
-    cdef short cxi, cyi, czi
+    cdef short cxi = 0, cyi = 0, czi = 0
     cdef short cyf, cyf_bis, czf, czf_bis
     cdef integer[:, :, ::1] m = mask.copy()
     cdef list cuboids = []
 
-    while any_nonzero3d(m):
+    while True:
 
-        cxi, cyi, czi = first_nonzero3d(m)
+        cxi, cyi, czi = first_nonzero3d(m, ix_start=cxi, iy_start=cyi, iz_start=czi)
         cyf, czf = m.shape[1], m.shape[2]
         cyf_bis, czf_bis = m.shape[1], m.shape[2]
 
@@ -272,14 +272,14 @@ cdef list _get_x_3d_cuboids(integer[:, :, ::1] mask, int N):
 cdef list _get_y_2d_cuboids(integer[:, ::1] mask, int N):
 
     cdef Py_ssize_t ix
-    cdef short cxi, cyi
+    cdef short cxi = 0, cyi = 0
     cdef short cxf, cxf_bis
     cdef integer[:, ::1] m = mask.copy()
     cdef list cuboids = []
 
-    while any_nonzero2d(m):
+    while True:
 
-        cxi, cyi = first_nonzero2d(m)
+        cxi, cyi = first_nonzero2d(m, ix_start=cxi, iy_start=cyi)
         cxf = m.shape[0]
         cxf_bis = m.shape[0]
 
@@ -309,14 +309,14 @@ cdef list _get_y_2d_cuboids(integer[:, ::1] mask, int N):
 cdef list _get_y_3d_cuboids(integer[:, :, ::1] mask, int N):
 
     cdef Py_ssize_t ix, iz
-    cdef short cxi, cyi, czi
+    cdef short cxi = 0, cyi = 0, czi = 0
     cdef short cxf, cxf_bis, czf, czf_bis
     cdef integer[:, :, ::1] m = mask.copy()
     cdef list cuboids = []
 
-    while any_nonzero3d(m):
+    while True:
 
-        cxi, cyi, czi = first_nonzero3d(m)
+        cxi, cyi, czi = first_nonzero3d(m, ix_start=cxi, iy_start=cyi, iz_start=czi)
         cxf, czf = m.shape[0], m.shape[2]
         cxf_bis, czf_bis = m.shape[0], m.shape[2]
 
@@ -358,14 +358,14 @@ cdef list _get_y_3d_cuboids(integer[:, :, ::1] mask, int N):
 cdef list _get_z_3d_cuboids(integer[:, :, ::1] mask, int N):
 
     cdef Py_ssize_t ix, iy
-    cdef short cxi, cyi, czi
+    cdef short cxi = 0, cyi = 0, czi = 0
     cdef short cxf, cxf_bis, cyf, cyf_bis
     cdef integer[:, :, ::1] m = mask.copy()
     cdef list cuboids = []
 
-    while any_nonzero3d(m):
+    while True:
 
-        cxi, cyi, czi = first_nonzero3d(m)
+        cxi, cyi, czi = first_nonzero3d(m, ix_start=cxi, iy_start=cyi, iz_start=czi)
         cxf, cyf = m.shape[0], m.shape[1]
         cxf_bis, cyf_bis = m.shape[0], m.shape[1]
 
@@ -406,7 +406,7 @@ cdef list _get_z_3d_cuboids(integer[:, :, ::1] mask, int N):
 
 cdef bint any_nonzero2d(integer[:, ::1] m, short val=1):
     """Return True if (m == val).any() else False."""
-    cdef bint flag = False
+
     cdef int nx = m.shape[0]
     cdef int ny = m.shape[1]
     cdef Py_ssize_t ix, iy
@@ -414,16 +414,13 @@ cdef bint any_nonzero2d(integer[:, ::1] m, short val=1):
     for ix in range(nx):
         for iy in range(ny):
             if m[ix, iy] == val:
-                flag = True
-                break
-        if flag:
-            break
-    return flag
+                return True
+    return False
 
 
 cdef bint any_nonzero3d(integer[:, :, ::1] m, short val=1):
     """Return True if (m == val).any() else False."""
-    cdef bint flag = False
+
     cdef int nx = m.shape[0]
     cdef int ny = m.shape[1]
     cdef int nz = m.shape[2]
@@ -433,50 +430,36 @@ cdef bint any_nonzero3d(integer[:, :, ::1] m, short val=1):
         for iy in range(ny):
             for iz in range(nz):
                 if m[ix, iy, iz] == val:
-                    flag = True
-                    break
-            if flag:
-                break
-        if flag:
-            break
-
-    return flag
+                    return True
+    return False
 
 
-cdef tuple first_nonzero2d(integer[:, ::1] m, short val=1):
+cdef tuple first_nonzero2d(integer[:, ::1] m, int ix_start=0, int iy_start=0, integer val=1):
     """Return the coordinate (ix, iy) of the first m == val."""
-    cdef bint flag = False
+
     cdef int nx = m.shape[0]
     cdef int ny = m.shape[1]
-    cdef Py_ssize_t ix, iy
+    cdef Py_ssize_t idx
+    cdef integer* p = &m[0][0]
 
-    for ix in range(nx):
-        for iy in range(ny):
-            if m[ix, iy] == val:
-                flag = True
-                break
-        if flag:
-            break
-    return ix, iy
+    for idx in range(ix_start * ny + iy_start, nx * ny):
+        if p[idx] == val:
+            return np.unravel_index(idx, (nx, ny))
+
+    return np.unravel_index(idx, (nx, ny))
 
 
-cdef tuple first_nonzero3d(integer[:, :, ::1] m, short val=1):
+cdef tuple first_nonzero3d(integer[:, :, ::1] m, int ix_start=0, int iy_start=0, int iz_start=0, integer val=1):
     """Return the coordinate (ix, iy, iz) of the first m == val."""
-    cdef bint flag = False
+
     cdef int nx = m.shape[0]
     cdef int ny = m.shape[1]
     cdef int nz = m.shape[2]
-    cdef Py_ssize_t ix, iy, iz
+    cdef Py_ssize_t idx
+    cdef integer* p = &m[0][0][0]
 
-    for ix in range(nx):
-        for iy in range(ny):
-            for iz in range(nz):
-                if m[ix, iy, iz] == val:
-                    flag = True
-                    break
-            if flag:
-                break
-        if flag:
-            break
+    for idx in range(ix_start * ny * nz + iy_start * nz + iz_start, nx * ny * nz):
+        if p[idx] == val:
+            return np.unravel_index(idx, (nx, ny, nz))
 
-    return ix, iy, iz
+    return np.unravel_index(idx, (nx, ny, nz))
