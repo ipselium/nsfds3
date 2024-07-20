@@ -229,7 +229,7 @@ class DataIterator:
             raise ValueError('Hdf5Wrapper instance expected')
 
         self.data = data
-        self.step = step
+        self.step = max(1, step)
 
         if not isinstance(view, (tuple, list)):
             view = (view, )
@@ -241,7 +241,7 @@ class DataIterator:
         self.nt = closest_index(self.nt, self.ns, self.nt)
 
     def __len__(self):
-        return int((self.nt - self.icur) / self.ns)
+        return int((self.nt - self.icur) / (self.ns * self.step))
 
     def __iter__(self):
         """Iterator """
@@ -427,7 +427,7 @@ class Hdf5Wrapper:
 
         # Take only maxref references.
         nt = nt if nt is not None else self.nt
-        step = int(nt / (maxref * self.ns))
+        step = max(1, int(nt / (maxref * self.ns)))
 
         # Decimate data
         if self.volumic:

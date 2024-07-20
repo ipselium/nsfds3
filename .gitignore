@@ -26,3 +26,5 @@ tests/test.npy.npz
 *.npz
 *.npy
 tests/configurations/data/*
+tests/configurations/data/base_2d.msh
+tests/configurations/data/curvi_2d.msh

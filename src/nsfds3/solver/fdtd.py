@@ -91,7 +91,7 @@ class FDTD:
            approche curviligne d’ordre élevé », 2005.
     """
 
-    def __init__(self, cfg, msh, ics=None, quiet=None, timings=None, overwrite=None):
+    def __init__(self, cfg, msh, ics=None, quiet=None, timings=None, overwrite=None, nan_check=None):
 
         # Initialize configuration & mesh (slow because of pickle loading)
         self.cfg = cfg
@@ -213,26 +213,22 @@ class FDTD:
     @misc.timer
     def _viscous_fluxes(self):
         """Compute viscous fluxes."""
-        if self.cfg.sol.vsc:
-            self.csolver.vfluxes_integrate()
+        self.csolver.vfluxes_integrate()
 
     @misc.timer
     def _selective_filter(self):
         """Apply selective filter."""
-        if self.cfg.sol.flt:
-            self.csolver.sf_apply()
+        self.csolver.sf_apply()
 
     @misc.timer
     def _shock_capture(self):
         """Apply shock capture procedure."""
-        if self.cfg.sol.cpt:
-            self.csolver.sc_apply()
+        self.csolver.sc_apply()
 
     @misc.timer
     def _vorticity(self):
         """Compute vorticity """
-        if self.cfg.sol.vrt:
-            self.csolver.vrt_update()
+        self.csolver.vrt_update()
 
     @misc.timer
     def _p_update_probes(self):

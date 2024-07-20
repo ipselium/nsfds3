@@ -31,6 +31,7 @@ Some helper classes and functions to represent meshes graphically.
 import os
 import sys
 import pathlib
+import time
 import numpy as _np
 import scipy.signal as _signal
 import matplotlib.pyplot as _plt
@@ -627,10 +628,12 @@ class MPLViewer(MeshViewer):
             dx, dy = decimate
 
         # Create Iterator and make 1st frame
-        print('Searching best reference...')
+        print('Searching reference...')
+        ti = time.perf_counter()
         data = self.data.get_iterator(view=view, nt=nt)
         vmin, vmax = self.data.reference(view=view, ref=ref, decimate=decimate, maxref=maxref)
         norm = MidPointNorm(vmin=vmin, vmax=vmax, midpoint=0)
+        print(f'Done in {time.perf_counter() - ti:.2f} s')
         i, var = next(data)
         fig, im = self._frame(var, norm, iteration=i, decimate=decimate, **kwargs)
         fig.canvas.manager.full_screen_toggle()

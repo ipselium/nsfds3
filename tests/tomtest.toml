@@ -1,9 +1,0 @@
-[user]
-player_x.color = "blue"
-player_o.color = "green"
-
-[constant]
-board_size = 3
-
-[server]
-url = "https://tictactoe.example.com"
