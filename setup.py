@@ -35,6 +35,7 @@ import platform
 import numpy
 from setuptools import setup
 from setuptools.extension import Extension
+from Cython.Build import cythonize
 
 
 def read(rel_path):
@@ -58,31 +59,37 @@ if platform.system() == 'Windows':
     libraries = []
     extra_compile_args = ["-O2"]
     extra_link_args = []
+    include_dirs=[numpy.get_include(), ]
 else:
     libraries = ['m']
     extra_compile_args = ["-O2", "-fopenmp"]
 #    extra_compile_args = ["-Ofast", "-fopenmp"]
     extra_link_args = ['-fopenmp']
+    include_dirs=[numpy.get_include(), ]
 
 extensions = [
     Extension(
         'nsfds3.cpgrid.cutils',
-        ["src/nsfds3/cpgrid/cutils.c"],
+        ["src/nsfds3/cpgrid/cutils.pyx"],
         libraries=libraries,
         extra_compile_args=extra_compile_args,
         extra_link_args=extra_link_args,
+        include_dirs=include_dirs,
     ),
     Extension(
         'nsfds3.cpgrid.gridutils',
-        ["src/nsfds3/cpgrid/gridutils.c"],
+        ["src/nsfds3/cpgrid/gridutils.pyx"],
         libraries=libraries,
         extra_compile_args=extra_compile_args,
         extra_link_args=extra_link_args,
+        include_dirs=include_dirs,
     ),
 ]
 
 setup(
     include_dirs=[numpy.get_include()],
-    ext_modules=extensions,
+    ext_modules=cythonize(extensions),
+    include_package_data=True,
+    package_data={'nsfds3.cpgrid': ['*.pyx', '*.c'], },
     version=get_version("src/nsfds3/__init__.py")
 )
