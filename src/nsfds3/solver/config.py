@@ -790,7 +790,10 @@ class CfgSetup:
         cfg.set('general', 'quiet', str(self.quiet))
         cfg.set('general', 'mp', str(self.mp))
 
-        cfg.set('files', 'directory', str(self.files.directory))
+        # Relative to the written file (read back as path / directory): the configuration
+        # keeps working if the project moves.
+        cfg_dir = pathlib.Path(fname).absolute().parent
+        cfg.set('files', 'directory', os.path.relpath(self.files.directory, cfg_dir))
         cfg.set('files', 'name', str(self.files.name))
         cfg.set('files', 'overwrite', str(self.files.overwrite))
 
