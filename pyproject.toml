@@ -27,7 +27,8 @@ dependencies = [
     "matplotlib>=3.9.0",
     "plotly",
     "rich",
-    "h5py"
+    "h5py",
+    "packaging"
 ]
 
 [project.urls]

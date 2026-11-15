@@ -257,8 +257,8 @@ class FDTD:
         if self.cfg.sol.save_p:
             self.sfile.create_dataset(f'p_it{self.cfg.sol.it}', data=self.csolver.p)
 
-        # Unload probe values
-        if self.cfg.prb:
+        # Unload probe values (nothing yet at the initial save, when it < ns)
+        if self.cfg.prb and self.cfg.sol.it >= self.cfg.sol.ns:
             self.sfile['probe_values'][:, self.cfg.sol.it - self.cfg.sol.ns:self.cfg.sol.it] = self.probes
 
     def _save_main_fields(self):

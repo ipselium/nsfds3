@@ -46,7 +46,7 @@ import pathlib
 import numpy
 from rich import print
 from configparser import ConfigParser
-from pkg_resources import parse_version as _parse_version
+from packaging.version import parse as _parse_version
 from nsfds3.utils import files, misc
 from nsfds3.solver import sources
 from nsfds3.materials import Air
